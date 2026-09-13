@@ -365,7 +365,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "muninn-compile",
  "muninn-core",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
@@ -393,6 +395,7 @@ dependencies = [
  "muninn-embed",
  "muninn-symbols",
  "muninn-why",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
@@ -403,9 +406,12 @@ dependencies = [
 name = "muninn-compile"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "muninn-core",
+ "regex",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

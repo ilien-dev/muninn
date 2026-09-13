@@ -20,8 +20,9 @@ symbol graph (Rust, TypeScript/TSX, JavaScript/JSX, Python, Go), a routed
 
 ## Status
 
-Phase 0 (foundations) complete: store, health gate, heartbeats, hooks, init/clean,
-fault-injection suite (11 scenarios), performance contracts. F2 is next.
+Phase 0 (foundations) and Phase 1 (F2 compiler) complete. Gate 1 passed on a clean
+held-out set: precision 0.905, recall 0.864 (`crates/muninn-bench/corpora/claude-md/GATE1.md`).
+Phase 2 (throwaway store + four-arm experiment) is next.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 
 ## Install (development)

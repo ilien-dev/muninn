@@ -173,6 +173,7 @@ pub fn codex_hooks_json(binary: &Path) -> serde_json::Value {
         "hooks": {
             "SessionStart":     [{ "matcher": "startup|resume|compact", "hooks": [cmd("SessionStart")] }],
             "UserPromptSubmit": [{ "hooks": [cmd("UserPromptSubmit")] }],
+            "PreToolUse":       [{ "matcher": "^(Bash|Edit|Write|MultiEdit|Read)$", "hooks": [cmd("PreToolUse")] }],
             "PostToolUse":      [{ "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit)$", "hooks": [cmd("PostToolUse")] }],
             "PreCompact":       [{ "hooks": [cmd("PreCompact")] }],
             "PostCompact":      [{ "hooks": [cmd("PostCompact")] }],

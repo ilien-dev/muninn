@@ -1,0 +1,26 @@
+# Held-out files for Gate 1: fetched after the classifier's patterns were frozen (2026-09-12).
+# None of these was inspected while designing or tuning the patterns.
+yc-software__qm__skills-seed_templates_claude.md
+tui-cs__Terminal.Gui__CLAUDE.md
+mattermost__mattermost-mobile__CLAUDE.md
+ant-design__ant-design-pro__CLAUDE.md
+BerriAI__litellm__CLAUDE.md
+denoland__deno__CLAUDE.md
+mikro-orm__mikro-orm__.claude_CLAUDE.md
+etewiah__property_web_builder__CLAUDE.md
+567-labs__instructor__CLAUDE.md
+databricks-industry-solutions__security-analysis-tool__CLAUDE.md
+wkaisertexas__tiktok-uploader__CLAUDE.md
+Varying-Vagrant-Vagrants__VVV__CLAUDE.md
+areal-project__AReaL__CLAUDE.md
+datawhalechina__easy-vibe__CLAUDE.md
+CoolProp__CoolProp__CLAUDE.md
+nextlevelbuilder__goclaw__CLAUDE.md
+moltis-org__moltis__CLAUDE.md
+tirth8205__code-review-graph__CLAUDE.md
+openonion__connectonion__CLAUDE.md
+elizaOS__eliza__packages_cloud_infra_CLAUDE.md
+mindsdb__mindshub__CLAUDE.md
+elizaOS__eliza__packages_core_CLAUDE.md
+jeecgboot__JeecgBoot__jeecgboot-vue3_CLAUDE.md
+nanocoai__nanoclaw__CLAUDE.md
