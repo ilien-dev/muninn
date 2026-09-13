@@ -219,6 +219,7 @@ fn user_prompt(
                     created_at: r.get(7)?,
                     session_id: r.get(8)?,
                     score: 0.0,
+                    transcript_ref: None,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -256,7 +257,17 @@ fn deliver_fused(
     exclude: &std::collections::HashSet<i64>,
 ) -> muninn_core::Result<muninn_core::cue::Merged> {
     use muninn_core::{cue, recall};
-    let terms = recall::select_terms(db, prompt, 8)?;
+    let mut terms = recall::select_terms(db, prompt, 8)?;
+    // the prompt names an area of the code ("the embedding crate", "redact"): the
+    // definitions of the files whose path carries that word join the query, so a record
+    // anchored there is reachable by the words it actually contains
+    if std::env::var_os("MUNINN_NO_EXPAND").is_none() {
+        for t in expand_terms(db, prompt, &terms) {
+            if !terms.contains(&t) {
+                terms.push(t);
+            }
+        }
+    }
     let mut lexical = recall::recall(db, &terms, 8, exclude)?;
     // F1: conflicts are served as conflicts (the render-matched control arm skips this)
     let mark = std::env::var("MUNINN_ARM")
@@ -683,4 +694,40 @@ fn write_path(
         db.meta_set("ingest_watermark_ms", &now.to_string())?;
     }
     Ok(None)
+}
+
+/// Query expansion through the symbol graph: prompt words (≥ 4 chars, not already
+/// terms) that appear in an indexed file's path bring up to two of that file's
+/// definitions each; at most 6 extra terms. Indexed lookups only.
+fn expand_terms(db: &Db, prompt: &str, terms: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let words: Vec<String> = prompt
+        .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+        .map(|w| w.trim_matches('-').to_lowercase())
+        .filter(|w| w.len() >= 4 && !terms.contains(w))
+        .collect();
+    let Ok(mut st) = db.conn.prepare_cached(
+        "SELECT s.short_name FROM symbol s WHERE s.path LIKE ?1 AND s.kind IN ('fn','struct','class','method','type','const') ORDER BY s.line LIMIT 2",
+    ) else {
+        return out;
+    };
+    let mut seen = std::collections::HashSet::new();
+    for w in words {
+        if !seen.insert(w.clone()) {
+            continue;
+        }
+        let pat = format!("%{w}%");
+        if let Ok(rows) = st.query_map([pat.as_str()], |r| r.get::<_, String>(0)) {
+            for name in rows.flatten() {
+                if name.len() >= 3 && !out.contains(&name) {
+                    out.push(name);
+                }
+            }
+        }
+        if out.len() >= 6 {
+            break;
+        }
+    }
+    out.truncate(6);
+    out
 }

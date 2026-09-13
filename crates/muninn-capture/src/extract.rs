@@ -65,9 +65,10 @@ fn correction_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         // a "no" family at the start of the prompt, or an explicit correction marker
-        // anywhere in its first 240 characters
+        // within its first 80 characters: a "no quiero" three sentences in is a wish,
+        // not a correction (SessionStart was reinjecting those every session)
         Regex::new(
-            r"(?is)^\s*(no[,.:;! ]|nope\b|as[ií] no\b|eso no\b|don'?t\b|do not\b|not like that|wrong[,. ]|undo\b|revert\b|stop\b)|^.{0,240}?(\bas[ií] no\b|\ben vez de\b|\ben lugar de\b|\bno quiero\b|\bno uses\b|\bno hagas\b|\bya no\b|\brevierte\b|\brevertimos\b|\bdescart[ae]|\bte dije\b|\ba pesar de que\b|\bnot like that\b|\binstead of\b|\bi said\b|\bi told you\b|\bthat'?s not what\b)",
+            r"(?is)^\s*(no[,.:;! ]|nope\b|as[ií] no\b|eso no\b|don'?t\b|do not\b|not like that|wrong[,. ]|undo\b|revert\b|stop\b|no quiero\b|no uses\b|no hagas\b)|^.{0,80}?(\bas[ií] no\b|\ben vez de\b|\ben lugar de\b|\bya no\b|\brevierte\b|\brevertimos\b|\bdescart[ae]|\bte dije\b|\ba pesar de que\b|\bnot like that\b|\binstead of\b|\bi said\b|\bi told you\b|\bthat'?s not what\b)",
         )
         .unwrap()
     })
@@ -326,6 +327,7 @@ mod tests {
                 ),
                 turn(2, "¿Debe el hook abrir la base en solo lectura?"),
                 turn(3, "Veo que dice que treesitter sera parte de la version 1.1 a pesar de que te dije que tiene que ser parte del MVP"),
+                turn(4, "Me gustaria que dentro de la definicion de la herramienta si consideremos tener nuestro propio motor de memoria. No importa si la herramienta ya tiene una. Podemos seguir el estandar pero no quiero depender de la memoria nativa."),
             ],
             ..Default::default()
         };

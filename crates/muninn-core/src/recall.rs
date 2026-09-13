@@ -200,6 +200,8 @@ pub struct Hit {
     pub created_at: i64,
     pub session_id: String,
     pub score: f64,
+    /// `path:offset` into the raw transcript — the evidence a sceptical agent can open.
+    pub transcript_ref: Option<String>,
 }
 
 /// Lexical recall: BM25 over (subject, object, body) with column weights, active rows only.
@@ -209,7 +211,7 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     }
     let q = fts_match_or(terms);
     let mut stmt = db.conn.prepare(
-        "SELECT r.id, r.kind, r.subject, r.object, r.body, r.origin, r.trust, r.created_at, r.session_id, bm25(record_fts, 3.0, 2.0, 1.0) AS score \
+        "SELECT r.id, r.kind, r.subject, r.object, r.body, r.origin, r.trust, r.created_at, r.session_id, bm25(record_fts, 3.0, 2.0, 1.0) AS score, r.transcript_ref \
          FROM record_fts JOIN record r ON r.id = record_fts.rowid \
          WHERE record_fts MATCH ?1 AND r.invalid = 0 ORDER BY score LIMIT ?2",
     )?;
@@ -225,6 +227,7 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
             created_at: r.get(7)?,
             session_id: r.get(8)?,
             score: r.get(9)?,
+            transcript_ref: r.get(10)?,
         })
     })?;
     Ok(rows
@@ -261,13 +264,41 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+/// `session:<sid>#<turn>.<k>` → `session:<sid>#<turn>`: the turn a chunk came from.
+pub fn turn_key(subject: &str) -> String {
+    match subject.rsplit_once('.') {
+        Some((head, tail))
+            if subject.starts_with("session:") && tail.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            head.to_string()
+        }
+        _ => subject.to_string(),
+    }
+}
+
+/// The evidence line of a block: where the literal text can be opened.
+pub fn evidence_line(r: &Option<String>) -> String {
+    match r {
+        Some(t) if !t.is_empty() => format!(
+            "  evidence: {}\n",
+            t.replacen(&std::env::var("HOME").unwrap_or_default(), "~", 1)
+        ),
+        _ => String::new(),
+    }
+}
+
 /// Render hits as evidence blocks within the hard budget. Each block carries
 /// provenance and trust; nothing in a block is phrased as an instruction.
 pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
     let mut text = String::new();
     let mut ids = Vec::new();
     let mut used = 0usize;
+    let mut turns_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for h in hits {
+        // one block per source turn: chunks of the same long turn crowd the budget out
+        if !turns_seen.insert(turn_key(&h.subject)) {
+            continue;
+        }
         let short = h.session_id.chars().take(8).collect::<String>();
         // the block budget in chars (3 chars/token, minus the provenance line)
         let block_chars = (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120);
@@ -279,29 +310,32 @@ pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
         } else {
             ""
         };
+        let ev = evidence_line(&h.transcript_ref);
         let mut block = format!(
-            "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}\n",
+            "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}\n{}",
             h.kind,
             date_of(h.created_at),
             short,
             h.origin,
             h.trust,
             frame,
-            body
+            body,
+            ev
         );
         let mut t = estimate(&block);
         if t > BUDGET_BLOCK_TOKENS {
             // trim the body to the block budget
             let keep = truncate_chars(body, (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120));
             block = format!(
-                "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}…\n",
+                "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}…\n{}",
                 h.kind,
                 date_of(h.created_at),
                 short,
                 h.origin,
                 h.trust,
                 frame,
-                keep
+                keep,
+                ev
             );
             t = estimate(&block);
         }

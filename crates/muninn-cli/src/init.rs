@@ -15,6 +15,8 @@ const GITIGNORE_LINES: [&str; 3] = [".muninn/muninn.db*", ".muninn/log/", ".muni
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct InitState {
     set_auto_memory_false: bool,
+    #[serde(default)]
+    allow_rules_added: Vec<String>,
     boot_block_files: Vec<String>,
     gitignore_lines_added: Vec<String>,
     codex_hooks_written: bool,
@@ -118,6 +120,50 @@ pub fn remove_block(existing: &str) -> String {
     existing.to_string()
 }
 
+/// The two commands the boot block asks the agent to run must not stop it at a
+/// permission prompt. Narrow patterns; `muninn scan-config` accepts them.
+const ALLOW_RULES: [&str; 2] = ["Bash(muninn why:*)", "Bash(muninn status:*)"];
+
+fn set_allow_rules(root: &Path, add: bool) -> Result<Vec<String>> {
+    let dir = root.join(".claude");
+    let file = dir.join("settings.json");
+    let mut v: serde_json::Value = match std::fs::read_to_string(&file) {
+        Ok(s) if !s.trim().is_empty() => {
+            serde_json::from_str(&s).context("parsing .claude/settings.json")?
+        }
+        _ => serde_json::json!({}),
+    };
+    let perms = v
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!(".claude/settings.json is not a JSON object"))?
+        .entry("permissions")
+        .or_insert_with(|| serde_json::json!({}));
+    let allow = perms
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("permissions is not an object"))?
+        .entry("allow")
+        .or_insert_with(|| serde_json::json!([]));
+    let arr = allow
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("permissions.allow is not an array"))?;
+    let mut changed = Vec::new();
+    for r in ALLOW_RULES {
+        let present = arr.iter().any(|x| x.as_str() == Some(r));
+        if add && !present {
+            arr.push(serde_json::Value::String(r.into()));
+            changed.push(r.to_string());
+        } else if !add && present {
+            arr.retain(|x| x.as_str() != Some(r));
+            changed.push(r.to_string());
+        }
+    }
+    if !changed.is_empty() {
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(&file, serde_json::to_string_pretty(&v)? + "\n")?;
+    }
+    Ok(changed)
+}
+
 fn set_auto_memory(root: &Path, value: Option<bool>) -> Result<bool> {
     let dir = root.join(".claude");
     let file = dir.join("settings.json");
@@ -204,6 +250,11 @@ pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
         set_auto_memory(&paths.root, Some(false))?;
         st.set_auto_memory_false = true;
         touched.push(".claude/settings.json (autoMemoryEnabled=false)".into());
+    }
+    let added_rules = set_allow_rules(&paths.root, true)?;
+    if !added_rules.is_empty() {
+        st.allow_rules_added = added_rules;
+        touched.push(".claude/settings.json (permissions.allow: muninn why, muninn status)".into());
     }
 
     if !opts.no_boot_block {
@@ -300,6 +351,10 @@ pub fn clean(paths: &ProjectPaths, yes: bool, json: bool) -> Result<()> {
     if st.set_auto_memory_false {
         set_auto_memory(&paths.root, None)?;
         undone.push(".claude/settings.json (autoMemoryEnabled restored)".into());
+    }
+    if !st.allow_rules_added.is_empty() {
+        let _ = set_allow_rules(&paths.root, false)?;
+        undone.push(".claude/settings.json (permissions.allow rules removed)".into());
     }
     if !st.gitignore_lines_added.is_empty() {
         let file = paths.root.join(".gitignore");

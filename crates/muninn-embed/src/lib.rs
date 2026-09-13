@@ -145,6 +145,10 @@ pub struct EmbedStats {
     pub load_ms: f64,
     pub encode_ms: f64,
     pub model_id: String,
+    /// Newly embedded records retired as semantic variants of an older one.
+    pub variants_retired: usize,
+    #[serde(skip)]
+    pub new_ids: Vec<i64>,
 }
 
 /// Embed every active record without a vector for the current model. `rebuild` drops
@@ -200,12 +204,52 @@ pub fn embed_pending(db: &Db, emb: &Embedder, rebuild: bool) -> Result<EmbedStat
                 now
             ])?;
             st.embedded += 1;
+            st.new_ids.push(*id);
         }
     }
     tx.commit()?;
+    st.variants_retired = retire_variants(db, &st.new_ids, &emb.model_id)?;
     db.meta_set("embed_model", &emb.model_id)?;
     db.meta_set("embed_at_ms", &now.to_string())?;
     Ok(st)
+}
+
+/// A newly embedded record whose vector is within `DUP_COSINE` of an **older** active
+/// record of the same kind is a variant of it (a compaction summary restated, a chunk
+/// repeated across sessions): it is retired as `superseded` by the older one and never
+/// competes with it for the budget. Typed records keep their own subject rule
+/// (`semantic_duplicate`); this pass covers episodes across subjects.
+pub fn retire_variants(db: &Db, new_ids: &[i64], model_id: &str) -> Result<usize> {
+    let mut retired = 0usize;
+    let mut sel = db.conn.prepare("SELECT v.vec, r.kind FROM record_vec v JOIN record r ON r.id = v.record_id WHERE v.record_id = ?1 AND v.model_id = ?2")?;
+    let mut cand = db.conn.prepare(
+        "SELECT v.record_id, v.vec FROM record_vec v JOIN record r ON r.id = v.record_id \
+         WHERE r.invalid = 0 AND r.kind = ?1 AND v.model_id = ?2 AND v.record_id < ?3 ORDER BY v.record_id",
+    )?;
+    for id in new_ids {
+        let Ok((blob, kind)) = sel.query_row(rusqlite::params![id, model_id], |r| {
+            Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, String>(1)?))
+        }) else {
+            continue;
+        };
+        let v = from_blob(&blob);
+        let best = cand
+            .query_map(rusqlite::params![kind, model_id, id], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .map(|(oid, ob)| (oid, dot(&v, &from_blob(&ob))))
+            .filter(|(_, s)| *s >= DUP_COSINE)
+            .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
+        if let Some((older, _)) = best {
+            let n = db.conn.execute(
+                "UPDATE record SET invalid = 1, invalid_reason = 'superseded', invalidated_by = ?1 WHERE id = ?2 AND invalid = 0",
+                rusqlite::params![older, id],
+            )?;
+            retired += n;
+        }
+    }
+    Ok(retired)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -301,6 +345,15 @@ mod tests {
         }
         let st = embed_pending(&db, &emb, false).unwrap();
         assert_eq!(st.embedded, 3);
+        assert_eq!(st.variants_retired, 0, "three different sentences");
+        // a near-identical restatement of #1, inserted later, is retired as its variant
+        db.conn.execute(
+            "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) VALUES('decision','retry.policy','is','retry with exponential backoff.','retry with exponential backoff.','user_said',3,'s','h9',2)",
+            [],
+        ).unwrap();
+        let st2 = embed_pending(&db, &emb, false).unwrap();
+        assert_eq!(st2.embedded, 1);
+        assert_eq!(st2.variants_retired, 1);
         let q = emb.encode_one("backoff retries");
         let a = knn(&db, &q, 2, &emb.model_id).unwrap();
         let b = knn(&db, &q, 2, &emb.model_id).unwrap();
@@ -331,3 +384,4 @@ mod tests {
         assert!(n.is_none(), "{n:?}");
     }
 }
+
