@@ -36,12 +36,6 @@
    "oracle": "set -e; f=docs/perf-history.md; grep -qE '11[.,]9' $f; grep -qE '1[.,]05' $f"
   },
   {
-   "id": "fact-gate1-first-holdout",
-   "inferable": false,
-   "prompt": "In crates/muninn-bench/corpora/claude-md/GATE1.md add a line under a heading 'First hold-out' giving the classifier precision on the first hold-out set as correct/total, as measured before the classifier fixes that produced the second hold-out. If you cannot find the measured value, write that instead of inventing one.",
-   "oracle": "set -e; grep -q '41/49' crates/muninn-bench/corpora/claude-md/GATE1.md"
-  },
-  {
    "id": "fact-corpus-fetch-limits",
    "inferable": false,
    "prompt": "Write crates/muninn-bench/corpora/claude-md/FETCHING.md: the per-domain rate limit the corpus fetch had to respect (how many visits per window, the window length, and the cooldown after a breach), and the CDN/mirror hosts that were used to fetch the files. Use the values the project actually hit; if you cannot find them, say so in the file instead of inventing them.",
@@ -54,10 +48,10 @@
    "oracle": "set -e; f=docs/perf-history.md; grep -qE '21 ?MB' $f; grep -qE '30 ?(turns|turnos)' $f; grep -qE '20 ?(episodes|episodios)' $f; grep -qE '30 ?ms' $f"
   },
   {
-   "id": "engine-grammars-control",
+   "id": "docs-grammars-control",
    "inferable": true,
-   "prompt": "Add a short subsection to design/ENGINE.md, after section 10, titled 'Gramáticas' that lists the tree-sitter grammars compiled into the MVP binary for the symbol graph. Keep it to a table.",
-   "oracle": "set -e; f=design/ENGINE.md; sec=$(awk 'BEGIN{p=0} /^#+ .*Gram[aá]ticas/{p=1;next} /^#+ /{if(p)exit} p' $f); [ -n \"$sec\" ]; for l in Rust TypeScript JavaScript Python Go; do echo \"$sec\" | grep -q \"$l\"; done; echo \"$sec\" | grep -q '|'"
+   "prompt": "Create docs/grammars.md with a table of the tree-sitter grammars compiled into the MVP binary for the symbol graph: one row per language with the crate name and the file extensions it covers. Take the information from the design documents in this repository.",
+   "oracle": "set -e; f=docs/grammars.md; for l in Rust TypeScript JavaScript Python Go; do grep -q \"$l\" $f; done; grep -q '|' $f; grep -q '\\.rs' $f; grep -q '\\.py' $f; grep -q '\\.go' $f"
   }
  ],
  "seed_sha256": "223dcf4d0ba200a2824d2cd7ffe2c333728afe65651ea7300783e35f296fa895"

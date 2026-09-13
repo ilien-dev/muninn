@@ -101,14 +101,14 @@ fn run_ok(cmd: &mut Command) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-fn seed_store(muninn: &Path, dir: &Path, seeds: &[PathBuf]) -> Result<i64> {
-    run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
-        "--cwd",
-        dir.to_str().unwrap(),
-        "init",
-        "--keep-native",
-        "--no-boot-block",
-    ]))?;
+/// `boot`: write the ≤1000-token boot block into the cell's CLAUDE.md — every arm that
+/// has Muninn pays for it (plan, Phase 0 §10-bis); the `off` arm has no Muninn.
+fn seed_store(muninn: &Path, dir: &Path, seeds: &[PathBuf], boot: bool) -> Result<i64> {
+    let mut args = vec!["--cwd", dir.to_str().unwrap(), "init", "--keep-native"];
+    if !boot {
+        args.push("--no-boot-block");
+    }
+    run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args(&args))?;
     for s in seeds {
         run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
             "--cwd",
@@ -246,7 +246,7 @@ fn run_cell(
             dir.to_str().unwrap(),
             &cfg.base_ref,
         ]))?;
-        cell.stored_episodes = seed_store(muninn, &dir, seeds)?;
+        cell.stored_episodes = seed_store(muninn, &dir, seeds, arm != "off")?;
         let settings = dir.join(".muninn/claude-settings.json");
         std::fs::write(
             &settings,
@@ -280,6 +280,11 @@ fn run_cell(
         };
         let out = child.wait_with_output()?;
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        // the model's own account of the cell, for audit (what it read, what it claimed)
+        let logs = work.parent().unwrap_or(work).join("logs");
+        let _ = std::fs::create_dir_all(&logs);
+        let _ = std::fs::write(logs.join(format!("r{run}-{}-{arm}.json", task.id)), &stdout);
+        let _ = std::fs::write(logs.join(format!("r{run}-{}-{arm}.stderr", task.id)), &out.stderr);
         match status {
             None => {
                 cell.error = Some("timeout".into());
@@ -330,10 +335,14 @@ fn run_cell(
                 }
                 c.wait()
             });
-        // keep the diff for audit before the worktree goes away
+        // keep the diff for audit before the worktree goes away (new files included)
+        let _ = Command::new("git")
+            .current_dir(&dir)
+            .args(["add", "-A", "--", ".", ":!.muninn", ":!CLAUDE.md", ":!.claude", ":!.gitignore"])
+            .output();
         if let Ok(d) = Command::new("git")
             .current_dir(&dir)
-            .args(["diff"])
+            .args(["diff", "--cached", "--no-color"])
             .output()
         {
             let diffs = work.parent().unwrap_or(work).join("diffs");
@@ -746,7 +755,7 @@ pub fn run(
         std::fs::create_dir_all(cdir.join(".git"))?;
         let ct = transcripts(&cfg.control_transcripts);
         anyhow::ensure!(!ct.is_empty(), "control arm needs control_transcripts");
-        let n = seed_store(muninn, &cdir, &ct)?;
+        let n = seed_store(muninn, &cdir, &ct, false)?;
         println!(
             "control store: {n} episodes from {} transcript(s)",
             ct.len()
