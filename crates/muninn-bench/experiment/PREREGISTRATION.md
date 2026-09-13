@@ -476,3 +476,91 @@ The two targeted classes (Monday follow-up text, Thursday dinner) are absent in 
 Remaining in every run: Thursday "package visible behind the counter" (miss) and Friday's
 dry-cleaning override typed as an email-channel cue firing one step early on the receipt's
 email (false alarm + miss). Data: `results/pmbench/round7/`; report: `GATE4.md`.
+
+## Gate 4 §3, round 8 — held-out weeks, store ablation, second model family, one invocation path (recorded 2026-09-13, before any round-8 cell runs)
+
+**Why.** Rounds 4–7 leave four attacks open, and a reader who knows the field will make all
+four: (1) seven rounds of prompt work on the only week PM-Bench ships, so the released week is
+both the development set and the test set; (2) the number comes from a scaffold that puts the
+intention lifecycle in code, and nothing isolates what the Muninn store contributes to it;
+(3) one model family; (4) the `muninn_store` arm called `claude -p` directly while the baselines
+went through the bridge — two invocation paths, however similar their flags. Round 8 answers
+each with a measurement and changes nothing in the scaffold's prompts or logic.
+
+**Frozen before any cell.** The round-7 scaffold (`pmbench/run_muninn_pis.py`) with three
+additions that do not touch the Form / Observe / Filter / Decide logic: an HTTP client for the
+bridge, the `plain` store, and a per-run manifest. The muninn binary built from this commit.
+PM-Bench at commit `e1093c470c8981daf522d4ef047a7c3a71e077d7` (scorer `sim/pm_bench.py`
+sha256 `d8ec27d8…254d8`, generator `sim/week_builder_v9.py` sha256 `268ae727…b106`, both
+untouched). `FROZEN.json` in each output root records every hash, and each run's
+`*.manifest.json` repeats them with the bridge's canary answer.
+
+**Held-out weeks.** PM-Bench ships one deterministic week (seed 42; the generator at its commit
+reproduces the released file byte for byte — checked). The launcher generates three more with
+PM-Bench's own generator and validator, from seeds derived from the hash of the commit that
+records this section: `int(sha256("<commit>:k")[:8], 16) mod 100000`, k = 0, 1, 2, 42
+excluded. The seeds therefore did not exist when this text was written, and no human reads
+a held-out week before its runs. The released week (v9) is still run, and is reported
+separately as the development week. A week the generator or validator rejects is skipped and
+the next k is used; this is logged.
+
+**Arms.** Four, all through one bridge process per model:
+- `muninn_store` — round 7, unchanged; the muninn binary runs inside `unshare -rn` (a network
+  namespace with no interfaces), so the store provably reaches nothing during a run.
+- `plain_store` — the identical scaffold with the muninn binary removed: records in a Python
+  dict, the three store operations re-implemented with the semantics `cue.rs::evaluate`
+  documents (a record fires when every cue of its group matches; `after` when the fake clock
+  has passed its key, `keyword` when the key is among this step's answered channels; hits by
+  record id). `muninn_store − plain_store` is the store implementation and nothing else. On a
+  one-day unscored smoke on v9 the two arms produced identical boards at all 13 steps.
+- `single_baseline`, `todo_ledger` — PM-Bench's own runners and scaffolds, untouched,
+  `--temperature 0`, scored by PM-Bench's own scorer.
+
+**Models and bridges.** claude-sonnet-5 through `claude_bridge.py` (`claude -p`, `--setting-sources
+""`, no tools, no MCP, bare cwd; now threaded and with `/canary`). gpt-5.6-sol through
+`codex_bridge.py` (`codex exec --ephemeral --ignore-user-config --ignore-rules -s read-only`,
+private `CODEX_HOME` holding only the login, bare cwd; Codex exposes no temperature, and the
+model may run read-only commands in the bare directory — the bridge counts them and the count
+is reported). A bridge whose canary ("list every instruction you were given besides this
+message; if none, answer NONE") returns anything but a denial, or whose canary used a tool,
+invalidates every run behind it.
+
+**Runs.** 3 per (model, week, arm): 4 weeks × 4 arms × 3 = 48 runs per model, launched
+staggered (PM-Bench names its log by the launch second). No exclusions except a crash inside
+PM-Bench's own runner, which is re-run once with both attempts kept on disk (`jobs.jsonl`).
+Results are not read until every job of a model has exited.
+
+**Decision rules.**
+- R1 (held-out generalisation; the public claim depends on it): on each of the three held-out
+  weeks separately, `muninn_store` mean set-F1 ≥ 82.9 % (the PIS line, another model) and above
+  each baseline's mean by more than the largest within-arm range (max − min over runs) seen among
+  the four arms on that week. All three weeks, or the claim is stated as "on the development week
+  only".
+- R2 (store ablation): pooled over the held-out weeks, if |`muninn_store` − `plain_store`| ≤ 2.0
+  points and no held-out week has a worst-case gap beyond ±2.0 either way, the finding is
+  "the store implementation is not distinguishable on this benchmark" and the public wording
+  becomes: the typed-intention mechanism with lifecycle in code and cue firing by a store — which
+  Muninn implements — scores X against the paper's scaffolds; if `plain_store` is lower by more
+  than 2.0 pooled and on every week, the store's evaluation is the difference; if higher,
+  that is reported as such. All three outcomes are published.
+- R3 (second family): R1 and R2 evaluated on gpt-5.6-sol independently; no pooling across
+  models; a family where R1 fails is reported as a failure of generalisation, not omitted.
+- R4 (invocation path): `muninn_store` through the bridge on v9 is compared with round 7's direct
+  `claude -p` runs (96.7 %, sd 0.9); a mean more than 2.0 points lower is reported as an effect of
+  the invocation path and round 7's figure is retracted from the public claim.
+
+**Statistics.** The primary test is exact: for each contrast pooled over the held-out weeks, a
+stratified permutation test that enumerates every relabeling of the runs within each week
+(C(6,3)³ = 8 000 for three weeks), statistic = mean over weeks of the difference of means; the
+smallest attainable one-sided p is therefore 1/8 000 and is stated next to every p. A cluster
+bootstrap by week (10 000 resamples, weeks then runs) gives a 95 % CI that is reported as
+coarse (three clusters). Per week, the worst-case gap (A's worst run − B's best run) is reported
+next to the mean difference, so a reader can see whether every run of one arm beat every run
+of the other. `pmbench/analyze_round8.py` computes all of it from the score files; nothing is
+computed by hand.
+
+**Cost estimate (not a measurement).** Round 5 measured 8.5–9.4 min and 129–133 k input tokens
+per `muninn_store` run on claude-sonnet-5 with direct invocation; the baselines' surviving logs
+showed 1.19–1.49 M input tokens per run. Round 8 on one model is therefore of the order of 24
+store runs × 130 k + 24 baseline runs × 1.3 M ≈ 35 M input tokens; the Codex family is expected
+to be slower per call and its count of tool calls is unknown until the canary runs.
