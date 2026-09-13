@@ -49,6 +49,10 @@ Everything below carries a measurement; the reports live under
   measured worse (57.0 % vs 60.6 %) and was not kept. Dogfooding starts in this
   repository (plugin from the local marketplace; the manifest no longer lists the
   standard hook/skill/command directories, which Claude Code loads by itself).
+- **Boot summary by hook.** `muninn init` no longer writes into CLAUDE.md / AGENTS.md;
+  the SessionStart hook injects a ~425-token summary (capped at 500, CI-checked) and
+  the skill keeps the long form. Measured against the file vehicle on 84 paired cells:
+  +0.119 [+0.000, +0.262], not inferior. `muninn init --boot-file` restores the file.
 - **Not done, on purpose.** See `docs/scope.md`. Codex replication of the gates is
   parked (hooks did not fire under `codex exec` 0.154.0). PM-Bench is measured in
   `GATE4.md` (below the paper's 65.1 % line on claude-sonnet-5 in round 1).
