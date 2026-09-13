@@ -42,7 +42,7 @@ claude plugin add ./plugin        # or add the marketplace once published
 muninn init             # creates .muninn/, disables native memory for this project,
                         # inserts the boot block into CLAUDE.md and AGENTS.md
 muninn init --codex     # also writes .codex/hooks.json for Codex
-muninn status           # MUNINN 9/9 GREEN
+muninn status           # MUNINN 10/10 GREEN
 ```
 
 `muninn init --keep-native` leaves the harness's own memory on.

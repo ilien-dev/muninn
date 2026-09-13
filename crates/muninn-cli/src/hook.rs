@@ -114,6 +114,9 @@ fn session_start(
         Ok(db) => health::run(paths, Some(db), None, false),
         Err(e) => health::run(paths, None, Some(e), false),
     };
+    // The write path (resume, git capture, projection, sidecar) runs detached; this
+    // hook stays read-only and returns at once.
+    crate::maintain::spawn_detached(paths);
     Ok(Some(additional_context("SessionStart", &report.summary())))
 }
 
@@ -216,11 +219,16 @@ fn write_path(
     if let Some(t) = _input.transcript_path.as_deref() {
         let p = std::path::Path::new(t);
         if p.is_file() {
-            match muninn_capture::ingest::ingest_transcript(&db, p, &_input.session_id) {
+            match muninn_capture::ingest::ingest_transcript_with(
+                &db,
+                p,
+                &_input.session_id,
+                Some(paths),
+            ) {
                 Ok(st) => {
                     if st.inserted > 0 {
                         output::err(&format!(
-                            "muninn: ingested {} episode(s) from {} turn(s)",
+                            "muninn: ingested {} record(s) from {} turn(s)",
                             st.inserted, st.turns
                         ));
                     }
@@ -228,6 +236,9 @@ fn write_path(
                 Err(e) => output::err(&format!("muninn: ingest: {e}")),
             }
         }
+    }
+    if let Err(e) = crate::maintain::capture_git(paths, &db) {
+        output::err(&format!("muninn: git capture: {e}"));
     }
     // Integrity is verified here, off the read path, at most once an hour.
     db.record_quick_check(3_600_000)?;

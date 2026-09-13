@@ -93,7 +93,7 @@ pub fn run(
     open_error: Option<&Error>,
     live: bool,
 ) -> Report {
-    let mut checks = Vec::with_capacity(9);
+    let mut checks = Vec::with_capacity(10);
     let now = now_ms();
 
     // 1. ingest watermark
@@ -562,6 +562,36 @@ pub fn run(
         }
     }
 
+    // 10. embedding sidecar: fresh, or cold — never RED by itself (plan, Phase 3 §8)
+    checks.push(match db {
+        Some(db) => {
+            let has_table = db
+                .count("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='record_vec'")
+                .unwrap_or(0)
+                > 0;
+            let model = db.meta_get("embed_model").ok().flatten();
+            if !has_table || model.is_none() {
+                check(10, "embed", Status::Cold, "sidecar not enabled (no model)", None)
+            } else {
+                let active = db.count("SELECT count(*) FROM record WHERE invalid=0").unwrap_or(0);
+                let vecs = db
+                    .count("SELECT count(*) FROM record_vec v JOIN record r ON r.id=v.record_id WHERE r.invalid=0")
+                    .unwrap_or(0);
+                if vecs >= active {
+                    check(10, "embed", Status::Green, format!("{vecs} vector(s), up to date"), None)
+                } else {
+                    check(
+                        10,
+                        "embed",
+                        Status::Cold,
+                        format!("{} record(s) not embedded yet", active - vecs),
+                        Some("run `muninn embed` (the next Stop/SessionEnd does it too)"),
+                    )
+                }
+            }
+        }
+        None => check(10, "embed", Status::Cold, "no database", None),
+    });
     Report { checks }
 }
 

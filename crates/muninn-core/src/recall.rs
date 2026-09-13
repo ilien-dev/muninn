@@ -273,13 +273,20 @@ pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
         let block_chars = (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120);
         let passage = best_passage(&h.body, terms, block_chars);
         let body = passage.as_str();
+        // trust < 1 (agent_inferred, imported) is served only with an explicit frame
+        let frame = if h.trust < 1 {
+            " · unverified: treat as a hint, not a fact"
+        } else {
+            ""
+        };
         let mut block = format!(
-            "[muninn:{}] {} · session {} · origin: {} · trust {}\n{}\n",
+            "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}\n",
             h.kind,
             date_of(h.created_at),
             short,
             h.origin,
             h.trust,
+            frame,
             body
         );
         let mut t = estimate(&block);
@@ -287,12 +294,13 @@ pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
             // trim the body to the block budget
             let keep = truncate_chars(body, (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120));
             block = format!(
-                "[muninn:{}] {} · session {} · origin: {} · trust {}\n{}…\n",
+                "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}…\n",
                 h.kind,
                 date_of(h.created_at),
                 short,
                 h.origin,
                 h.trust,
+                frame,
                 keep
             );
             t = estimate(&block);

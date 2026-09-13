@@ -1,10 +1,13 @@
-//! Write path: transcript → episodes → records, with byte-offset watermarks so a
-//! hook that expires loses time, never data.
+//! Write path (ENGINE.md §3): transcript → literal episodes and typed candidates →
+//! redact → dedup → supersede → insert → caps → project Markdown → index. Byte-offset
+//! watermarks make it incremental: a hook that expires loses time, never data.
 
 use crate::episode::from_turn_all;
+use crate::extract::{extract, trust_of, Candidate};
 use crate::parse_any;
-use muninn_core::caps::MAX_ACTIVE_RECORDS;
+use muninn_core::caps::{MAX_ACTIVE_RECORDS, MAX_INVARIANTS};
 use muninn_core::db::now_ms;
+use muninn_core::paths::ProjectPaths;
 use muninn_core::{Db, Result};
 use serde::Serialize;
 use std::path::Path;
@@ -17,6 +20,16 @@ pub struct IngestStats {
     pub from_offset: u64,
     pub to_offset: u64,
     pub archived: usize,
+    pub episodes: usize,
+    pub decisions: usize,
+    pub deadends: usize,
+    pub corrections: usize,
+    pub invariants: usize,
+    pub superseded: usize,
+    pub projected: usize,
+    /// Ids inserted by this call, for projection and the sidecar.
+    #[serde(skip)]
+    pub new_ids: Vec<i64>,
 }
 
 fn watermark_key(transcript: &Path) -> String {
@@ -26,10 +39,44 @@ fn watermark_key(transcript: &Path) -> String {
     )
 }
 
+const INSERT: &str = "INSERT OR IGNORE INTO record(kind, subject, relation, object, body, origin, trust, anchor_path, session_id, transcript_ref, dedup_hash, created_at) \
+     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)";
+
+fn dedup(kind: &str, subject: &str, relation: &str, object: &str, body: &str) -> String {
+    blake3::hash(format!("{kind}|{subject}|{relation}|{object}|{body}").as_bytes())
+        .to_hex()
+        .to_string()
+}
+
+/// Supersession (ENGINE.md §5.1): an active record with the same (subject, relation)
+/// and a different object is retired and points at its replacement. Kinds whose
+/// subject is unique per record (episodes, corrections, commits) never match.
+fn supersede(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<usize> {
+    if c.kind == "episode" {
+        return Ok(0);
+    }
+    let n = tx.execute(
+        "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 \
+         WHERE invalid=0 AND subject=?2 AND relation=?3 AND object<>?4 AND id<>?1 AND kind=?5",
+        rusqlite::params![new_id, c.subject, c.relation, c.object, c.kind],
+    )?;
+    Ok(n)
+}
+
+/// Ingest one transcript from its watermark; `paths` enables the Markdown projection.
 pub fn ingest_transcript(
     db: &Db,
     transcript: &Path,
     fallback_session: &str,
+) -> Result<IngestStats> {
+    ingest_transcript_with(db, transcript, fallback_session, None)
+}
+
+pub fn ingest_transcript_with(
+    db: &Db,
+    transcript: &Path,
+    fallback_session: &str,
+    paths: Option<&ProjectPaths>,
 ) -> Result<IngestStats> {
     let key = watermark_key(transcript);
     let from: u64 = db.meta_get(&key)?.and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -48,20 +95,14 @@ pub fn ingest_transcript(
     let now = now_ms();
     let tx = db.conn.unchecked_transaction()?;
     {
-        let mut ins = tx.prepare(
-            "INSERT OR IGNORE INTO record(kind, subject, relation, object, body, origin, trust, anchor_path, session_id, transcript_ref, dedup_hash, created_at) \
-             VALUES('episode', ?1, 'happened', ?2, ?3, 'tool_observed', 1, ?4, ?5, ?6, ?7, ?8)",
-        )?;
+        let mut ins = tx.prepare(INSERT)?;
+        // 1. literal episodes, one or more per turn
         for (t, ep) in session
             .turns
             .iter()
             .flat_map(|t| from_turn_all(&sid, t).into_iter().map(move |e| (t, e)))
         {
-            let hash = blake3::hash(
-                format!("episode|{}|happened|{}|{}", ep.subject, ep.object, ep.body).as_bytes(),
-            )
-            .to_hex()
-            .to_string();
+            let hash = dedup("episode", &ep.subject, "happened", &ep.object, &ep.body);
             let created = t
                 .timestamp
                 .as_deref()
@@ -69,9 +110,13 @@ pub fn ingest_transcript(
                 .unwrap_or(now);
             let anchor = ep.files.first().cloned();
             let n = ins.execute(rusqlite::params![
+                "episode",
                 ep.subject,
+                "happened",
                 ep.object,
                 ep.body,
+                "tool_observed",
+                1i64,
                 anchor,
                 sid,
                 format!("{}:{}", transcript.display(), t.end_offset),
@@ -80,18 +125,76 @@ pub fn ingest_transcript(
             ])?;
             if n == 1 {
                 stats.inserted += 1;
+                stats.episodes += 1;
+                stats.new_ids.push(tx.last_insert_rowid());
+            } else {
+                stats.duplicates += 1;
+            }
+        }
+        // 2. typed candidates: corrections, invariants, commit-linked decisions, dead ends
+        for c in extract(&session, &sid) {
+            let hash = dedup(c.kind, &c.subject, &c.relation, &c.object, &c.body);
+            let created = session
+                .turns
+                .get(c.turn_index)
+                .and_then(|t| t.timestamp.as_deref())
+                .and_then(parse_rfc3339_ms)
+                .unwrap_or(now);
+            let n = ins.execute(rusqlite::params![
+                c.kind,
+                c.subject,
+                c.relation,
+                c.object,
+                c.body,
+                c.origin,
+                trust_of(c.origin),
+                c.anchor_path,
+                sid,
+                format!("{}:{}", transcript.display(), c.end_offset),
+                hash,
+                created
+            ])?;
+            if n == 1 {
+                let id = tx.last_insert_rowid();
+                stats.inserted += 1;
+                stats.new_ids.push(id);
+                match c.kind {
+                    "decision" => stats.decisions += 1,
+                    "deadend" => stats.deadends += 1,
+                    "correction" => stats.corrections += 1,
+                    "invariant" => stats.invariants += 1,
+                    _ => {}
+                }
+                stats.superseded += supersede(&tx, id, &c)?;
             } else {
                 stats.duplicates += 1;
             }
         }
     }
-    // cap: archive the oldest episodes past the limit (retained, not served)
+    // caps [P5]: invariants beyond 60 → the oldest without a rule referencing it
+    let inv: i64 = tx.query_row(
+        "SELECT count(*) FROM record WHERE invalid=0 AND kind='invariant'",
+        [],
+        |r| r.get(0),
+    )?;
+    if inv > MAX_INVARIANTS {
+        let over = inv - MAX_INVARIANTS;
+        let n = tx.execute(
+            "UPDATE record SET invalid=1, invalid_reason='cap' WHERE id IN (\
+               SELECT id FROM record WHERE invalid=0 AND kind='invariant' \
+               AND id NOT IN (SELECT rationale_ref FROM rule WHERE rationale_ref IS NOT NULL) \
+               ORDER BY created_at ASC LIMIT ?1)",
+            [over],
+        )?;
+        stats.archived += n;
+    }
+    // caps: active records beyond 20 000 → the oldest episodes (retained, not served)
     let active: i64 = tx.query_row("SELECT count(*) FROM record WHERE invalid=0", [], |r| {
         r.get(0)
     })?;
     if active > MAX_ACTIVE_RECORDS {
         let over = active - MAX_ACTIVE_RECORDS;
-        stats.archived = tx.execute(
+        stats.archived += tx.execute(
             "UPDATE record SET invalid=1, invalid_reason='cap' WHERE id IN (SELECT id FROM record WHERE invalid=0 AND kind='episode' ORDER BY created_at ASC LIMIT ?1)",
             [over],
         )?;
@@ -100,6 +203,12 @@ pub fn ingest_transcript(
     db.meta_set(&key, &session.end_offset.to_string())?;
     db.meta_set("ingest_watermark_ms", &now.to_string())?;
     db.meta_set("records_changed_since_render", "1")?;
+    db.meta_set("last_transcript_path", &transcript.to_string_lossy())?;
+    if let Some(p) = paths {
+        if !stats.new_ids.is_empty() || stats.superseded > 0 || stats.archived > 0 {
+            stats.projected = muninn_core::project::project(p, db, &stats.new_ids)?;
+        }
+    }
     Ok(stats)
 }
 
@@ -127,11 +236,105 @@ fn parse_rfc3339_ms(s: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use muninn_core::db::Mode;
+
     #[test]
     fn rfc3339_roundtrip() {
         assert_eq!(
-            super::parse_rfc3339_ms("2026-09-12T14:03:11.084Z"),
+            parse_rfc3339_ms("2026-09-12T14:03:11.084Z"),
             Some(1_789_221_791_084)
+        );
+    }
+
+    /// A tiny Claude-shaped transcript: a correction, an invariant, a commit and a
+    /// repeated failure; then the same invariant restated with a different object.
+    fn transcript(dir: &Path, name: &str, lines: &[serde_json::Value]) -> std::path::PathBuf {
+        let p = dir.join(name);
+        let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+        std::fs::write(&p, text).unwrap();
+        p
+    }
+
+    fn user(s: &str) -> serde_json::Value {
+        serde_json::json!({"type":"user","sessionId":"s1","timestamp":"2026-09-12T14:03:11.084Z","message":{"role":"user","content":s}})
+    }
+    fn tool_use(id: &str, cmd: &str) -> serde_json::Value {
+        serde_json::json!({"type":"assistant","sessionId":"s1","message":{"role":"assistant","content":[{"type":"tool_use","id":id,"name":"Bash","input":{"command":cmd}}]}})
+    }
+    fn tool_result(id: &str, out: &str, code: i64) -> serde_json::Value {
+        serde_json::json!({"type":"user","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":id,"content":out,"is_error":code!=0}]},"toolUseResult":{"exitCode":code}})
+    }
+
+    #[test]
+    fn typed_kinds_supersession_and_projection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let t1 = transcript(
+            tmp.path(),
+            "a.jsonl",
+            &[
+                user("No, así no. Nunca uses pkill en bash."),
+                tool_use("t1", "cargo test -p x"),
+                tool_result("t1", "error[E0308]", 101),
+                tool_use("t2", "cargo test -p x"),
+                tool_result("t2", "error[E0308]", 101),
+                user("commit"),
+                tool_use("t3", "git commit -m 'fix'"),
+                tool_result("t3", "[master 1a2b3c4] fix\n 1 file changed", 0),
+            ],
+        );
+        let st = ingest_transcript_with(&db, &t1, "s1", Some(&paths)).unwrap();
+        assert_eq!(st.corrections, 1, "{st:?}");
+        assert_eq!(st.invariants, 1);
+        assert_eq!(st.decisions, 1);
+        assert_eq!(st.deadends, 1);
+        assert!(st.projected >= st.inserted);
+        assert!(
+            paths
+                .records_dir()
+                .join("invariant")
+                .read_dir()
+                .unwrap()
+                .count()
+                == 1
+        );
+        assert!(paths.index_md().exists());
+        // the same invariant key with a different object supersedes the first
+        let t2 = transcript(tmp.path(), "b.jsonl", &[user("Nunca uses pkill en Bash!")]);
+        let st2 = ingest_transcript_with(&db, &t2, "s2", Some(&paths)).unwrap();
+        assert_eq!(st2.invariants, 1);
+        assert_eq!(st2.superseded, 1);
+        let active: i64 = db
+            .count("SELECT count(*) FROM record WHERE invalid=0 AND kind='invariant'")
+            .unwrap();
+        assert_eq!(active, 1);
+        let old: (i64, String) = db
+            .conn
+            .query_row("SELECT invalidated_by, invalid_reason FROM record WHERE invalid=1 AND kind='invariant'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(old.1, "superseded");
+        assert!(old.0 > 0);
+        // watermark: re-ingesting the same file inserts nothing
+        let st3 = ingest_transcript_with(&db, &t1, "s1", Some(&paths)).unwrap();
+        assert_eq!(st3.inserted, 0);
+        // export/import roundtrip
+        let out = tmp.path().join("x.jsonl");
+        let n = muninn_core::project::export_jsonl(&db, &out, true).unwrap();
+        assert!(n >= 5);
+        let db2p = tmp.path().join("other.db");
+        let db2 = Db::open(&db2p, Mode::ReadWrite).unwrap();
+        let ist = muninn_core::project::import(&db2, &out).unwrap();
+        assert_eq!(ist.inserted, n);
+        let ist2 = muninn_core::project::import(&db2, &paths.records_dir()).unwrap();
+        assert_eq!(
+            ist2.inserted, 0,
+            "markdown re-import of the same records is all duplicates: {}",
+            ist2.duplicates
         );
     }
 }
