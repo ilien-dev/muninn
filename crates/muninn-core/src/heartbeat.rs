@@ -163,22 +163,13 @@ pub fn read_tail(paths: &ProjectPaths, max_bytes: u64) -> Vec<Line> {
         .collect()
 }
 
-/// Fold the log into the `heartbeat` table (write path only). The file is renamed
-/// first so concurrent appenders start a fresh file and nothing is lost.
+/// Fold the log into the `heartbeat` table (write path only), from the watermark:
+/// the live file is never renamed under concurrent appenders (see `logfold`).
 pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
     let path = paths.heartbeat_log();
-    if !path.exists() {
-        return Ok(0);
-    }
-    let folding = path.with_extension("jsonl.folding");
-    // If a previous fold died half-way, finish it first.
-    if !folding.exists() {
-        std::fs::rename(&path, &folding).map_err(|e| Error::io(&path, e))?;
-    }
-    let text = crate::sanitize::read_regular_bounded(&folding, 64 << 20)
-        .map_err(|e| Error::io(&folding, e))?;
-    let mut n = 0usize;
     let tx = db.write_tx()?;
+    let taken = crate::logfold::take(&tx, &path)?;
+    let mut n = 0usize;
     {
         let mut ins = tx.prepare(
             "INSERT INTO heartbeat(hook, session_id, started_at, ok, error, ms) VALUES (?1,?2,?3,?4,?5,?6)",
@@ -186,7 +177,7 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
         let mut upd = tx.prepare(
             "UPDATE heartbeat SET ok=?1, error=?2, ms=?3 WHERE hook=?4 AND session_id=?5 AND started_at=?6 AND ok IS NULL",
         )?;
-        for l in text.lines() {
+        for l in &taken.lines {
             match serde_json::from_str::<Line>(l) {
                 Ok(Line::Start {
                     hook, session, at, ..
@@ -222,7 +213,7 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
         }
     }
     tx.commit()?;
-    std::fs::remove_file(&folding).map_err(|e| Error::io(&folding, e))?;
+    taken.finish();
     Ok(n)
 }
 
@@ -247,7 +238,7 @@ mod tests {
             .count("SELECT count(*) FROM heartbeat WHERE ok=1")
             .unwrap();
         assert_eq!(rows, 1);
-        assert!(!paths.heartbeat_log().exists());
+        assert!(crate::logfold::pending(&db.conn, &paths.heartbeat_log()).is_empty());
     }
 
     #[test]
