@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PM-Bench scaffold, rounds 4-6: Muninn as the prospective intention store.
+PM-Bench scaffold, rounds 4-7: Muninn as the prospective intention store.
 
 The model does not own a ledger. Intentions are typed records in a Muninn store; lifecycle
 (add / reschedule / override / cancel / done, daily re-arm, day-scoped carry, same-day expiry)
@@ -413,9 +413,6 @@ Rules:
   as such ("instead of", "moves to", "changes", "no longer", "does not need to happen").
 - The "cue" is the observable event in a few plain words ("a follow-up text comes in", "the
   kiosk blinks"), never its purpose or content ("...with corrected instructions").
-- A message that reaches the person directly (a text, a note, an email that "comes in" or
-  "arrives") is an event cue. Use kind channel only when the text says the cue is seen by
-  checking a portal, dashboard, tracker, balance, status page, hold list or waitlist.
 - Add only commitments that are NEW. A sentence that merely recalls an existing intention
   ("you still have to send the email today", "you have a feeling the portal may open a slot")
   is not new: emit nothing for it.
@@ -444,11 +441,6 @@ Rules:
   whose cue was merely mentioned or anticipated.
 - The cue must be explicitly present. An activity merely associated with it (rinsing a dish
   is not dinner; thinking about a balance is not a balance alert) is not the cue.
-- A notice that changes the time, the cue or the status of some intention is not evidence
-  that any cue occurred.
-- Match the event, not its detail: "a follow-up text comes in with the final location"
-  satisfies "a follow-up text arrives". A channel reply can satisfy an event-kind intention
-  when it shows the event.
 - Board intentions that share the same cue are due together.
 - Never return a handle that is not on the menu, and never return a menu item that matches no
   due board intention (the menu contains distractors).
@@ -707,8 +699,9 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
                     clock_text = query("clock")
                     clock_minutes = parse_clock(clock_text)
                 answered: list[str] = []
-                if True:  # round 6: observe every channel at every step (an event-kind
-                    # intention may be satisfied by a channel reply). Round 5: a reply is
+                if store.watched_channels(day_name):
+                    # a pending intention watches some channel: observe every channel, so a
+                    # channel mistyped at Form time still reaches the judge. Round 5: a reply is
                     # new information only if it is not empty and differs from the channel's
                     # previous reply today (snapshot channels answer every query with their state)
                     for ch in channels_no_clock:
