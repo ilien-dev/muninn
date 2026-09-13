@@ -1,0 +1,31 @@
+{
+  "description": "Muninn memory engine. Exec form only (args array): no shell, no interpolation, pinned binary. Read hooks open the store read-only.",
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume|compact|clear",
+        "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "SessionStart"], "timeout": 5 } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "UserPromptSubmit"], "timeout": 2 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Bash|Read|Edit|Write|MultiEdit|Grep|Glob",
+        "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "PostToolUse"], "timeout": 2 } ] }
+    ],
+    "PreCompact": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "PreCompact"], "timeout": 5 } ] }
+    ],
+    "PostCompact": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "PostCompact"], "timeout": 5 } ] }
+    ],
+    "InstructionsLoaded": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "InstructionsLoaded"], "timeout": 5 } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "Stop"], "timeout": 30, "async": true } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "SessionEnd"], "timeout": 1 } ] }
+    ]
+  }
+}

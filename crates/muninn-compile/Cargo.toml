@@ -1,0 +1,10 @@
+[package]
+name = "muninn-compile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+muninn-core = { path = "../muninn-core" }
+serde.workspace = true
+serde_json.workspace = true

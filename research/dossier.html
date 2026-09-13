@@ -1,0 +1,1659 @@
+<title>Muninn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  --ground:#E8ECEA; --surface:#F6F8F7; --surface-2:#DFE5E3;
+  --ink:#0E1618; --ink-2:#4E5F61; --ink-3:#78888A;
+  --rule:#C7D2CF; --rule-soft:#D9E1DF;
+  --accent:#00806A; --accent-2:#8A2A93;
+  --bad:#A93636; --warn:#8A6410;
+  --glow:rgba(0,128,106,.14);
+  --shadow:0 1px 2px rgba(14,22,24,.05);
+  --sans:'Archivo',ui-sans-serif,system-ui,sans-serif;
+  --serif:'Source Serif 4',Georgia,'Times New Roman',serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0A1113; --surface:#111A1C; --surface-2:#182426;
+    --ink:#DFE7E5; --ink-2:#8DA1A0; --ink-3:#65787A;
+    --rule:#223033; --rule-soft:#1A2528;
+    --accent:#10AC8B; --accent-2:#BE5FC9;
+    --bad:#E07E72; --warn:#C89A3C;
+    --glow:rgba(16,172,139,.18);
+    --shadow:0 1px 2px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0A1113; --surface:#111A1C; --surface-2:#182426;
+  --ink:#DFE7E5; --ink-2:#8DA1A0; --ink-3:#65787A;
+  --rule:#223033; --rule-soft:#1A2528;
+  --accent:#10AC8B; --accent-2:#BE5FC9;
+  --bad:#E07E72; --warn:#C89A3C;
+  --glow:rgba(16,172,139,.18);
+  --shadow:0 1px 2px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:var(--serif); font-size:17px; line-height:1.62;
+  margin:0; -webkit-font-smoothing:antialiased;
+}
+.page{
+  max-width:1240px; margin:0 auto; padding-inline:20px; padding-block:0 96px;
+  display:grid; grid-template-columns:1fr; gap:0;
+}
+@media (min-width:1080px){
+  .page{grid-template-columns:196px minmax(0,1fr); column-gap:56px}
+}
+
+/* ---------- rail ---------- */
+.rail{display:none}
+@media (min-width:1080px){
+  .rail{
+    display:block; position:sticky; top:0; align-self:start;
+    padding-block:40px 40px; max-height:100vh; overflow-y:auto;
+  }
+}
+.rail-mark{
+  font-family:var(--sans); font-weight:700; font-size:15px;
+  letter-spacing:-.01em; margin-bottom:4px;
+}
+.rail-sub{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--ink-3); margin-bottom:22px;
+}
+.rail nav{display:flex; flex-direction:column; gap:1px}
+.rail a{
+  font-family:var(--sans); font-size:13px; line-height:1.35;
+  color:var(--ink-2); text-decoration:none; padding:5px 0 5px 11px;
+  border-left:2px solid var(--rule-soft);
+}
+.rail a:hover{color:var(--accent); border-left-color:var(--accent)}
+.rail a .n{font-family:var(--mono); font-size:10.5px; color:var(--ink-3); margin-right:7px}
+
+/* ---------- masthead ---------- */
+main{min-width:0; padding-block:40px 0}
+.masthead{padding-bottom:26px; margin-bottom:34px; position:relative}
+.masthead::after{
+  content:""; position:absolute; left:0; right:0; bottom:0; height:3px;
+  background:linear-gradient(90deg,var(--accent) 0%,var(--accent-2) 58%,transparent 100%);
+  opacity:.85;
+}
+h1{
+  font-family:var(--sans); font-weight:700; font-size:clamp(44px,8vw,74px);
+  line-height:.94; letter-spacing:-.035em; margin:0 0 14px;
+  text-wrap:balance;
+}
+.deck{
+  font-size:clamp(18px,2.4vw,21px); line-height:1.5; color:var(--ink-2);
+  max-width:56ch; margin:0 0 20px;
+}
+.deck strong{color:var(--ink); font-weight:600}
+.byline{
+  font-family:var(--mono); font-size:11px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-3);
+  display:flex; flex-wrap:wrap; gap:8px 18px;
+}
+
+/* ---------- readout ---------- */
+.readout{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr));
+  gap:1px; background:var(--rule); border:1px solid var(--rule);
+  margin:0 0 44px;
+}
+.cell{background:var(--surface); padding:16px 16px 15px}
+.cell .k{
+  font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-3); margin-bottom:9px;
+}
+.cell .v{
+  font-family:var(--sans); font-weight:700; font-size:clamp(26px,4.2vw,33px);
+  line-height:1; letter-spacing:-.03em; font-variant-numeric:tabular-nums;
+}
+.cell .v.pos{color:var(--accent)}
+.cell .v.neg{color:var(--bad)}
+.cell .d{font-size:13.5px; line-height:1.4; color:var(--ink-2); margin-top:8px}
+
+/* ---------- sections ---------- */
+section{margin-bottom:60px; scroll-margin-top:20px}
+.eyebrow{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:10px;
+  display:flex; align-items:baseline; gap:10px;
+}
+.eyebrow .num{color:var(--ink-3)}
+h2{
+  font-family:var(--sans); font-weight:600; font-size:clamp(26px,3.6vw,33px);
+  line-height:1.12; letter-spacing:-.025em; margin:0 0 18px; text-wrap:balance;
+}
+h3{
+  font-family:var(--sans); font-weight:600; font-size:18px; line-height:1.25;
+  letter-spacing:-.012em; margin:34px 0 10px;
+}
+h4{
+  font-family:var(--mono); font-weight:600; font-size:11.5px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--ink-2); margin:26px 0 10px;
+}
+p{margin:0 0 15px; max-width:66ch}
+li{max-width:64ch}
+a{color:var(--accent)}
+strong{font-weight:600}
+code,.m{font-family:var(--mono); font-size:.88em; font-variant-numeric:tabular-nums}
+code{background:var(--surface-2); padding:1px 5px; border-radius:2px}
+.lede{font-size:19px; line-height:1.55; color:var(--ink-2); max-width:62ch}
+.lede strong{color:var(--ink)}
+
+/* evidence chip */
+.ev{
+  font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.05em;
+  color:var(--ink-3); border:1px solid var(--rule); padding:1px 4px;
+  border-radius:2px; white-space:nowrap; vertical-align:1px;
+}
+.ev-a{color:var(--accent); border-color:var(--accent)}
+
+/* callout */
+.pull{
+  border-left:3px solid var(--accent); padding:2px 0 2px 20px;
+  margin:26px 0; max-width:60ch;
+  font-size:19px; line-height:1.48; color:var(--ink);
+}
+.pull cite{display:block; font-family:var(--mono); font-size:11px; font-style:normal;
+  letter-spacing:.05em; color:var(--ink-3); margin-top:10px; text-transform:uppercase}
+
+.note{
+  background:var(--surface); border:1px solid var(--rule); padding:16px 18px;
+  margin:24px 0; max-width:66ch; font-size:15.5px; line-height:1.55;
+}
+.note .h{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--warn); margin-bottom:7px;
+}
+.note.crit .h{color:var(--bad)}
+.note.ok .h{color:var(--accent)}
+.note p:last-child{margin-bottom:0}
+
+/* tables */
+.tw{overflow-x:auto; margin:20px 0; border:1px solid var(--rule); background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-family:var(--sans); font-size:14px; min-width:520px}
+th{
+  text-align:left; font-family:var(--mono); font-size:10px; font-weight:500;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3);
+  padding:11px 14px; border-bottom:1px solid var(--rule); vertical-align:bottom;
+  background:var(--surface-2);
+}
+td{padding:11px 14px; border-bottom:1px solid var(--rule-soft); vertical-align:top; line-height:1.45}
+tbody tr:last-child td{border-bottom:none}
+td.n,th.n{text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap}
+td.strong{font-weight:600}
+.tag{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.07em; text-transform:uppercase;
+  padding:2px 6px; border-radius:2px; white-space:nowrap; display:inline-block;
+}
+.tag.fuerte{background:var(--glow); color:var(--accent)}
+.tag.debil{background:var(--surface-2); color:var(--ink-2)}
+.tag.na{background:var(--surface-2); color:var(--ink-3)}
+
+/* ---------- charts ---------- */
+figure{margin:28px 0; background:var(--surface); border:1px solid var(--rule); padding:20px}
+figcaption{
+  font-family:var(--sans); font-size:13.5px; line-height:1.45; color:var(--ink-2);
+  margin-top:16px; padding-top:13px; border-top:1px solid var(--rule-soft); max-width:70ch;
+}
+.ctitle{font-family:var(--sans); font-weight:600; font-size:15.5px; letter-spacing:-.01em; margin-bottom:3px}
+.csub{font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--ink-3); margin-bottom:18px}
+
+/* horizontal bars (HTML) */
+.hb{display:flex; flex-direction:column; gap:11px}
+.hb-row{display:grid; grid-template-columns:minmax(96px,164px) 1fr; gap:12px; align-items:center}
+@media (max-width:560px){.hb-row{grid-template-columns:1fr; gap:3px}}
+.hb-lab{font-family:var(--sans); font-size:12.5px; line-height:1.25; color:var(--ink-2)}
+.hb-track{position:relative; height:22px; display:flex; align-items:center}
+.hb-bar{
+  height:15px; border-radius:0 4px 4px 0; background:var(--ink-3);
+  min-width:2px; transition:filter .12s;
+}
+.hb-row[data-hi="1"] .hb-bar{background:var(--accent); box-shadow:0 0 0 1px var(--surface), 0 0 12px var(--glow)}
+.hb-row[data-hi="2"] .hb-bar{background:var(--accent-2)}
+.hb-row:hover .hb-bar,.hb-row:focus-within .hb-bar{filter:brightness(1.12)}
+.hb-val{
+  font-family:var(--mono); font-size:12px; font-weight:500; font-variant-numeric:tabular-nums;
+  margin-left:9px; white-space:nowrap; color:var(--ink);
+}
+.hb-row[data-hi="1"] .hb-val{color:var(--accent)}
+.hb-axis{
+  display:grid; grid-template-columns:minmax(96px,164px) 1fr; gap:12px;
+  margin-top:10px; padding-top:8px; border-top:1px solid var(--rule-soft);
+}
+@media (max-width:560px){.hb-axis{grid-template-columns:1fr}
+  .hb-axis .pad{display:none}}
+.hb-ticks{position:relative; height:14px}
+.hb-ticks span{
+  position:absolute; top:0; font-family:var(--mono); font-size:10px; color:var(--ink-3);
+  white-space:nowrap;
+}
+.hb-scalenote{grid-column:1/-1}
+
+/* grouped bars */
+.gb{display:flex; gap:6px; align-items:flex-end; height:170px; padding-bottom:0}
+.gb-cat{flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; height:100%; min-width:0}
+.gb-pair{display:flex; gap:6px; align-items:flex-end; flex:1; min-height:0; width:100%; justify-content:center}
+.gb-b{width:34px; border-radius:4px 4px 0 0; position:relative; min-height:3px}
+.gb-b.s1{background:var(--accent)}
+.gb-b.s2{background:var(--accent-2)}
+.gb-b span{
+  position:absolute; top:-19px; left:50%; transform:translateX(-50%);
+  font-family:var(--mono); font-size:11px; font-variant-numeric:tabular-nums; color:var(--ink);
+}
+.gb-lab{
+  font-family:var(--sans); font-size:12px; color:var(--ink-2); text-align:center;
+  border-top:1px solid var(--rule); padding-top:9px; width:100%; line-height:1.25;
+}
+.legend{display:flex; flex-wrap:wrap; gap:16px; margin-bottom:18px}
+.legend i{
+  width:10px; height:10px; border-radius:2px; display:inline-block; margin-right:7px;
+  vertical-align:0;
+}
+.legend span{font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--ink-2)}
+
+svg{display:block; max-width:100%; height:auto}
+.svgwrap{overflow-x:auto}
+
+/* pipeline */
+.pipe{display:flex; flex-direction:column; gap:0; margin:22px 0; border:1px solid var(--rule)}
+.pstep{
+  display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:center;
+  padding:13px 16px; border-bottom:1px solid var(--rule-soft); background:var(--surface);
+}
+.pstep:last-child{border-bottom:none}
+.pstep .dot{
+  width:9px; height:9px; border-radius:50%; background:var(--ink-3);
+}
+.pstep[data-hot="1"]{background:var(--surface)}
+.pstep[data-hot="1"] .dot{background:var(--accent); box-shadow:0 0 8px var(--glow)}
+.pstep[data-hot="0"] .dot{background:var(--accent-2); opacity:.6}
+.pstep .body{min-width:0}
+.pstep .name{font-family:var(--sans); font-weight:600; font-size:14px; letter-spacing:-.005em}
+.pstep .desc{font-size:13.5px; color:var(--ink-2); line-height:1.4; margin-top:2px}
+.pstep .cost{
+  font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums;
+  color:var(--ink-2); white-space:nowrap; text-align:right;
+}
+.pstep[data-hot="1"] .cost{color:var(--accent); font-weight:500}
+@media (max-width:560px){
+  .pstep{grid-template-columns:auto 1fr; row-gap:4px}
+  .pstep .cost{grid-column:2; text-align:left}
+}
+
+/* families */
+.fam{border:1px solid var(--rule); background:var(--surface); margin:16px 0; padding:18px 20px}
+.fam-head{display:flex; flex-wrap:wrap; gap:10px; align-items:baseline; margin-bottom:4px}
+.fam-name{font-family:var(--sans); font-weight:600; font-size:16.5px; letter-spacing:-.012em}
+.fam-who{font-family:var(--mono); font-size:11px; color:var(--ink-3); letter-spacing:.03em}
+.fam-v{
+  font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase;
+  padding:3px 7px; border-radius:2px; margin-left:auto;
+}
+.fam-v.ruido{background:rgba(169,54,54,.12); color:var(--bad)}
+.fam-v.parcial{background:var(--surface-2); color:var(--ink-2)}
+.fam-v.bien{background:var(--glow); color:var(--accent)}
+.fam p{font-size:15px; margin-bottom:10px}
+.fam p:last-child{margin-bottom:0}
+pre{
+  font-family:var(--mono); font-size:12px; line-height:1.55; background:var(--surface-2);
+  padding:13px 15px; overflow-x:auto; margin:14px 0; border-left:2px solid var(--rule);
+}
+pre .c{color:var(--ink-3)}
+
+ul,ol{margin:0 0 15px; padding-left:22px}
+ul li,ol li{margin-bottom:7px}
+ul.tight li{margin-bottom:3px}
+ol.steps{list-style:none; padding-left:0; counter-reset:s}
+ol.steps>li{
+  counter-increment:s; position:relative; padding-left:34px; margin-bottom:14px; max-width:64ch;
+}
+ol.steps>li::before{
+  content:counter(s); position:absolute; left:0; top:1px;
+  font-family:var(--mono); font-size:11px; font-weight:600; color:var(--accent);
+  border:1px solid var(--accent); width:21px; height:21px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+}
+
+/* sources */
+.src{font-size:14px; line-height:1.5; margin-bottom:11px; max-width:78ch; color:var(--ink-2)}
+.src .id{font-family:var(--mono); font-size:11px; color:var(--accent); margin-right:8px}
+.src b{color:var(--ink); font-weight:600}
+
+/* tooltip */
+#tip{
+  position:fixed; z-index:50; pointer-events:none; opacity:0; transition:opacity .1s;
+  background:var(--ink); color:var(--ground); font-family:var(--mono); font-size:11.5px;
+  line-height:1.45; padding:7px 10px; border-radius:3px; max-width:250px;
+}
+#tip.on{opacity:1}
+
+/* theme toggle */
+.tt{
+  position:fixed; right:14px; bottom:14px; z-index:40;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase;
+  background:var(--surface); color:var(--ink-2); border:1px solid var(--rule);
+  padding:8px 12px; cursor:pointer; border-radius:3px;
+}
+.tt:hover{color:var(--accent); border-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.foot{
+  border-top:1px solid var(--rule); padding-top:22px; margin-top:56px;
+  font-family:var(--mono); font-size:11px; letter-spacing:.05em; color:var(--ink-3);
+  line-height:1.7;
+}
+</style>
+<style>
+.hb-row[data-hi="3"] .hb-bar{background:var(--bad)}
+.hb-row[data-hi="3"] .hb-val{color:var(--bad)}
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin:22px 0}
+.vd{background:var(--surface);padding:15px 16px}
+.vd .t{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.vd.kill .t{color:var(--bad)}
+.vd.keep .t{color:var(--accent)}
+.vd.trim .t{color:var(--warn)}
+.vd .b{font-family:var(--sans);font-weight:600;font-size:14.5px;line-height:1.3;letter-spacing:-.01em;margin-bottom:6px}
+.vd .d{font-size:13px;line-height:1.45;color:var(--ink-2)}
+.strike{text-decoration:line-through;text-decoration-thickness:1px;color:var(--ink-3)}
+</style>
+<div class="page">
+
+<aside class="rail">
+  <div class="rail-mark">Muninn</div>
+  <div class="rail-sub">Dossier v8 · 2026-09-12</div>
+  <nav>
+    <a href="#veredicto"><span class="n">01</span>Veredicto</a>
+    <a href="#podas"><span class="n">02</span>Las seis podas</a>
+    <a href="#falsificado"><span class="n">03</span>Lo que se falsificó</a>
+    <a href="#arte"><span class="n">04</span>Estado del arte</a>
+    <a href="#superficie"><span class="n">05</span>Superficie por harness</a>
+    <a href="#arquitectura"><span class="n">06</span>La decisión de arquitectura</a>
+    <a href="#motor"><span class="n">07</span>El motor</a>
+    <a href="#funciones"><span class="n">08</span>Las tres funciones</a>
+    <a href="#medido"><span class="n">09</span>Lo que medí</a>
+    <a href="#orden"><span class="n">10</span>Orden y criterios de muerte</a>
+    <a href="#veredicto-competitivo"><span class="n">11</span>Veredicto competitivo</a>
+    <a href="#autocritica"><span class="n">12</span>Autocrítica</a>
+    <a href="#fuentes"><span class="n">13</span>Fuentes</a>
+  </nav>
+</aside>
+
+<main>
+
+<header class="masthead">
+  <h1>Muninn</h1>
+  <p class="deck">Investigación sobre memoria para agentes de código, contrastada contra
+  los dos últimos meses y contra lo que ya está enviado. <strong>El proyecto se redujo
+  seis veces</strong>, y ninguna de sus tres funciones resultó ser una idea nueva. Lo que
+  queda es una integración: tres funciones, dos con cero tokens inyectados, y un orden de
+  construcción que decide si funciona.</p>
+  <div class="byline">
+    <span>Ventana de evidencia 12-jun → 12-sep-2026</span>
+    <span>9 falsifican · 6 confirman · 7 de la auditoría</span>
+    <span>3 productos verificados a fondo</span>
+    <span>12 mediciones propias</span>
+    <span>12 sobre-afirmaciones y 2 errores corregidos</span>
+    <span>6 podas · 9 barridos de vocabulario</span>
+  </div>
+</header>
+
+<div class="readout">
+  <div class="cell">
+    <div class="k">Código vulnerable por memoria insegura</div>
+    <div class="v neg">+2,7 a 50,3 pp</div>
+    <div class="d">4 LLMs, 5 lenguajes. El filtrado a nivel de memoria lo <strong>restaura al baseline sin memoria</strong>, sin coste de corrección funcional. <span class="ev">W1</span></div>
+  </div>
+  <div class="cell">
+    <div class="k">Reglas de seguridad con control detrás</div>
+    <div class="v neg">4,4 %</div>
+    <div class="d">En 481 CLAUDE.md públicos, criterio estricto, IC 95 %: 2,6–6,7 %. Su extracción capturó el 66,3 % de las reglas elegibles. <span class="ev">K5</span></div>
+  </div>
+  <div class="cell">
+    <div class="k">Piezas sin arte previo</div>
+    <div class="v neg">0 de 3</div>
+    <div class="d">Auditoría de novedad: las tres funciones tienen arte previo medido, en ventana. Lo que queda es <strong>la composición dentro de un harness</strong>. <span class="ev">U1</span> <span class="ev">U5</span> <span class="ev">V2</span></div>
+  </div>
+  <div class="cell">
+    <div class="k">Evaluación de cues, p50</div>
+    <div class="v pos">1,034 ms</div>
+    <div class="d">Rust, en proceso. <strong>Esquema sintético</strong>: 5 000 memorias y 15 000 triggers generados, no un repositorio real. <span class="ev ev-a">M2</span></div>
+  </div>
+</div>
+
+<div class="note">
+  <div class="h">Cómo leer este documento</div>
+  <p><strong>Ventana de evidencia: 12-jun → 12-sep-2026.</strong> Toda fuente fuera de esa ventana está marcada con su fecha allí donde aparece. Las cifras <span class="ev ev-a">H*</span>, <span class="ev ev-a">I*</span> y <span class="ev ev-a">M2</span> las medí en una máquina concreta y llevan sus condiciones. Las cifras de vendor van etiquetadas como auto-reportadas.</p>
+  <p><strong>Y una incertidumbre que afecta a casi todas las cifras de benchmark de esta página.</strong> Un trabajo en ventana cuantifica una <strong>discrepancia de 27,5 puntos entre token-F1 estricto y LLM-as-judge sobre las mismas salidas</strong>, y lo señala como problema de reproducibilidad de los benchmarks de memoria. Toda cifra de LoCoMo o LongMemEval aquí —incluidas las de Rekal y agentmemory— hereda una incertidumbre de método de ese orden. <span class="ev">W3</span></p>
+  <div class="pull" style="margin:18px 0 16px">
+    «Implementado, alcanzable y efectivo son <strong>tres preguntas distintas</strong>, y la tercera exige un oráculo independiente del mecanismo bajo prueba.»
+    <cite>SuperLocalMemory 4.0, que abre con un resultado negativo: diez de sus mecanismos estaban implementados, en la ruta de llamada viva, y eran inefectivos en su conexión final — en un sistema con 2 199 de 2 200 propiedades verificadas bajo inyección de fallos <span class="ev">Y1</span></cite>
+  </div>
+  <p>Esa frase gobierna este documento. Muninn puede construir sus tres funciones, verlas dispararse en su propia telemetría, y que no hagan nada. La telemetría de disparos no es un oráculo: <strong>el experimento de cuatro brazos tiene que serlo</strong>.</p>
+
+  <p><strong>Y dos advertencias más que atraviesan todo el documento.</strong> La primera: <strong>ninguna de las tres funciones es una idea nueva.</strong> Una auditoría de novedad con el vocabulario del campo —autoformalización, policy-as-code, runtime enforcement— encontró arte previo publicado en ventana para F1 y para F2. Lo defendible ya no es ninguna función suelta, sino la composición bajo restricción. La segunda: ninguna de las tres tiene todavía un número de <em>resultado de tarea</em>. F1 se apoya en un benchmark de seguridad, F2 en una medición de hueco, F3 en mediciones de entrega y supervivencia — que son mecanismo, no resultado. El único número de resultado que sostiene el proyecto entero mide <strong>tener memoria</strong>, no ninguna de las tres. Eso es lo que el experimento de la sección 10 existe para resolver.</p>
+</div>
+
+<!-- ==================== 01 ==================== -->
+<section id="veredicto">
+  <div class="eyebrow"><span class="num">01</span> Veredicto</div>
+  <h2>Qué es Muninn después de seis podas</h2>
+
+  <p class="lede">Muninn <strong>posee su motor y su ledger tipado</strong>, porque sin esquema propio el filtro no puede ser exacto. No reconstruye el respondedor de «por qué», ni compite en calidad de recuperación. <strong>Filtra, compila y reparte.</strong></p>
+
+  <div class="note crit">
+    <div class="h">La reclamación de novedad, corregida</div>
+    <p>Una versión anterior de este dossier decía que el compilador de reglas no existía ni en la literatura ni en código. <strong>Era falso, por usar el vocabulario equivocado en la búsqueda.</strong> Con los términos del campo aparece arte previo en ventana para <strong>las tres</strong>:</p>
+    <p><strong>F1</strong> está formalizado en <em>«Stored Is Not Supported»</em> (2-sep-2026): grafo de procedencia tipado que separa origen, linaje, rol epistémico, validez y alcance; un resolver que devuelve banderas de conflicto, obsolescencia y retención; y una suite de 24 casos donde la mediación tipada <strong>no dejó pasar ninguna de las 19 oportunidades inseguras</strong>, frente a 19/19 y 18/19 de las reglas planas. <span class="ev">U5</span></p>
+    <p><strong>F2</strong> está publicado como <em>autoformalización a policy-as-code</em> (25-jun-2026): traduce prompts de agente, descripciones de tools MCP y documentos de política en lenguaje natural a políticas verificadas en Cedar. <span class="ev">U1</span> Y hay al menos tres más en ventana: FAVA hace NL → IR de permisos → SMT con 90,5 % de cumplimiento de decisión <span class="ev">U4</span>, VIGIL hace specs de skills → política ejecutable con &gt;95 % de recall <span class="ev">U3</span>, y ActPlane hace cumplimiento a nivel de SO con eBPF <span class="ev">U2</span>.</p>
+    <p><strong>F3</strong> también. El <em>Prospective Intention Store</em> (1-sep-2026, hace once días) pone la lógica de ciclo de vida en código y tipa el espacio de acción, sin entrenamiento, y alcanza <strong>82,9 % de Set-F1 en PM-Bench</strong> frente al 65,1 % del mejor scaffold publicado; en un modelo pequeño sube de 4,2 % sin almacén a <strong>66,2 %</strong>. Su tesis es la mía: <em>«this loop is schema-constrained state tracking rather than open-ended reasoning»</em>. <span class="ev">V2</span> Y hay más en la misma posición: <em>PPMF</em> se autodenomina <strong>«lightweight memory middleware»</strong> y lleva el ASR de memorias consolidadas vulnerables de 1.000 a cero <span class="ev">V3</span>, y <em>ContextNest</em> publica una capa de gobernanza de contexto con implementación de referencia y servidor MCP abiertos <span class="ev">V4</span>.</p>
+    <p><strong>Conclusión de la auditoría: las tres funciones tienen arte previo medido, todo de los últimos tres meses. Este es un proyecto de integración.</strong> Lo único que puede reclamar es la composición —ledger tipado, filtro determinista, entrega por cues y compilación de reglas— <strong>dentro de un harness de agente de código, en la ruta caliente, en milisegundos de un solo dígito, con presupuesto de tokens y medición de resultado de tarea</strong>. Integrar bajo restricción es trabajo real. Pero «esto no lo tiene nadie» ya no es un argumento disponible, y no aparece en el resto de este documento.</p>
+  </div>
+
+  <h3>Las tres funciones</h3>
+  <div class="verdict">
+    <div class="vd keep"><div class="t">F1 · ≈0 tokens</div><div class="b">Filtro de supersesión y revocación en la lectura</div><div class="d">Regla determinista sobre tripletas: lo superado <strong>se retiene marcado y deja de servirse</strong>. Invalidación gruesa, no ledger fino — el grano fino no paga cuando se controla la presentación.</div></div>
+    <div class="vd keep"><div class="t">F2 · 0 tokens</div><div class="b">Compilador de reglas a controles</div><div class="d">Clasifica cada regla de CLAUDE.md y AGENTS.md en ejecutable o solo interpretable, emite permisos y hooks <code>deny</code>, y reporta lo que quedó siendo persuasión.</div></div>
+    <div class="vd trim"><div class="t">F3 · ≤700 tokens</div><div class="b">Repartidor cue-anchored</div><div class="d">Condiciones de disparo permanentes sobre <span class="m">symbol</span>, <span class="m">event</span> y <span class="m">temporal</span> — los tres que no encontré en ningún producto enviado. Reusa <span class="m">path</span> y palabra clave, que ya son nativos.</div></div>
+    <div class="vd kill"><div class="t">No se construye</div><div class="b">El respondedor de «por qué»</div><div class="d">Rekal 1.0 lo hace con enrutado por tipo de pregunta, a un 90,57 % en LoCoMo auto-reportado. Reconstruirlo es reinventar la rueda.</div></div>
+  </div>
+
+  <h3>Por qué existe el proyecto</h3>
+  <p>En <strong>DreamBench-SWE</strong> — multi-sesión, con oráculos ejecutables ocultos, donde las tareas tardías dependen de evidencia no inferible de las tempranas:</p>
+
+  <figure>
+    <div class="ctitle">Memoria multi-sesión: vale unas 4x la tasa de acierto</div>
+    <div class="csub">DreamBench-SWE · 180 unidades por condición · corrección de Holm</div>
+    <div class="hb" id="c-dream"></div>
+    <figcaption>Las tres condiciones con memoria baten a la condición sin memoria. Y el hallazgo incómodo, en palabras de sus autores: el estudio <strong>«does not establish… superiority among memory-bearing conditions»</strong>. Almacenar literal ya cobra la mayor parte del beneficio. <span class="ev">K2</span></figcaption>
+  </figure>
+
+  <div class="pull">
+    La memoria multi-sesión vale unas 4x la tasa de acierto. <strong>La sofisticación del diseño de memoria no es lo que la compra.</strong>
+  </div>
+
+  <div class="note crit">
+    <div class="h">Qué licencia esa cifra, y qué no</div>
+    <p>El 4x justifica <strong>tener memoria en un harness que no la tiene</strong>. No justifica ninguna de las tres funciones, y no dice nada sobre añadir Muninn a Claude Code o Codex, donde la línea base <em>ya incluye</em> memoria automática. Confundir esas dos cosas sería la falacia central de este proyecto, y por eso el plan tiene dos modos de despliegue y una prioridad que no es la intuitiva.</p>
+  </div>
+
+  <h3>Y el agente no va a pedir nada</h3>
+  <p>La medición que decide la arquitectura entera: <strong>0 operaciones de memoria en 114 turnos</strong>, con el almacén pre-cargado de conocimiento relevante. Diez hechos que viven solo en la conversación desaparecen en el primer resumen y siguen ausentes en <strong>106 de 108</strong> compactaciones forzadas; los mismos diez, inyectados desde un almacén del harness, llegan íntegros <strong>138/138</strong> compact-resumes mientras el resumen final no lleva ninguno. <span class="ev">K1</span></p>
+  <div class="note">
+    <div class="h">El tamaño de muestra de ese número</div>
+    <p>Es una evaluación con <strong>n=3 brazos</strong>, sobre hechos sintéticos sembrados por el propio harness, y sus autores declaran que los conteos de escritura voluntaria <em>«measure initiative, not capture quality»</em>. Es el número más load-bearing del diseño y es el que más falta replicar.</p>
+  </div>
+  <p>La entrega tiene que ser <strong>involuntaria</strong>. No es una preferencia de diseño: es lo único que funciona.</p>
+</section>
+
+<!-- ==================== 02 ==================== -->
+<section id="podas">
+  <div class="eyebrow"><span class="num">02</span> Trazabilidad</div>
+  <h2>Las seis podas, y las dos correcciones</h2>
+  <p class="lede">Cada iteración eliminó algo. Esto es el criterio funcionando, no un fracaso — pero deja el proyecto mucho más pequeño de lo que empezó.</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th class="n" style="width:5%">#</th><th style="width:24%">Qué se creía</th><th style="width:34%">Qué lo cambió</th><th>Qué quedó</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="n strong">1</td>
+        <td class="strong">Los agentes fallan por falta de conocimiento del proyecto</td>
+        <td>Ablación controlada sobre Claude Code y Codex, 17 tareas reales, <strong>288 corridas</strong> con tests de oro: la estrategia de contexto no mueve la corrección, acotado a ≤10–15 pp. Fallan por habilidad de implementación. <span class="ev">J1</span></td>
+        <td>La promesa se acota a <strong>continuidad entre sesiones</strong>, no a corrección en una sesión</td>
+      </tr>
+      <tr>
+        <td class="n strong">2</td>
+        <td class="strong">Las skills procedurales son un pilar fuerte</td>
+        <td>31 skills públicas, 1 000 tareas, 4 modelos, con <strong>control irrelevante de longitud igualada</strong>: −1,3 a −4,2 pp de Pass@2 y +72 % a +394 % de tokens. <span class="ev">J2</span></td>
+        <td>Solo memoria destilada de <strong>trayectorias propias contrastadas</strong>, y al final de la cola</td>
+      </tr>
+      <tr>
+        <td class="n strong">3</td>
+        <td class="strong">Hay que construir el almacén con captura y el respondedor</td>
+        <td><strong>Rekal 1.0</strong>: captura en cada commit, cruda en git, ramas huérfanas, compuerta de silencio, 90,57 % en LoCoMo y 86,60 % en LongMemEval sin servicio — <strong>cifras auto-reportadas</strong>, con GPT-5 Sol respondiendo. <span class="ev">N1</span></td>
+        <td>El respondedor de «por qué» se delega. La captura, no del todo: ver poda 4</td>
+      </tr>
+      <tr>
+        <td class="n strong">4</td>
+        <td class="strong">Muninn puede ser «la memoria universal» de cualquier harness</td>
+        <td><strong>agentmemory</strong> ya lo es: 12 hooks, BM25+vector+grafo con RRF, SQLite sin dependencias, supersesión, procedencia, 50+ agentes. Más Hindsight, AgentVault, Universal Memory y tres más. <span class="ev">P1</span> <span class="ev">P2</span></td>
+        <td>No competir en calidad de recuperación. Diferenciarse en <strong>otra función objetivo</strong></td>
+      </tr>
+      <tr>
+        <td class="n strong">5</td>
+        <td class="strong">F1 y F2 son capacidades nuevas</td>
+        <td>Busqué con mi vocabulario en vez del del campo. Con <strong>autoformalización</strong>, <strong>policy-as-code</strong> y <strong>runtime enforcement</strong> aparecen cuatro trabajos en ventana para F2 <span class="ev">U1</span> <span class="ev">U2</span> <span class="ev">U3</span> <span class="ev">U4</span> y la formalización de F1 con suite de conformidad <span class="ev">U5</span></td>
+        <td>Ninguna función suelta es novedad. Lo defendible es <strong>la composición</strong></td>
+      </tr>
+      <tr>
+        <td class="n strong">6</td>
+        <td class="strong">Al menos F3 no está construido</td>
+        <td>El <strong>Prospective Intention Store</strong>, del 1 de septiembre, lo construye y lo mide: <strong>82,9 % Set-F1 en PM-Bench</strong>, sin entrenamiento. Y el marketplace comunitario del propio Anthropic ya trae inyección con presupuesto por hooks <span class="ev">V2</span> <span class="ev">X4</span></td>
+        <td>Es un <strong>proyecto de integración</strong>. Y gana una evaluación pública: PM-Bench</td>
+      </tr>
+      <tr style="background:var(--surface-2)">
+        <td class="n strong" style="color:var(--accent)">±</td>
+        <td class="strong">Corrección 1: «Muninn es un gobernador sobre almacenes ajenos»</td>
+        <td>Contado en integraciones va al revés: un gobernador necesita <strong>4 drivers de formato</strong> y solo recibe «texto más timestamp», que es justo lo que hace débil al guard publicado — 4/14 en Zep. <span class="ev">Q1</span></td>
+        <td><strong>Muninn posee el motor y el ledger tipado.</strong> 5 adaptadores sobre eventos, 0 drivers sobre formatos</td>
+      </tr>
+      <tr style="background:var(--surface-2)">
+        <td class="n strong" style="color:var(--accent)">±</td>
+        <td class="strong">Corrección 2: F1 con tripleta bi-temporal completa y tipado rico</td>
+        <td>Con <strong>control de render igualado</strong>, sobre 2 907 preguntas, el ledger de grano fino <em>parece</em> ganar +0,182 pero su residuo real es <strong>indistinguible de cero</strong>; la <strong>invalidación gruesa</strong> lo bate por 0,084 <span class="ev">X1</span></td>
+        <td><strong>F1 se simplifica:</strong> retener el registro invalidado y no servirlo. Nada de tipado rico sin una medición que lo pida</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <div class="h">Lo que las podas no tocaron</div>
+    <p>Las tres funciones sobreviven a las seis podas — <strong>pero ninguna como novedad</strong>. Lo que sobrevive es el diagnóstico: los cuatro fallos multi-sesión que las motivan siguen medidos y sin resolver dentro de un harness, y ninguno de los productos verificados los cubre a la vez con presupuesto de tokens y latencia de milisegundos. <strong>El proyecto se encogió de «capacidad nueva» a «integración bajo restricción», y ahí es donde tiene que defenderse.</strong></p>
+  </div>
+</section>
+
+<!-- ==================== 03 ==================== -->
+<section id="falsificado">
+  <div class="eyebrow"><span class="num">03</span> Contraste</div>
+  <h2>Lo que los dos últimos meses falsificaron</h2>
+
+  <figure>
+    <div class="ctitle">Skills: ¿señal o ruido?</div>
+    <div class="csub">Pérdida de Pass@2 en puntos · 31 skills · 1 000 tareas · 4 modelos · control irrelevante de longitud igualada</div>
+    <div class="hb" id="c-skills"></div>
+    <figcaption>Además de la pérdida de acierto, el coste sube <strong>entre un 72 % y un 394 %</strong> en tokens, y solo el <strong>17–36 %</strong> de los pares skill-proyecto mejora. Dos modos de fallo separados por el control: <strong>length-distracted</strong>, donde una skill irrelevante de igual longitud reproduce casi toda la pérdida, y <strong>content-misled</strong>, donde la longitud es neutra y el contenido aun así baja el Pass@2. Dentro de las skills que sí ayudan, <strong>las reglas anti-patrón superan al contenido lleno de ejemplos</strong>. <span class="ev">J2</span></figcaption>
+  </figure>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:30%">Lo que decía la v1</th><th>Lo que dice la ventana</th></tr></thead>
+    <tbody>
+      <tr><td class="strong">ACE y ReasoningBank: evidencia fuerte</td><td><strong>No replicado bajo varianza.</strong> La evaluación de agentes es ruidosa, el bucle de auto-mejora amplifica el ruido, y la mejora <strong>depende del orden de las tareas</strong>, que impone un curriculum implícito <span class="ev">J4</span></td></tr>
+      <tr><td class="strong">El índice vectorial es prescindible; BM25 basta</td><td><strong>Acotado, y hay que separar dos cosas que el dossier juntaba.</strong> Un <strong>índice estructural o semántico</strong> para QA de repositorio y cambios multi-fichero <em>sí</em> paga: 65,2 % contra 46,2 % de la búsqueda agéntica y a menos de la mitad de coste, con el <strong>41,8 %</strong> de los fallos agénticos en el traspaso planificador↔subagente, y <strong>silenciosos</strong> <span class="ev">J3</span>. Pero el <strong>retrieval semántico por símbolo</strong> vía LSP es <em>«conditional and usually negative»</em>: cuesta <strong>+6 % a +118 %</strong> de tokens en localización, y <strong>el agente lo ignora cuando lo tiene gratis</strong> (0-6 % de uso). <span class="ev">S4</span></td></tr>
+      <tr><td class="strong">La recuperación de un disparo con compuertas resuelve la lectura</td><td><strong>Insuficiente para responder.</strong> Suficiencia de respuesta de un solo disparo: <strong>0,07–0,20</strong>. Enrutada por tipo de pregunta: <strong>0,83</strong>. Y la inyección de episodios sin compuerta <strong>degrada medibles las buenas respuestas</strong> <span class="ev">K3</span></td></tr>
+      <tr><td class="strong">El equipo no comparte memoria: hueco</td><td><strong>Error mío.</strong> <code>CLAUDE_MEMORY_STORES</code> es nativo desde Claude Code 2.1.172 <span class="ev">L1</span></td></tr>
+      <tr><td class="strong">Invariantes sobre la compactación: hueco entero</td><td><strong>Acotado.</strong> Codex ya preserva autorizaciones y respuestas verificadas del usuario a través de la compactación, vía «Guardian thread context» <span class="ev">L5</span></td></tr>
+      <tr><td class="strong">El peaje de 3 000 tokens del MCP oficial</td><td><strong>Cierto con condición.</strong> El diferimiento automático se activa cuando las descripciones MCP pasan del 10 % de la ventana; 3 000 tokens son ~1,5 %, así que se cargan. Pero el argumento fuerte no es el peaje: es <strong>0 operaciones en 114 turnos</strong> <span class="ev">M1</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note crit">
+    <div class="h">Corrección a una afirmación que este dossier repetía</div>
+    <p>«El contexto irrelevante degrada la salida» es demasiado fuerte para los modelos de 2026. En un estudio controlado de julio: <em>«state-of-the-art models often appear robust to task-irrelevant context at the aggregate level: prepending it to benchmark questions causes <strong>little change in overall accuracy</strong>»</em>. Lo que esa estabilidad agregada esconde es <strong>inestabilidad por ejemplo</strong>: incluso pseudo-palabras sin significado cambian predicciones en una fracción de casos, <strong>degradando unos y mejorando otros</strong>, y los ejemplos afectados son <strong>específicos de cada modelo</strong>. <span class="ev">S1</span></p>
+    <p>El argumento del silencio por defecto no se cae: cambia. No es «pierdes precisión en promedio», es <strong>«introduces varianza impredecible que depende de tu modelo»</strong>. Para una herramienta que promete no degradar, eso es igual de fuerte y más honesto. Y hace más notable el resultado de las skills: que bajaran el Pass@2 <em>en agregado</em>, con control de longitud, sobrevivió a la agregación que aquí borra los efectos.</p>
+  </div>
+
+  <div class="note crit">
+    <div class="h">La advertencia que aplica a todo el proyecto</div>
+    <p>Revisión multivocal de 164 trabajos académicos, 100 registros de practicantes y 29 de benchmarks: <em>«many apparent model failures originate elsewhere in the system, while <strong>improvements at one layer often fail to propagate to end-to-end outcomes</strong>»</em>. Muninn puede cumplir todos sus contratos de latencia y precisión y no mover el resultado. <span class="ev">J7</span></p>
+  </div>
+
+  <h3>Y una ducha de agua fría sobre las expectativas</h3>
+  <p>En <strong>MemoryArena</strong>, con framework, modelo, tareas y código de scoring emparejados: matemáticas 9/40, física 12/20, recuperación progresiva 4/20, <strong>planificación de viajes 0 para todos los sistemas</strong>, compra web 1/150. Media de suite 20,5 % contra 13,6 % del mejor comparador, con intervalos solapados y sin tests de significancia emparejados. <span class="ev">J5</span></p>
+  <p><strong>En tareas multi-sesión interdependientes, los cuatro sistemas comparados están cerca del suelo</strong> — un backend estructurado, Mem0, RAG vectorial y un control de contexto largo. Ninguna promesa puede apoyarse en eso.</p>
+</section>
+
+<!-- ==================== 04 ==================== -->
+<section id="arte">
+  <div class="eyebrow"><span class="num">04</span> No reinventar la rueda</div>
+  <h2>Estado del arte: qué ya existe, y dónde queda el hueco</h2>
+
+  <h3>Ya es nativo</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:32%">Ya existe</th><th>Dónde</th></tr></thead>
+    <tbody>
+      <tr><td class="strong">Memoria automática por proyecto, con índice y ficheros por tema</td><td>Claude Code 2.1.32 y posteriores. Índice de 200 líneas / 25 KB, <code>modified</code> ISO en frontmatter (2.1.214), error explícito al pasarse (2.1.210)</td></tr>
+      <tr><td class="strong">Almacenes de memoria de equipo</td><td><code>CLAUDE_MEMORY_STORES</code>, 2.1.172. <strong>La v1 lo listaba como hueco.</strong></td></tr>
+      <tr><td class="strong">Triggers por path y por palabra clave</td><td><code>.claude/rules</code> con <code>paths:</code> como lista de globs (2.1.84); condiciones <code>if:</code> de hook (2.1.214); hook <code>InstructionsLoaded</code> (2.1.69). Fuera: OpenHands, Devin, Windsurf, Cursor</td></tr>
+      <tr><td class="strong">Contabilidad de coste de contexto</td><td><code>/skill-doctor</code> (2.1.261): qué skills cargadas no se usan y cuánto cuestan</td></tr>
+      <tr><td class="strong">Pinning de autorizaciones sobre la compactación</td><td>Codex «Guardian thread context», rust-v0.151–v0.154</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Barrido del changelog completo por <span class="m">index | retriev | embedding | vector | semantic search | BM25</span>: el único índice nativo es el de nombres de fichero para las menciones <code>@</code>. <strong>No aparece ninguna recuperación con ranking en el changelog nativo.</strong> <span class="ev">L4</span></p>
+
+  <div class="note ok">
+    <div class="h">Y no es solo Claude Code: es todo el campo</div>
+    <p>Un estudio de código fuente de <strong>once harness de producción</strong> —Claude Code, Codex CLI, Gemini CLI, Mistral Vibe, OpenHands, Aider, Mini-SWE-Agent, Hermes, Pi, OpenCode, OpenClaw— encuentra que, sobre unos <strong>cuatro millones de líneas</strong>, <em>«no agent runtime imports a general-purpose agentic framework, and <strong>none retrieves code with vector embeddings</strong>; the field runs on hand-rolled async loops and <strong>deterministic retrieval</strong>»</em>. <span class="ev">X3</span></p>
+    <p>Dos consecuencias. Una: el stack determinista de este proyecto no es una preferencia, es lo que hace todo el campo — y obliga a matizar el resultado de que un índice semántico gana en QA de repositorio, porque <strong>eso no es lo que ningún harness envía</strong>. Dos, y es la tesis de F2 observada en código a lo largo de un trimestre: <em>«behavioral policy migrating from prompt prose to configuration»</em>. Además, <strong>SKILL.md supera a MCP en adopción, 9 de 11 frente a 8 de 11</strong>.</p>
+  </div>
+
+  <h3>El mapa competitivo, verificado producto a producto</h3>
+  <p>Nueve entradas, entre productos enviados y trabajos publicados en ventana. Todos ocupan alguna parte de la posición de Muninn.</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:17%">Sistema</th><th style="width:31%">Qué trae</th><th>Qué le falta, y por qué importa</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="strong">agentmemory<br><span style="font-weight:400;color:var(--ink-3);font-size:12px">open source</span></td>
+        <td>12 hooks de auto-captura · BM25 + vector + grafo con RRF · SQLite sin dependencias · supersesión con «recall hygiene» · procedencia inmutable · puente con <code>MEMORY.md</code> · 50+ agentes · LongMemEval-S R@5 95,2 % <span style="color:var(--ink-3)">(auto-reportado; su propio README advierte que no es comparación cabeza a cabeza)</span></td>
+        <td><strong>Consolidación encendida por defecto <em>cuando hay un proveedor LLM configurado</em></strong> — el mecanismo con la peor evidencia de toda la investigación. La instalación keyless es un camino soportado y no la activa. 54 herramientas MCP y 17 skills. Benchmarks de recuperación, no de resultado. Sin cues no semánticos. Sin compilador.</td>
+      </tr>
+      <tr>
+        <td class="strong">Rekal 1.0</td>
+        <td>Captura en cada commit, cruda en git · ramas huérfanas, solo trabajo mergeado · compuerta de silencio <span class="m">INJECT/KNOWLEDGE/SILENCE</span> · router de pregunta · LoCoMo 90,57 %</td>
+        <td>Se <strong>invoca</strong>: el agente debe elegir usar su skill — el fallo de los 0 ops en 114 turnos. Sin supersesión hecha cumplir. Sin cues. Sin compilador.</td>
+      </tr>
+      <tr>
+        <td class="strong">Hindsight</td>
+        <td>Entrega por hooks para Cline desde junio-2026 · presupuesto configurable · banco de equipo · <em>«no MCP tool the model can forget to use»</em></td>
+        <td>~300 ms de red por prompt. Extracción por LLM server-side. Recall solo semántico. Transcripts salen de la máquina por defecto.</td>
+      </tr>
+      <tr>
+        <td class="strong">SuperLocalMemory 4.0<br><span style="font-weight:400;color:var(--ink-3);font-size:12px">ago-2026, en ventana</span></td>
+        <td>Sistema operativo de memoria <strong>gobernado y local-first</strong>: recuperación multicanal con RRF, <strong>recall bi-temporal</strong>, aislamiento multi-alcance, control de acceso por rol, borrado verificado, <strong>auditoría encadenada por hash</strong>, y una espina de fiabilidad en la escritura con admisión por valla de generación y manifiestos comprobables. Once escenarios de inyección de fallos × 200 repeticiones: 2 199 de 2 200 propiedades sostenidas</td>
+        <td>Está en la posición exacta de Muninn y con más maquinaria. Pero <strong>lidera con un resultado negativo</strong>: diez de sus mecanismos estaban implementados y alcanzables <strong>y eran inefectivos en su conexión final</strong>. Es la advertencia que abre este documento, y la razón de que aquí el orden empiece por lo que no inyecta nada. <span class="ev">Y1</span></td>
+      </tr>
+      <tr>
+        <td class="strong">claude-mem · <code>agent-memory</code> de Anthropic<br><span style="font-weight:400;color:var(--ink-3);font-size:12px">plugins de Claude Code</span></td>
+        <td><strong>claude-mem</strong>: el plugin de memoria más popular para Claude Code. Cinco hooks de ciclo de vida, compresión semántica vía el Agent SDK, SQLite con texto completo y Chroma.<br><strong><code>agent-memory</code></strong>, en el marketplace comunitario del propio Anthropic: auto-compresión en <code>PostToolUse</code> e <strong>inyección de contexto con presupuesto de tokens en <code>SessionStart</code></strong>, más un bus de memoria entre agentes</td>
+        <td>claude-mem hace consolidación por LLM <strong>por diseño</strong>, que es el mecanismo con la peor evidencia del corpus. Y el plugin de Anthropic ya hace la inyección presupuestada por hooks: <strong>la ventana para F3 es más estrecha de lo que este dossier decía</strong>. Ninguno de los dos tiene filtro de supersesión, cues no semánticos ni compilador. <span class="ev">X4</span></td>
+      </tr>
+      <tr>
+        <td class="strong">Zero-Mem<br><span style="font-weight:400;color:var(--ink-3);font-size:12px">jul-2026, en ventana</span></td>
+        <td><strong>Operaciones de memoria de cero tokens</strong>: ningún paso fuera del QA final invoca un LLM. Preserva las trazas originales como fuente de registro. Grafo entidad-contexto más jerarquía temporal, ponderados por consulta. <strong>Calibración determinista que descarta evidencia en conflicto.</strong> −57,6 % de coste de tiempo en operaciones de memoria frente al baseline más rápido</td>
+        <td>Es el trabajo publicado <strong>más cercano</strong> a la tesis de «sin LLM en la ruta de lectura», y con trazas literales. No es un plugin de harness, no tiene cues permanentes, no tiene compilador. <strong>Hay que citarlo y no presentar esa idea como propia.</strong></td>
+      </tr>
+      <tr>
+        <td class="strong">Graphiti · Zep CE · Mem0 · langmem · cognee<br><span style="font-weight:400;color:var(--ink-3);font-size:12px">los cinco medidos en K7</span></td>
+        <td>Las arquitecturas clásicas: grafo temporal, pipeline de extracción, memoria de framework, ingesta a grafo</td>
+        <td>Ninguno de los cinco hace cumplir la revocación por defecto. Donde el registro revocado se expone, <strong>rankea primero</strong> y el 42–44 % de los ensayos elige la acción insegura. Fallan de tres formas: la revocación no se registra, se registra pero el estado se oculta al llamante, o se registra y se expone y aun así no se aplica. <span class="ev">K7</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note ok">
+    <div class="h">Dónde queda el hueco, después de la auditoría de novedad</div>
+    <p>No es «nadie tiene esto». Las tres funciones tienen arte previo medido. El hueco es más estrecho y más concreto:</p>
+    <p><strong>1. El compilador, aplicado a este dominio.</strong> El mecanismo existe —autoformalización a Cedar, FAVA, VIGIL <span class="ev">U1</span> <span class="ev">U3</span> <span class="ev">U4</span>— pero <strong>ninguno lo aplica a CLAUDE.md ni a AGENTS.md</strong>, ni emite a la superficie de permisos y hooks del harness, ni devuelve el informe de qué reglas quedaron siendo solo persuasión. Y ninguno de los productos de memoria verificados lo trae.</p>
+    <p><strong>2. Condiciones de disparo permanentes por memoria</strong> sobre <span class="m">path</span>, <span class="m">symbol</span> y <span class="m">temporal</span>: todos los productos que verifiqué recuperan por similitud sobre el prompt, y el trabajo que sí tipa el ciclo de vida lo hace dentro del bucle del agente, no en el harness <span class="ev">V2</span>.</p>
+    <p><strong>3. Supersesión hecha cumplir en la lectura dentro de un harness de código</strong>, en milisegundos. Formalizada existe <span class="ev">U5</span>, con firewall de procedencia <span class="ev">V3</span> y con implementación bitemporal <span class="ev">S5</span>; dentro del harness y en la ruta caliente, no.</p>
+    <p><strong>4. Evaluación con control de longitud igualada, control de render y resultado de tarea</strong> en vez de R@5. Este es el hueco más grande de la categoría entera. <span class="ev">J2</span> <span class="ev">X1</span></p>
+  </div>
+
+  <div class="note">
+    <div class="h">Y una carrera de estandarización en marcha</div>
+    <p>Hay un <strong>W3C AI Agent Memory Interoperability Community Group</strong> activo, más al menos cinco propuestas de formato compitiendo: Portable Agent Memory (arXiv:2605.11032, transferencia verificada criptográficamente), PAM Specification v1.0, Universal Memory Protocol, <code>memory-md-spec</code>, y la propuesta de MacPaw Research. Ningún estándar ha ganado — lo cual apoya poseer el motor — pero un formato <strong>cerrado</strong> es una apuesta contra la estandarización. <span class="ev">Q4</span></p>
+  </div>
+</section>
+
+<!-- ==================== 05 ==================== -->
+<section id="superficie">
+  <div class="eyebrow"><span class="num">05</span> Integración</div>
+  <h2>La superficie real de cada harness</h2>
+  <p class="lede">Verificado en documentación oficial. Es lo que decide si «cualquier harness» es una promesa cumplible — y no lo es.</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:13%">Harness</th><th>Inyección por turno</th><th>Compactación</th><th>Transcripción</th><th>Permisos (F2)</th><th>Formato</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="strong">Claude Code</td>
+        <td><code>UserPromptSubmit</code> → <code>additionalContext</code>. <strong>Umbral de 10 000 caracteres</strong> antes de derramar a fichero, timeout 30 s, y si expira <strong>la salida se descarta entera</strong></td>
+        <td><code>PreCompact</code> + <code>PostCompact</code> con <code>compact_summary</code></td>
+        <td>Sí, <code>transcript_path</code> en todos los hooks</td>
+        <td>Sí: <code>PreToolUse</code> → allow/deny/ask/defer, reglas de permisos, sandbox</td>
+        <td>Subproceso</td>
+      </tr>
+      <tr>
+        <td class="strong">Codex</td>
+        <td><code>UserPromptSubmit</code> → <code>additionalContext</code> con <code>additionalContextLimit</code></td>
+        <td><code>PreCompact</code> + <code>PostCompact</code></td>
+        <td>Sí, <code>transcript_path</code></td>
+        <td>Sí: <code>PreToolUse</code>, <code>PermissionRequest</code>, sandbox</td>
+        <td>Subproceso, comparte scripts con Claude Code</td>
+      </tr>
+      <tr>
+        <td class="strong">OpenCode</td>
+        <td><code>chat.message</code> / <code>chat.params</code></td>
+        <td><strong><code>experimental.session.compacting</code>: inyecta en el prompt de compactación o lo reemplaza.</strong> Ni Claude Code ni Codex lo tienen</td>
+        <td>Almacenamiento por proyecto en <code>~/.local/share/opencode/storage/</code></td>
+        <td>Sí: <code>permission.ask</code>, <code>permission.asked/replied</code></td>
+        <td><strong>Plugin TypeScript en proceso</strong></td>
+      </tr>
+      <tr>
+        <td class="strong">Cline</td>
+        <td><code>prompt_submit</code> o <code>beforeModel</code></td>
+        <td>No documentada</td>
+        <td class="strong" style="color:var(--bad)">No. Cline no entrega transcripción a los hooks</td>
+        <td>Parcial</td>
+        <td>TS o file hooks. <strong>Solo macOS y Linux, no cubre la extensión de VSCode</strong> — según la documentación de integración de Hindsight; la página de hooks de Cline no declara plataformas</td>
+      </tr>
+      <tr>
+        <td class="strong">Pi</td>
+        <td>Extensiones</td>
+        <td>No documentada</td>
+        <td>Sesiones persistidas</td>
+        <td class="strong" style="color:var(--bad)">Ninguna. Pi no tiene sistema de permisos</td>
+        <td>Extensión TypeScript / npm</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Tres consecuencias duras</h4>
+  <ol class="steps">
+    <li><strong>Dos objetivos de compilación, no uno.</strong> Claude Code y Codex toman subprocesos: el binario Rust sirve. OpenCode, Cline y Pi quieren un módulo <strong>en proceso de Node</strong>. La salida limpia es un núcleo Rust expuesto como CLI <em>y</em> como addon nativo <code>napi-rs</code> — un target de build más, no una reimplementación.</li>
+    <li><strong>F2 no tiene diana en Pi.</strong> Sin sistema de permisos no hay control al que compilar. Ahí degrada a informe, o Muninn tendría que <em>ser</em> la capa de permisos, que es otro proyecto y crítico de seguridad.</li>
+    <li><strong>La captura no es uniforme.</strong> Claude Code y Codex la regalan; Cline no la da en absoluto. «Un paquete que captura en cualquier harness» es falso de partida.</li>
+  </ol>
+
+  <div class="note">
+    <div class="h">Restricciones que fija la documentación</div>
+    <p><strong>Y hay un fallo de compactación nuevo, documentado en Claude Code:</strong> la salida parcial de comandos que expiran (código 143) queda registrada en el resumen de compactación <strong>como resultado confirmado</strong>, y se propaga como falso positivo entre sesiones y versiones de modelo sin re-verificación — <em>«a conflation of observation and persistence»</em>. <span class="ev">W4</span> Como <code>PostCompact</code> entrega <code>compact_summary</code>, <strong>se puede contrastar lo que el resumen afirma contra los códigos de salida reales</strong>. No encontré a nadie haciéndolo.</p>
+    <p><code>UserPromptSubmit</code> <strong>bloquea el procesamiento del modelo</strong> hasta que termina; si expira, el prompt llega sin contexto. Los 4,07 ms medidos son el margen que hace esto seguro. <code>SessionEnd</code> tiene timeout por defecto de <strong>1,5 s</strong>, y <strong>los timeouts de hooks provistos por un plugin no elevan el presupuesto</strong>: la captura tiene que ser asíncrona. Y <code>PostCompact</code> entrega <code>compact_summary</code>, así que se puede <strong>medir</strong> qué sobrevivió al resumen en vez de suponerlo. Nadie lo está haciendo. <span class="ev">P6</span></p>
+  </div>
+</section>
+
+<!-- ==================== 06 ==================== -->
+<section id="arquitectura">
+  <div class="eyebrow"><span class="num">06</span> Arquitectura</div>
+  <h2>Poseer el motor: la decisión, y su corrección</h2>
+
+  <p class="lede">Una versión anterior de este dossier proponía que Muninn fuera «un gobernador delante de la memoria que ya tengas». <strong>Contado en integraciones, esa arquitectura va en la dirección equivocada.</strong></p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:26%"></th><th>Gobernador sobre N almacenes</th><th>Motor y ledger propios</th></tr></thead>
+    <tbody>
+      <tr><td class="strong">Drivers de formato</td><td class="strong" style="color:var(--bad)">4 — <code>MEMORY.md</code> nativo, REST de agentmemory, DuckDB/CLI de Rekal, API cloud de Hindsight</td><td class="strong" style="color:var(--accent)">0</td></tr>
+      <tr><td class="strong">Adaptadores por harness</td><td>5 (eventos)</td><td>5 (eventos)</td></tr>
+      <tr><td class="strong">Entrada al filtro</td><td>La <strong>intersección</strong> de lo que exponen: texto y timestamp</td><td>Tripleta tipada con anclas y procedencia</td></tr>
+      <tr><td class="strong">Exactitud del filtro</td><td class="strong" style="color:var(--bad)">Heurística. Es literalmente por qué el guard publicado captura 4/14 en Zep y es <em>peor que no tener defensa</em> en dos sistemas</td><td class="strong" style="color:var(--accent)">Exacta por construcción</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Poseer el ledger <strong>adelgaza</strong> los adaptadores y es lo que hace exacto al filtro. Un gobernador no puede ser exacto sobre almacenes que solo le devuelven prosa. <span class="ev">Q1</span></p>
+
+  <h3>Tres correcciones a la reclamación</h3>
+
+  <ol class="steps">
+    <li><strong>La independencia es de formato, no de eventos.</strong> Si Claude Code renombra <code>UserPromptSubmit</code> o OpenCode retira <code>experimental.session.compacting</code>, Muninn se rompe igual. La reclamación honesta es <strong>5 adaptadores sobre eventos y 0 drivers sobre formatos</strong>: la mitad del acoplamiento, no inmunidad. El miedo está fundado — el formato de memoria nativo se movió <strong>tres veces dentro de la ventana</strong> de dos meses. <span class="ev">Q2</span></li>
+
+    <li><strong>Poseer un almacén cuesta un mes de fallos, y está inventariado.</strong> El único registro operativo publicado de una memoria propia documenta <strong>85 fallos de hook, 84 en las tres primeras semanas</strong>, todos de la capa de almacén y captura: codificación de texto en Windows, fallo de tabla virtual FTS5 con contención de bloqueo bajo hooks concurrentes, captura abortando contra un stdout muerto, caracteres de control rompiendo el parseo de FTS5. Converge —ninguno en los últimos 20 días— pero es el argumento decisivo para que <strong>el almacén sea mínimo</strong>. <span class="ev">Q3</span></li>
+
+    <li><strong>«Mejor que agentmemory» no en su eje.</strong> Competir en R@5 es una pelea perdida y, peor, irrelevante: tres estudios independientes dicen que la calidad de recuperación no predice el resultado. Lo defendible es <strong>otra función objetivo</strong> — no degradar al modelo, ser determinista, ser exacto sobre lo que está muerto, y costar ~1 ms.</li>
+  </ol>
+
+  <div class="note ok">
+    <div class="h">La resolución sobre el formato</div>
+    <p><strong>Poseer el motor, mantener el ledger exportable.</strong> Los diferenciadores de Muninn viven en <em>campos</em> —condiciones de disparo, tripleta de supersesión, ancla, procedencia—, no en un contenedor cerrado. Y los estándares de transferencia casi nunca especifican <strong>semántica de cumplimiento</strong>, que es exactamente donde está el valor.</p>
+  </div>
+
+  <h3>Un solo modo: motor propio, siempre</h3>
+  <p>Decisión de diseño, tomada después de sopesar lo anterior: Muninn lleva <strong>su propio motor de memoria en todos los harness</strong>, sin detectar, leer ni adaptar la memoria nativa ni la de ningún otro producto. Un paquete, un almacén, un esquema. Lo que se gana es no tener código que decida «hay memoria, cuál, de qué tipo», y controlar el comportamiento de punta a punta. Lo que se paga está en la sección 12: el mes uno de fallos de almacén y el canal de hooks.</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:22%"></th><th>Claude Code</th><th>Codex</th><th>OpenCode · Pi · Cline</th></tr></thead>
+    <tbody>
+      <tr><td class="strong">Nativa</td><td>La instalación escribe <code>autoMemoryEnabled: false</code> en el ámbito de proyecto, que es lo documentado; hay flag para no hacerlo <span class="ev">O5</span></td><td>Ya viene apagada por defecto <span class="ev">L5</span></td><td>No existe</td></tr>
+      <tr><td class="strong">Lo que la nativa daba y el motor cubre</td><td colspan="3">Topes duros de 200 líneas / 25 KB, carga del índice al arrancar, compartido entre worktrees del mismo repo — todo replicado en el motor con los mismos límites, porque son los únicos que se sabe que funcionan <span class="ev">K4</span></td></tr>
+      <tr><td class="strong">Delta esperado</td><td colspan="2"><strong>No cuantificado</strong> frente a la nativa. Se justifica por los cuatro fallos medidos, no por batirla</td><td>~4x sobre no tener memoria <span class="ev">K2</span></td></tr>
+      <tr><td class="strong">Lo único que queda de adaptador</td><td colspan="3">Cinco adaptadores <strong>de eventos</strong>, delgados, sobre los hooks. No hay forma de evitarlos: es el único punto por donde el harness deja entrar código</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>La ganancia sigue siendo proporcional al defecto recuperable — <em>«where defect mass is near zero, gain is near zero»</em> <span class="ev">O3</span> — así que la prioridad de evaluación sigue en los harness sin nativa, donde el 4x es medible. Pero el motor es el mismo en todos.</p>
+
+  <h3>Qué posee y qué no</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:50%">Muninn posee</th><th>Muninn no reconstruye</th></tr></thead>
+    <tbody>
+      <tr><td>El <strong>ledger de claims tipados</strong>: <span class="m">(sujeto, relación, objeto, t_evento, t_registro, t_invalidación, ancla, procedencia)</span></td><td>El respondedor enrutado de «por qué» — Rekal llega a 0,83 de suficiencia</td></tr>
+      <tr><td>La <strong>tabla de cues</strong> con condiciones de disparo permanentes</td><td>La competición en calidad de recuperación contra vector + grafo</td></tr>
+      <tr><td>El <strong>compilador</strong> de reglas a controles</td><td>Los triggers por <span class="m">path</span> y palabra clave — ya son nativos e industria estándar</td></tr>
+      <tr><td>El presupuesto, el ledger de disparos y la telemetría con denominador</td><td>El pinning de autorizaciones en Codex — ya lo hace Guardian thread context</td></tr>
+      <tr><td>El <strong>almacén literal</strong>, siempre, en todos los harness — sección 07</td><td>La compresión y el desalojo — MemForest retiene 97,1 % comprimiendo el 50 %</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ==================== 07 ==================== -->
+<section id="motor">
+  <div class="eyebrow"><span class="num">07</span> El motor</div>
+  <h2>El motor de memoria: literal, determinista, en milisegundos</h2>
+  <p class="lede">Un fichero SQLite por proyecto, un ledger tipado de seis tipos de registro, FTS5 encima, invalidación gruesa, procedencia estampada en la escritura. <strong>Ningún LLM ni vector en la ruta caliente.</strong> Escritura asíncrona, lectura en milisegundos. Especificación completa en <span class="m">design/ENGINE.md</span>.</p>
+
+  <h3>Diez principios, cada uno con su dato</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:34%">Principio</th><th>Dato que lo fija</th></tr></thead>
+    <tbody>
+      <tr><td class="strong">Almacenamiento literal. Ninguna consolidación por LLM</td><td>Literal ya cobra la mayor parte del beneficio: 45,56 % vs 11,67 %, y ningún diseño bate a otro <span class="ev">K2</span>. Consolidar cae por debajo de no tener memoria <span class="ev">C1</span>. Zero-Mem: sin LLM en operaciones de memoria, −57,6 % de tiempo <span class="ev">S3</span></td></tr>
+      <tr><td class="strong">Recuperación determinista. Ningún vector en la ruta caliente</td><td>Once harness, cuatro millones de líneas: ninguno recupera con embeddings <span class="ev">X3</span>. Denso+HNSW es no determinista en el 80 % de consultas <span class="ev">V4</span>. Cargar el modelo cuesta 35–106 ms por proceso <span class="ev">I2</span>; BM25 da el 93,3 % del recall del híbrido <span class="ev">I5</span></td></tr>
+      <tr><td class="strong">Invalidación gruesa: retener, marcar, no servir. Nunca borrar</td><td>Con control de render, el ledger fino tiene residuo cero y la invalidación gruesa lo bate <span class="ev">X1</span>. Borrar de un índice vectorial no borra semánticamente <span class="ev">S6</span>. La revocación se aplica en la lectura <span class="ev">K7</span> <span class="ev">N4</span></td></tr>
+      <tr><td class="strong">Procedencia en la escritura; confianza acotada por procedencia</td><td>Sin ella, la consolidación lava la fuente y el ASR llega a 1.000 <span class="ev">V3</span>. La confianza derivada del texto es manipulable <span class="ev">W3</span>. Inyectar memoria es X-CPE por construcción <span class="ev">W2</span></td></tr>
+      <tr><td class="strong">Topes duros en todo lo que crece</td><td>+226 % de crecimiento y las instrucciones viejas no se borran <span class="ev">K4</span>. 200 líneas / 25 KB es el único tope que se sabe que funciona <span class="ev">O5</span></td></tr>
+      <tr><td class="strong">Escritura fuera del camino crítico; lectura en un dígito de ms</td><td><em>«The cost is durability, not governance»</em>: 11 ms la escritura gobernada, 1,9 µs la valla <span class="ev">Y1</span>. <code>SessionEnd</code> tiene 1,5 s y los plugins no pueden subirlo <span class="ev">P6</span></td></tr>
+      <tr><td class="strong">Entrega involuntaria</td><td>0 operaciones voluntarias en 114 turnos <span class="ev">K1</span></td></tr>
+      <tr><td class="strong">Presupuesto duro y silencio por defecto</td><td>Recuperar de más daña la decisión secuencial <span class="ev">J6</span>; el contexto irrelevante produce inestabilidad por ejemplo <span class="ev">S1</span></td></tr>
+      <tr><td class="strong">Esquema tipado propio, exportable</td><td>Sobre prosa el filtro captura 4/14 <span class="ev">N4</span>. Un formato cerrado apuesta contra un CG del W3C activo <span class="ev">Q4</span></td></tr>
+      <tr><td class="strong">El motor se vigila a sí mismo</td><td>85 fallos en el mes uno, todos en almacén y captura <span class="ev">Q3</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>El ledger: seis tipos, una clave de supersesión</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:22%">Campo</th><th>Qué es</th></tr></thead>
+    <tbody>
+      <tr><td><span class="m">kind</span></td><td><span class="m">invariant · decision · deadend · correction · claim · episode</span></td></tr>
+      <tr><td><span class="m">subject · relation · object</span></td><td>La tripleta. <strong><span class="m">(subject, relation)</span> es la clave de supersesión</strong>: un objeto nuevo invalida al anterior por regla, no por parecido <span class="ev">E1</span> <span class="ev">K6</span></td></tr>
+      <tr><td><span class="m">body</span></td><td>Texto literal, ≤ 2 000 caracteres. <strong>Nunca reescrito.</strong> Lo que no cabe queda en <span class="m">transcript_ref</span>, que apunta a la transcripción cruda</td></tr>
+      <tr><td><span class="m">origin → trust</span></td><td><span class="m">user_said · review_accepted</span> = 3 · <span class="m">commit_linked</span> = 2 · <span class="m">tool_observed</span> = 1 · <span class="m">agent_inferred · imported</span> = 0. <strong>Derivado del origen, no del texto</strong> <span class="ev">W3</span></td></tr>
+      <tr><td><span class="m">anchor_path · anchor_hash</span></td><td>El fichero y el hash del contenido que estableció la afirmación. Si cambia, la afirmación se retira — no se adivina <span class="ev">K11</span></td></tr>
+      <tr><td><span class="m">invalid · invalidated_by · invalid_reason</span></td><td>Un bit. <span class="m">superseded · revoked · anchor_changed · reverted · user</span>. Lo inválido se retiene y no se sirve</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Sin tiempos de evento, registro e invalidación separados, sin «fuerza de evidencia», sin estado «no demostrable». Todo eso era grano fino y <span class="ev">X1</span> demuestra que no paga. Tres tablas más: <span class="m">cue</span> (disparadores permanentes por directorio normalizado, símbolo, evento, tiempo), <span class="m">rule</span> (cada regla de CLAUDE.md con su clase de cumplimiento y su racional como licencia de borrado) y <span class="m">fire_ledger</span> (cada disparo <em>y cada silencio</em>, con tokens entregados — el denominador).</p>
+
+  <h3>Ruta de escritura · asíncrona</h3>
+  <p>Disparada en <code>SessionEnd</code> y <code>Stop</code>; <code>PostToolUse</code> solo captura señales de ejecución. Lee <span class="m">transcript_path</span>, extrae candidatos por reglas deterministas, <strong>redacta secretos por patrón y entropía</strong> antes de escribir, deduplica por hash de tripleta, aplica supersesión, inserta, proyecta a Markdown, indexa. Si el hook expira, la ingesta se retoma en el siguiente <code>SessionStart</code> desde una marca de agua: <strong>pierde tiempo, no datos</strong>.</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:34%">Fuente de captura</th><th style="width:16%">Kind · trust</th><th>Dato</th></tr></thead>
+    <tbody>
+      <tr><td>Comentarios de review aceptados</td><td><span class="m">correction</span> · 3</td><td>0 % de recurrencia medida para las clases con regla <span class="ev">K14</span></td></tr>
+      <tr><td>Enlaces commit ↔ sesión</td><td><span class="m">decision · episode</span> · 2</td><td>Ground truth a coste cero de etiquetado <span class="ev">K3</span></td></tr>
+      <tr><td>Reverts y tests que siguen rojos tras un intento</td><td><span class="m">deadend</span> · 1</td><td>Las reglas anti-patrón superan a los ejemplos <span class="ev">J2</span></td></tr>
+      <tr><td>El usuario diciendo «no, así no»</td><td><span class="m">correction</span> · 3</td><td><span class="ev">G3</span></td></tr>
+      <tr><td>Lo que el agente infiera solo</td><td><span class="m">claim</span> · 0</td><td>Solo se sirve con marco de procedencia explícito</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Topes:</strong> ≤ 60 invariantes activos, ≤ 20 000 registros activos, índice de ≤ 200 líneas / 25 KB. Medido: 200 registros en 80 ms más 195 ms de <code>optimize</code> <span class="ev">I4</span>; objetivo &lt; 500 ms por sesión.</p>
+
+  <h3>Ruta de lectura · síncrona, cada turno</h3>
+  <ol class="steps">
+    <li><strong>Compuerta de intención</strong> por regex. Alrededor del 80 % de los turnos salen aquí. <span style="font-family:var(--mono);font-size:12px;color:var(--accent)">0,49 ms wall</span> <span class="ev">I3</span></li>
+    <li><strong>Contexto del turno:</strong> ficheros tocados, símbolos referenciados, evento, hora.</li>
+    <li><strong>Evaluación de cues por índice:</strong> directorio por ancestros, símbolo y evento exactos, tiempo por comparación. <span style="font-family:var(--mono);font-size:12px;color:var(--accent)">1,03 ms</span> <span class="ev">M2</span></li>
+    <li><strong>Léxico opcional:</strong> los 8 términos de mayor IDF del prompt → BM25 top-8. <span style="font-family:var(--mono);font-size:12px;color:var(--accent)">1,43 ms</span> <span class="ev">I1</span></li>
+    <li><strong>Filtro:</strong> <span class="m">invalid=1</span> nunca; <span class="m">trust&lt;1</span> solo con marco explícito; conflicto sin orden establecible → se sirven ambos marcados, <strong>nunca se elige por ranking</strong> — eso convirtió un 0 % de acciones inseguras en 100 % en el guard publicado <span class="ev">N4</span></li>
+    <li><strong>Fusión RRF</strong> y descarte de lo ya entregado en esta época de compactación.</li>
+    <li><strong>Presupuesto:</strong> ≤ 700 tokens <em>entregados</em>, ≤ 200 por bloque. Cabe con margen bajo los 10 000 caracteres de Claude Code y los 2 500 tokens de Codex <span class="ev">P6</span></li>
+    <li><strong>Ledger:</strong> una fila por cada disparo y por cada silencio.</li>
+  </ol>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Contrato</th><th class="n">Objetivo p50</th><th class="n">Medido</th></tr></thead>
+    <tbody>
+      <tr><td>Compuerta cortando</td><td class="n">&lt; 1 ms</td><td class="n strong" style="color:var(--accent)">0,49 ms</td></tr>
+      <tr><td>Cues + filtro</td><td class="n">&lt; 2 ms</td><td class="n strong" style="color:var(--accent)">1,034 ms · p99 1,143</td></tr>
+      <tr><td>Hook completo con léxico</td><td class="n">&lt; 6 ms</td><td class="n strong" style="color:var(--accent)">4,07 ms · p95 4,31</td></tr>
+      <tr><td>Modelo de embeddings en esta ruta</td><td class="n">nunca</td><td class="n" style="color:var(--bad)">106 ms si se hiciera</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Lo único que el modelo ve</h3>
+  <pre>[muninn:no-rebuild] src/webhooks/retry.rs ya implementa backoff exponencial.
+  decisión #142 · commit a1b2c3d · origen: review_accepted · verificar antes de actuar
+[muninn:stale] "el endpoint /v1/sync es idempotente" — src/api/sync.rs cambió desde
+  que se registró (2026-08-30). Retirado, no reemplazado.
+[muninn:lineage] #142 ← #98 ← #61 · <span class="c">muninn why 142</span></pre>
+  <p>Tres tipos de bloque y solo tres. Referencia, no contenido <span class="ev">A2</span>. Procedencia y confianza siempre <span class="ev">K1</span>. Enmarcado como evidencia, nunca como instrucción: la memoria es la superficie epistémica y las instrucciones la imperativa. Ningún bloque puede contener texto que se parezca a un rol de sistema o de usuario — es la defensa contra M-CPE <span class="ev">W2</span>.</p>
+
+  <h3>Compactación</h3>
+  <p><code>PreCompact</code> hace snapshot de invariantes y correcciones recientes. <code>PostCompact</code> y <code>SessionStart(compact)</code> <strong>reinyectan los invariantes sin compuerta</strong>, reinician el ledger de disparos para la nueva época, y <strong>verifican el resumen</strong>: <span class="m">compact_summary</span> se contrasta con los códigos de salida reales de la transcripción, y toda afirmación de «confirmado» cuyo comando terminó en 143 o no terminó se inyecta como <span class="m">[muninn:unverified]</span> <span class="ev">W4</span>. En OpenCode, además, <code>experimental.session.compacting</code> permite meter los invariantes <em>dentro</em> del prompt de compactación <span class="ev">O1</span>.</p>
+
+  <h3>Lo que el motor no lleva</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:40%">No lleva</th><th>Por qué</th></tr></thead>
+    <tbody>
+      <tr><td class="strike">Consolidación, reflexión, resumen por LLM</td><td><span class="ev">C1</span> <span class="ev">K10</span>. claude-mem y agentmemory lo llevan y es su mayor debilidad</td></tr>
+      <tr><td class="strike">Vectores en la ruta caliente</td><td><span class="ev">I2</span> <span class="ev">V4</span> <span class="ev">X3</span>. Sidecar opcional apagado, solo para <code>muninn why</code>, solo si una medición con oráculo independiente lo justifica</td></tr>
+      <tr><td class="strike">Grafo de conocimiento</td><td>El registro de 8 meses lo descartó: los fallos nunca fueron de expresividad <span class="ev">G3</span></td></tr>
+      <tr><td class="strike">Bi-temporal fino, «no demostrable», fuerza de evidencia</td><td><span class="ev">X1</span></td></tr>
+      <tr><td class="strike">Decaimiento tipo Ebbinghaus, importancia aprendida</td><td>Ninguna medición lo pide</td></tr>
+      <tr><td class="strike">Más de dos herramientas MCP</td><td>0 operaciones voluntarias <span class="ev">K1</span>; peaje <span class="ev">H2</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <div class="h">Empaquetado y canal</div>
+    <p>Núcleo en Rust, un crate, dos envolturas: binario CLI para los harness de subproceso y addon <code>napi-rs</code> para los de Node en proceso <span class="ev">P4</span>. Binario ≤ 15 MB, sin modelo dentro — Rekal pesa 170 MB <span class="ev">N1</span>. Hooks en <strong>forma exec, nunca shell</strong>, versión fijada, suma de comprobación publicada: es lo que HookPry explota con 92,5 % de éxito y 0 % de recall de Defender <span class="ev">X2</span>. El hook de lectura abre la base en solo lectura. Health gate de nueve comprobaciones en <code>SessionStart</code>, ninguna con modelo, y un heartbeat por invocación antes de trabajar <span class="ev">G3</span>.</p>
+  </div>
+</section>
+
+<!-- ==================== 08 ==================== -->
+<section id="funciones">
+  <div class="eyebrow"><span class="num">08</span> Las tres funciones</div>
+  <h2>Filtrar, compilar, repartir</h2>
+
+  <h3>F1 · Filtro de supersesión y revocación en la lectura <span style="font-family:var(--mono);font-size:12px;color:var(--accent)">≈0 tokens</span></h3>
+  <p>Regla determinista sobre <span class="m">(sujeto, relación, objeto)</span>: cuando entra un hecho con el mismo sujeto y relación y distinto objeto, el anterior <strong>se retiene marcado como inválido y deja de servirse</strong>. El filtro se aplica <strong>en la recuperación</strong>, no en el almacén.</p>
+
+  <div class="note crit">
+    <div class="h">Y el diseño era más complicado de lo que la evidencia soporta</div>
+    <p>Una versión anterior proponía tripleta bi-temporal completa —tiempo de evento, de registro y de invalidación—, fuerza de evidencia separada de frescura y estado «no demostrable». Un estudio en ventana, sobre 2 907 preguntas de alta concordancia de GitHub, historiales de issues multi-repo, Wikipedia y flujos temporales, lo desmonta con un <strong>control de render igualado</strong>: cuando un valor cambia y luego se restaura, el ledger de grano fino <em>parece</em> batir al baseline plano por <strong>+0,182</strong>, pero <strong>casi toda la ganancia viene de una presentación más fácil</strong> y el residuo del mecanismo es <strong>indistinguible de cero</strong> (+0,021 a +0,025 en dos familias de juez).</p>
+    <p>Controlada la presentación, <strong>la invalidación gruesa es el único mecanismo que paga</strong> para consultas de estado actual, y <strong>bate al ledger fino por 0,084</strong>. Su recomendación es literal: <em>«deprecation-aware systems should deploy the coarsest retained state that covers their queries»</em>, y <em>«provenance mainly needs retained invalidated evidence, not richer typing»</em>. <span class="ev">X1</span></p>
+    <p><strong>F1 se simplifica en consecuencia:</strong> retener el registro invalidado y no servirlo. Nada de tipado rico hasta que una medición lo pida. Es el principio que este documento predica, aplicado contra su propio diseño.</p>
+  </div>
+
+  <figure>
+    <div class="ctitle">La frontera que aguanta es la lectura</div>
+    <div class="csub">Política permisiva revocada en contexto · 360 corridas · 9 modelos · 4 escenarios de herramienta</div>
+    <div class="hb" id="c-guard"></div>
+    <figcaption>El mismo control puesto en la frontera de la herramienta es <strong>estadísticamente indistinguible de no tener defensa</strong>. Rechazó 9 comandos de 360 y el agente no evadió ninguno: <em>«the rule fails upstream of evasion, because the returned revoked policy licenses actions the rule does not classify as dangerous»</em>. <span class="ev">N4</span></figcaption>
+  </figure>
+
+  <div class="note ok">
+    <div class="h">La mejor evidencia de F1, y es en dominio de código</div>
+    <p>Sobre cuatro LLMs y cinco lenguajes, las memorias inseguras <strong>aumentan el riesgo de generar código vulnerable entre 2,7 y 50,3 puntos</strong>, y abren una <strong>brecha de aviso de 5,4 a 14,0 pp</strong>: la tasa de advertencias va por detrás de la de vulnerabilidad, así que el agente no avisa de lo que empeora. Además son <strong>difíciles de sobrescribir por interacción normal</strong> e influyen aunque el prompt cambie de forma.</p>
+    <p>Y lo decisivo es la comparación de mitigaciones: añadir requisitos de seguridad o reducir el almacenamiento bajan la vulnerabilidad 19,7–33,6 pp <strong>pero degradan la corrección funcional hasta 15,9 pp</strong>. El <strong>filtrado a nivel de memoria alcanza 100 % de detección y restaura el comportamiento al baseline sin memoria</strong>, sin ese coste. Es F1, en código, con resultado medido. <span class="ev">W1</span></p>
+  </div>
+
+  <p>Respaldo adicional: el top-k vectorial acierta <strong>6–27 %</strong> en supersesión, completitud de conjunto y negación, frente a <strong>98–100 %</strong> de registros tipados con enlaces de supersesión — <strong>y con recall de relevancia y coste en tokens equivalentes</strong> <span class="ev">K6</span>. Ningún sistema hace cumplir la revocación por defecto, y donde el registro revocado se expone <strong>rankea primero</strong> y el 42–44 % de los ensayos elige la acción insegura <span class="ev">K7</span>.</p>
+
+  <div class="note ok">
+    <div class="h">Arte previo de F1, en ventana</div>
+    <p><strong>Y por qué los benchmarks conversacionales no ven el valor de esto.</strong> Una ablación controlada encuentra que la actualización bayesiana de creencias <strong>aporta poco frente a un simple last-write-wins</strong>, porque <em>«existing conversational memory benchmarks rarely contain contradictory or differently reliable evidence»</em>. Con evidencia contradictoria y de fiabilidad distinta, en cambio, supera sustancialmente a last-write-wins — y acotar la confianza <strong>por procedencia de la fuente</strong> en vez de por confianza textual resiste el envenenamiento volumétrico. <span class="ev">W3</span> Es la explicación de por qué F1 no aparece en las tablas de LoCoMo: esos benchmarks no contienen el fallo que F1 arregla.</p>
+    <p><strong>Y F1 está formalizado y probado por otros.</strong> <em>«Stored Is Not Supported»</em>, del 2 de septiembre: <em>«Persistence changes availability, not epistemic standing: stored or retrieved material is not thereby supported»</em>. Grafo de procedencia tipado, resolver con banderas de conflicto, obsolescencia y retención, y mediador que verifica antes de liberar. En su suite de 24 casos de conformidad, la mediación tipada <strong>no dejó pasar sin cualificar ninguna de las 19 oportunidades inseguras</strong>; las reglas planas liberaron 19/19. Sus autores declaran que valida las obligaciones del resolver, <strong>no una evaluación extremo a extremo</strong>. <span class="ev">U5</span></p>
+    <p><strong>Alguien más está construyendo lo bitemporal.</strong> Un almacén Neo4j local al agente con HNSW y modelo bitemporal completo —nodo de identidad inmutable, nodos de contenido versionados, tiempo válido y tiempo de transacción— publicado en julio. Sus números honestos sobre 60 preguntas de LongMemEval: <strong>46,7 % R@10 global</strong>, subiendo a <strong>80 % en preguntas de actualización de conocimiento</strong>, que es justo el caso de F1; pero la ruta de viaje en el tiempo <strong>baja el recall de razonamiento temporal de 50 % a 37,5 %</strong> por dilución de post-filtro. Es a la vez arte previo y aviso: el post-filtro puede diluir otras preguntas. <span class="ev">S5</span></p>
+    <p><strong>Y borrar no es borrar.</strong> Aunque una base vectorial implemente correctamente el borrado por API, el registro eliminado deja influencia residual medible: deriva mediana del centroide de recuperación <strong>0,1522</strong>, superando el control en <strong>53 de 54</strong> comparaciones emparejadas (p &lt; 0,001), y <strong>reconstruir el índice entero no la elimina</strong>. Eso valida la decisión de F1 de <strong>retirar sin borrar</strong>. <span class="ev">S6</span></p>
+    <p><strong>Apoyo nuevo por otra vía.</strong> Un marco de estrés con 4 473 tests sobre cuatro modelos encuentra que <em>«two stressors expose consistent weaknesses across all models: <strong>conflicting instructions</strong> and questions built on an impossible premise»</em>. Una memoria caduca no retirada <strong>es literalmente una instrucción en conflicto</strong>. <span class="ev">S7</span></p>
+  </div>
+
+  <div class="note ok">
+    <div class="h">Dónde está la contribución exacta</div>
+    <p>El guard ya está publicado: <code>guard/stale_guard.py</code>, agnóstico del backend, dos etapas. Sus propios autores: <em>«shows that the guard is deployable, not that its design is sound»</em>. En Zep captura <strong>4/14</strong>; en cognee y Graphiti bajo inserción indirecta es <strong>peor que no tener defensa</strong>; y una versión anterior que rompía empates por orden de resultado <strong>convirtió una tasa insegura del 0 % en el 100 %</strong>.</p>
+    <p><strong>Es débil porque es agnóstico del backend y tiene que inferir el conflicto de texto sin estructura.</strong> Con esquema propio, la etapa heurística desaparece y el filtro pasa a exacto. No hay que escribir un guard mejor: hay que quitarle la necesidad de adivinar. Esa es la razón técnica por la que Muninn posee el ledger.</p>
+  </div>
+
+  <h3>F2 · Compilador de reglas a controles <span style="font-family:var(--mono);font-size:12px;color:var(--accent)">0 tokens</span></h3>
+  <p>Lee CLAUDE.md, AGENTS.md y <code>.claude/rules/</code>; clasifica cada regla en <em>ejecutable por un control</em> o <em>solo interpretable</em>; emite las reglas de permiso, los hooks <code>deny</code> y la configuración de sandbox que la hacen cumplir; y devuelve un informe de lo que quedó siendo solo persuasión.</p>
+  <p><strong>El hueco:</strong> solo el <strong>4,4 % (IC 95 %: 2,6–6,7 %)</strong> de las reglas de seguridad escritas en 481 CLAUDE.md públicos tiene un control nativo que las respalde, y el desarrollador no recibe ningún feedback de cuál es cuál. <em>«CLAUDE.md is a write-only channel»</em> <span class="ev">K5</span>.</p>
+  <p><strong>El mecanismo:</strong> evaluación de flota sobre <strong>46 endpoints de modelo de 6 fabricantes</strong> y 48 modelos en conflicto de memoria, 14 294 ensayos. Los modelos <strong>identifican explícitamente la autoridad falsificada</strong> cuando se les pregunta, y aun así algunas configuraciones emiten la llamada conflictiva. La vulnerabilidad se concentra en celdas reproducibles y varía hasta <strong>47 pp dentro de una misma ventana de despliegue</strong>. <em>«Prompt-layer defenses likewise fail to generalize across models and adaptive formulations»</em>. Conclusión: <em>«Secure agents require external enforcement, not merely better recognition»</em> <span class="ev">N2</span>.</p>
+  <div class="note crit">
+    <div class="h">Dos límites que hay que declarar</div>
+    <p><strong>Uno.</strong> F2 <strong>no</strong> cubre el fallo de memoria obsoleta. Eso lo cubre F1, y son dos fronteras distintas: en la cadena de herramientas medida, el guardrail en la frontera de la herramienta no se distingue de no tener defensa. <span class="ev">N4</span></p>
+    <p><strong>Dos, y es peor.</strong> Compilar a reglas de permiso del harness es cumplimiento <em>a nivel de herramienta</em>, y hay una medición en ventana que dice que eso es insuficiente por construcción: <em>«tool-call guardrails miss system actions that bypass the tool layer, while OS sandboxes control resource access instead of actions, returning opaque errors that confuse the agent»</em>. Su conclusión es que el cumplimiento tiene que ocurrir <strong>en el sistema operativo</strong> para cubrir todos los caminos de ejecución — eBPF, con 1,9 %–8,4 % de sobrecarga. <span class="ev">U2</span></p>
+    <p>Consecuencia honesta: F2 mejora la cobertura frente a <em>no tener nada</em>, que es el 95,6 % de las reglas escritas hoy, pero <strong>no da garantías sobre caminos indirectos</strong>. Prometer eso sería repetir el error que este dossier acaba de corregir.</p>
+  </div>
+
+  <h3>F3 · Repartidor cue-anchored <span style="font-family:var(--mono);font-size:12px;color:var(--accent-2)">≤ 700 tokens, tope duro</span></h3>
+  <p>Condiciones de disparo permanentes por memoria sobre <span class="m">symbol</span>, <span class="m">event</span> completo (pre-edit, pre-run, pre/post-compaction) y <span class="m">temporal</span> (not-before, cooldown) — los tres que no encontré en ningún producto enviado. Reusa <span class="m">path</span> y palabra clave, que ya son nativos.</p>
+  <p>Disciplina heredada del arte previo, no inventada: evaluación determinista en el harness, ledger de disparos que <strong>se reinicia en cada límite de compactación</strong> para que los hechos anclados se re-armen, marco de procedencia en todo lo inyectado — <em>«recorded by an AI session, not human-endorsed — verify»</em> — y comprobación de obsolescencia contra ground truth. <span class="ev">K1</span></p>
+  <p>Coste medido en Rust: <strong>1,034 ms p50 · 1,143 ms p99</strong>, con 5 000 memorias, 15 000 triggers, 20 ficheros tocados con sus directorios ancestros, 50 símbolos referenciados y el filtro de supersesión sobre 64 candidatos. <span class="ev ev-a">M2</span></p>
+  <div class="note crit">
+    <div class="h">Arte previo de F3, y la evaluación que le faltaba</div>
+    <p><strong>El mecanismo está publicado y medido.</strong> El <em>Prospective Intention Store</em>, del 1 de septiembre, pone la lógica de ciclo de vida en código y tipa el espacio de acción; es agéntico y sin entrenamiento. En PM-Bench alcanza <strong>82,9 % Set-F1</strong> contra el 65,1 % del mejor scaffold publicado, y en un modelo pequeño pasa de <strong>4,2 % sin almacén a 66,2 %</strong>. <span class="ev">V2</span></p>
+    <p><strong>Y trae la evaluación que yo declaraba inexistente.</strong> <em>PM-Bench</em> mide memoria prospectiva —ejecutar una intención en un cue futuro mientras sigue otra actividad— sobre una semana simulada, con ocho modelos y ocho configuraciones. El mejor llega al <strong>65,1 % de F1</strong>, y <em>«no single strategy for improving prospective memory dominates across models»</em>. <span class="ev">V1</span> F3 tiene ahora una línea base pública que batir, y la distinción que sí se sostiene: en ese mismo benchmark, <strong>los métodos de memoria retrospectiva se quedan como mucho en 54,4 %</strong> — recuperar por similitud no resuelve la entrega en el momento justo.</p>
+  </div>
+
+  <div class="note crit">
+    <div class="h">Muninn es, por construcción, un vector de escalada de contexto</div>
+    <p>El primer análisis sistemático del ensamblado de contexto en <strong>12 harness reales, incluidos Claude Code y Codex</strong>, nombra dos ataques: <strong>M-CPE</strong>, cuando contenido de un contexto de bajo privilegio entra en un rol de mensaje de mayor privilegio, y <strong>X-CPE</strong>, cuando contenido <strong>persiste más allá del contexto en el que se introdujo</strong>. Consecuencias documentadas: compromiso total del agente, ejecución remota de código y invocaciones manipuladas de herramientas. <span class="ev">W2</span></p>
+    <p><strong>Hacer que algo persista más allá de su contexto es literalmente la función de F3</strong>, y lo inyecta en <code>additionalContext</code>, que es ensamblado de contexto. Sin etiquetas de privilegio y procedencia en cada inyección, Muninn <em>es</em> el vector. Eso convierte el marco de procedencia de recomendación de diseño en <strong>requisito de seguridad con nombre</strong>: procedencia siempre, y sin capacidad de escalar privilegios nunca.</p>
+  </div>
+
+  <h4>Lo que Muninn no promete</h4>
+  <ul class="tight">
+    <li>No mejora la corrección de una tarea de implementación en una sola sesión.</li>
+    <li>No hace que el agente complete tareas multi-sesión interdependientes.</li>
+    <li>No importa skills públicas.</li>
+    <li>No consolida automáticamente.</li>
+    <li>No gana en R@5, y no lo intenta.</li>
+  </ul>
+</section>
+
+<!-- ==================== 08 ==================== -->
+<section id="medido">
+  <div class="eyebrow"><span class="num">09</span> Mediciones propias</div>
+  <h2>Lo que medí en esta máquina</h2>
+  <p class="lede">Corpus de 144 487 registros de un dump de Simple Wikipedia. 32 núcleos, 61 GB, SQLite 3.53.4, Rust estable. Scripts reproducibles en el repo.</p>
+
+  <figure>
+    <div class="ctitle">Coste de recuperar contexto para un turno</div>
+    <div class="csub">Mediana · escala logarítmica · seis sistemas, misma función</div>
+    <div class="hb" id="c-lat"></div>
+    <figcaption>Los tres primeros son Muninn, medidos desde fuera del proceso. Rekal aparece aparte porque hace otra cosa: responder, con 5,9–6,6 turnos de agente. El eje es logarítmico: cada marca es diez veces la anterior.</figcaption>
+  </figure>
+
+  <div class="note crit">
+    <div class="h">La medición que cambió el diseño, dos veces</div>
+    <p><strong>Primera:</strong> cargar la tabla de embeddings cuesta <strong>106 ms por proceso</strong> (potion-retrieval-32M) o 35 ms (potion-base-8M), mientras codificar la consulta ya cargada cuesta <strong>0,008 ms</strong>. Un hook es un proceso nuevo cada vez: la rama vectorial no puede vivir en la ruta caliente. <span class="ev ev-a">I2</span></p>
+    <p><strong>Segunda:</strong> la forma ingenua de evaluar cues de path —un <code>GLOB</code> por fichero tocado contra la tabla de triggers— cuesta <strong>5,614 ms</strong>. Normalizarlos a prefijo de directorio y resolverlos por ancestros indexados cuesta <strong>1,034 ms</strong>: <strong>5,4x más rápido</strong>, misma semántica para el patrón dominante <code>dir/**</code>. <span class="ev ev-a">M2</span></p>
+  </div>
+
+  <figure>
+    <div class="ctitle">Cómo escala cada motor con el tamaño del almacén</div>
+    <div class="csub">Registros indexados frente a latencia de consulta · ambos ejes logarítmicos</div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>SQLite FTS5 + bm25()</span>
+      <span><i style="background:var(--accent-2)"></i>Scan de subcadena (MCP oficial)</span>
+    </div>
+    <div class="svgwrap" id="c-scale"></div>
+    <figcaption>FTS5 escala sublinealmente: 144 veces más datos cuestan 6 veces más latencia. El scan de subcadena es estrictamente lineal. A 144 000 registros la diferencia es de cuatro órdenes de magnitud. <span class="ev">H1</span> <span class="ev">H2</span></figcaption>
+  </figure>
+
+  <figure>
+    <div class="ctitle">¿Aporta algo la rama vectorial?</div>
+    <div class="csub">Protocolo known-item con frase-fuera · 50 000 registros · 500 consultas</div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>recall@10</span>
+      <span><i style="background:var(--accent-2)"></i>MRR@10</span>
+    </div>
+    <div class="gb" id="c-qual"></div>
+    <figcaption>El híbrido gana en las dos métricas, pero por poco: BM25 solo alcanza el <strong>93,3 %</strong> del recall del híbrido. Por eso la rama vectorial es opcional y vive fuera de la ruta caliente. <span class="ev">H4</span><br><br><strong>Y hay un argumento mejor que el mío para esa decisión.</strong> Sobre un corpus de 1 060 documentos, los selectores deterministas y BM25 devuelven conjuntos <strong>estables</strong> ante consultas idénticas repetidas (Jaccard 1,0), mientras que un baseline denso con HNSW es <strong>no determinista en el 80 % de las consultas</strong> — Jaccard medio 0,611, peor caso 0,210. Para una capa que promete decisiones reconstruibles, eso pesa más que 2,8 puntos de recall. <span class="ev">V4</span></figcaption>
+  </figure>
+
+  <figure>
+    <div class="ctitle">Dónde está el coste de la ruta de lectura</div>
+    <div class="csub">Mediana por etapa · 50 000 registros · un hilo</div>
+    <div class="hb" id="c-stage"></div>
+    <figcaption>La mayor palanca no es el índice: es <strong>elegir qué términos se consultan</strong>. Pasar de los 24 primeros términos del prompt a los 8 de mayor IDF corta la etapa BM25 en 4,6 veces. <span class="ev">H6</span></figcaption>
+  </figure>
+
+  <h3>El precio de un MCP, en tokens</h3>
+  <p>Medido conectando un cliente JSON-RPC real al servidor oficial de memoria por stdio, con 20 000 entidades cargadas: su <code>search_nodes</code> es un <code>includes()</code> sobre el grafo entero, sin ranking y sin límite.</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Consulta</th><th class="n">Caracteres devueltos</th><th class="n">≈ tokens al modelo</th></tr></thead>
+    <tbody>
+      <tr><td><span class="m">the</span></td><td class="n">18 608 556</td><td class="n" style="color:var(--bad)">5 169 000</td></tr>
+      <tr><td><span class="m">was</span></td><td class="n">6 211 579</td><td class="n" style="color:var(--bad)">1 725 000</td></tr>
+      <tr><td><span class="m">project</span></td><td class="n">315 044</td><td class="n" style="color:var(--bad)">87 500</td></tr>
+      <tr><td><span class="m">database</span></td><td class="n">50 974</td><td class="n">14 200</td></tr>
+      <tr><td><span class="m">system design</span></td><td class="n">39</td><td class="n">11</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Salida no acotada con términos frecuentes y salida vacía con lenguaje natural. Más un peaje fijo de <strong>9 herramientas, 10 750 caracteres de schema, ~3 000 tokens por petición</strong>. <span class="ev">H2</span> <span class="ev">M1</span></p>
+
+  <figure>
+    <div class="ctitle">Rendimientos decrecientes del contexto recuperado</div>
+    <div class="csub">LoCoMo · 50 corridas · el estudio de configuración más detallado que encontré · dic-2025, fuera de ventana</div>
+    <div class="svgwrap" id="c-zep"></div>
+    <figcaption>De la configuración mínima a 20/20: <strong>+10,4 puntos por cuatro veces los tokens</strong>. De 20/20 a 30/30: +0,26 puntos por 1,5 veces más. La latencia nunca fue el cuello de botella — p50 por debajo de 250 ms en todas las configuraciones. Lo que se paga son tokens. <span class="ev">B3</span><br><br><strong>Aviso de fecha: estos datos son de diciembre de 2025, fuera de la ventana de tres meses.</strong> Se conservan porque siguen siendo el estudio de configuración más detallado que existe, y porque un trabajo en ventana llega a la misma conclusión por otra vía: sobre ocho sistemas de memoria, <em>«on PAIM Graphiti wins convincingly but uses 2.6M characters of retrieved context per query, and <strong>after controlling for retrieval budget the lead disappears</strong>»</em>, y <em>«the sparse-dense hybrid is the single most significant intervention»</em>, con tres sistemas empatados dentro de 0,03 puntos. <span class="ev">S2</span></figcaption>
+  </figure>
+
+  <h3>Contratos de servicio</h3>
+  <p>Con una confirmación externa del reparto de costes: en un sistema de memoria gobernada comparable, la escritura gobernada cuesta <strong>11,0 ms</strong>, de los que el envelope es el 70,6 %, pero <strong>la valla de generación cuesta 1,9 µs y el ledger de obligaciones 42 µs</strong>. Su conclusión — <em>«the cost is durability, not governance»</em> — coincide con lo que yo medí: la ruta de lectura puede ser barata; los milisegundos se los lleva escribir con garantías, y por eso la escritura sale del camino crítico. <span class="ev">Y1</span></p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Contrato</th><th class="n">Objetivo</th><th class="n">Medido</th></tr></thead>
+    <tbody>
+      <tr><td>Evaluación de cues por turno, p99</td><td class="n">&lt; 3 ms</td><td class="n strong" style="color:var(--accent)">1,143 ms</td></tr>
+      <tr><td>Hook completo, p95</td><td class="n">&lt; 10 ms</td><td class="n strong" style="color:var(--accent)">4,31 ms</td></tr>
+      <tr><td>Hook cuando la compuerta corta, p95</td><td class="n">&lt; 1 ms</td><td class="n strong" style="color:var(--accent)">0,56 ms</td></tr>
+      <tr><td>Ingesta de una sesión, asíncrona</td><td class="n">&lt; 1 s</td><td class="n strong" style="color:var(--accent)">275 ms</td></tr>
+      <tr><td>Tokens inyectados por turno</td><td class="n">≤ 700</td><td class="n">por construcción</td></tr>
+      <tr><td>Slots de trigger residentes consumidos</td><td class="n">0</td><td class="n">F1 y F2 no inyectan</td></tr>
+      <tr><td>Hechos revocados servidos</td><td class="n">0</td><td class="n">filtro en la recuperación</td></tr>
+      <tr><td>Modelo cargado en la ruta caliente</td><td class="n">nunca</td><td class="n" style="color:var(--bad)">106 ms por proceso</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ==================== 09 ==================== -->
+<section id="orden">
+  <div class="eyebrow"><span class="num">10</span> Plan</div>
+  <h2>Orden de construcción y criterios de muerte</h2>
+  <p class="lede">La decisión de poseer el motor es correcta. <strong>El orden es lo que decide si funciona.</strong> Poseer el almacén, sí; primero, no.</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th class="n" style="width:5%">#</th><th style="width:24%">Qué</th><th class="n" style="width:9%">Tokens</th><th>Por qué en ese sitio, y cuándo se mata</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="n strong">1</td>
+        <td class="strong">F2 — compilador de reglas a controles</td>
+        <td class="n" style="color:var(--accent)">0</td>
+        <td><strong>No necesita almacén en absoluto</strong> y se envía solo. El mecanismo <em>ya existe</em> en la literatura —autoformalización a Cedar, FAVA, VIGIL— así que aquí no se inventa: se adapta a CLAUDE.md, a AGENTS.md y a la superficie de permisos del harness, y se añade el informe de cobertura que ninguno devuelve. <em>Muere si</em> al compilar un corpus real la fracción ejecutable sale ≥50 %, o si una de esas herramientas ya cubre el caso del harness sin adaptarla. <span class="ev">U1</span></td>
+      </tr>
+      <tr>
+        <td class="n strong">2</td>
+        <td class="strong">Almacén literal <em>desechable</em> + el experimento de cuatro brazos</td>
+        <td class="n">—</td>
+        <td>Es el go/no-go del proyecto. <strong>No se construye un almacén de producto para correr un experimento.</strong> Si la entrega involuntaria no bate a los episodios literales, te has ahorrado toda la superficie de agentmemory.</td>
+      </tr>
+      <tr>
+        <td class="n strong">3</td>
+        <td class="strong">F1 — filtro de supersesión y revocación, con el ledger tipado</td>
+        <td class="n" style="color:var(--accent)">≈0</td>
+        <td>Tiene el número extremo a extremo más fuerte de la investigación. <em>Muere si</em> con esquema propio no bate al <code>stale_guard.py</code> publicado en su propia rejilla de escenarios.</td>
+      </tr>
+      <tr>
+        <td class="n strong">4</td>
+        <td class="strong">F3 — entrega cue-anchored: <span class="m">event</span> y <span class="m">temporal</span> primero</td>
+        <td class="n">≤700</td>
+        <td><strong>Muere si un control irrelevante de longitud igualada reproduce la ganancia</strong>: entonces es longitud y no contenido. Y ahora hay una segunda vara: <strong>PM-Bench</strong>, donde el mejor scaffold publicado da 65,1 % de F1 y un almacén de intenciones tipado da 82,9 %. Si la versión de harness no se acerca, el mecanismo no se está portando bien. <span class="ev">V1</span> <span class="ev">V2</span></td>
+      </tr>
+      <tr>
+        <td class="n strong">5</td>
+        <td class="strong">El almacén de verdad, y solo con lo que el experimento pidió</td>
+        <td class="n">—</td>
+        <td>Cada característica trazable a un punto de dolor medido. Por defecto: literal, sin consolidar, sofisticación detrás de flags apagados.</td>
+      </tr>
+      <tr>
+        <td class="n strong">6</td>
+        <td class="strong">Triggers <span class="m">symbol</span> + grafo de símbolos</td>
+        <td class="n">≤700</td>
+        <td><em>Muere si</em> <span class="m">path</span> + <span class="m">event</span> ya capturan los disparos útiles. Los propios autores del arte previo nunca dispararon <span class="m">symbol</span> en una corrida evaluada. <strong>Y hay una advertencia en ventana:</strong> la precisión semántica a nivel de símbolo <em>«is asserted almost everywhere and measured almost nowhere»</em>, cuesta <strong>+6 % a +118 %</strong> de tokens en localización, y <strong>el agente la ignora cuando la tiene gratis</strong>. <span class="ev">S4</span></td>
+      </tr>
+      <tr>
+        <td class="n">últ.</td>
+        <td class="strong">Skills procedurales, solo desde trayectorias propias contrastadas</td>
+        <td class="n" style="color:var(--bad)">alto</td>
+        <td>Sin control de longitud igualada y sin múltiples corridas con orden aleatorizado, <strong>no se construye</strong>.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note ok">
+    <div class="h">La regla que mantiene esto honesto</div>
+    <p><strong>Cada característica del almacén tiene que ser trazable a un punto de dolor medido, y la configuración por defecto tiene que ser la que la evidencia soporta.</strong> agentmemory activa la consolidación por defecto <em>en cuanto se configura un proveedor LLM</em>, que es el mecanismo con la peor evidencia de toda la investigación: 54 % de regresión en problemas ya resueltos. Ese es el fallo que se hereda por construir hacia el máximo técnico en vez de hacia la medición.</p>
+  </div>
+
+  <h3>El experimento que decide</h3>
+  <p>En un harness sin memoria nativa —OpenCode o Pi, por tener hooks limpios y ninguna nativa que confunda la medición— cuatro brazos sobre un benchmark multi-sesión con oráculos ejecutables:</p>
+  <ol class="steps">
+    <li>Sin memoria.</li>
+    <li>Entrega involuntaria de <strong>episodios literales</strong> por hook.</li>
+    <li>Lo mismo, <strong>más el filtro</strong> de supersesión y revocación.</li>
+    <li><strong>Control irrelevante de longitud igualada</strong> — obligatorio desde agosto.</li>
+  </ol>
+  <p><strong>Y el criterio que gobierna el diseño del experimento:</strong> el oráculo tiene que ser <strong>independiente del mecanismo bajo prueba</strong>. La telemetría de disparos de Muninn no sirve — mide que el mecanismo se ejecutó, no que sirvió. Solo cuentan los oráculos ejecutables del benchmark. <span class="ev">Y1</span></p>
+  <p>Brazo 1 contra 2 replica el 11,67 % → 45,56 % en un harness real y con hooks, que no encontré publicado. Brazo 2 contra 3 es el valor de F1. <strong>Si el 2 no bate al 1, el proyecto no existe. Si el 3 no bate al 2, Muninn se reduce a F2</strong> — que sigue siendo lo único que no encontré construido.</p>
+
+  <h4>Protocolo de evaluación, con el estándar de agosto</h4>
+  <ul>
+    <li><strong>Control irrelevante de longitud igualada</strong> en cada inyección. <span class="ev">J2</span></li>
+    <li><strong>Control de render igualado</strong> en cualquier comparación de mecanismos de invalidación: mismo layout, deprecación desactivada. Sin él, un mecanismo de grano fino puede parecer +0,182 mejor cuando su residuo real es cero. <span class="ev">X1</span></li>
+    <li><strong>Múltiples corridas y orden de tareas aleatorizado.</strong> Sin eso, cualquier cifra de auto-mejora es un curriculum implícito. <span class="ev">J4</span></li>
+    <li><strong>Benchmark multi-sesión con oráculos ejecutables</strong>, no recall post-hoc. La línea a batir es <strong>memoria de eventos literal, 45,56 %</strong> — no «sin memoria». <span class="ev">K2</span></li>
+    <li><strong>Contrafactual de restauración</strong> para separar pérdida irreversible de fallo de recuperación recuperable.</li>
+    <li><strong>Cuatro niveles de medida:</strong> estado almacenado, contexto entregado, trabajo de gestión, resultado. Presupuestos de tokens iguales <strong>no implican contexto entregado igual</strong>.</li>
+    <li><strong>Suficiencia de respuesta</strong> sobre preguntas reales de desarrollador, no relevancia de recuperación. <span class="ev">K3</span></li>
+  </ul>
+</section>
+
+<!-- ==================== 11 ==================== -->
+<section id="veredicto-competitivo">
+  <div class="eyebrow"><span class="num">11</span> Veredicto competitivo</div>
+  <h2>¿Compite técnicamente con lo que existe? En un eje sí. En el conjunto no.</h2>
+  <p class="lede">Pregunta hecha sin contar comunidad ni exposición: solo técnica. La respuesta honesta empieza por decir que <strong>«mejor» depende de qué se mida</strong>, y que la función objetivo donde Muninn gana la eligió este documento.</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:17%">Eje</th><th style="width:26%">Muninn</th><th style="width:27%">Lo mejor que existe</th><th>Veredicto</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="strong">Latencia en la ruta caliente</td>
+        <td>4,07 ms de hook, 1,03 ms de cues, en proceso, sin modelo <span class="ev ev-a">I3</span> <span class="ev ev-a">M2</span></td>
+        <td>agentmemory 14 ms de búsqueda más servidor y runtime de Node; Hindsight ~300 ms de red; Zep 149–241 ms <span class="ev">P2</span> <span class="ev">O2</span> <span class="ev">B3</span></td>
+        <td class="strong" style="color:var(--accent)">Mejor, y es estructural: no hay servidor ni carga de modelo que amortizar. Medido sobre esquema sintético, no sobre repo real</td>
+      </tr>
+      <tr>
+        <td class="strong">No degradar al modelo</td>
+        <td>Sin consolidación, presupuesto duro, silencio por defecto</td>
+        <td>agentmemory: consolidación por LLM si hay proveedor, 54 tools, 17 skills; claude-mem: consolidación por diseño <span class="ev">P3</span> <span class="ev">X4</span></td>
+        <td class="strong" style="color:var(--accent)">Mejor por construcción, pero no medido. Es la evidencia más fuerte del corpus a favor y no tiene un número propio</td>
+      </tr>
+      <tr>
+        <td class="strong">Invalidación exacta</td>
+        <td>Gruesa, en la lectura, por tripleta</td>
+        <td>Los cinco de K7 no la hacen cumplir; SuperLocalMemory, PPMF y <em>Stored Is Not Supported</em> sí <span class="ev">K7</span> <span class="ev">Y1</span> <span class="ev">V3</span> <span class="ev">U5</span></td>
+        <td>Entre los pocos, no único. Y lo que paga es la versión gruesa, que cualquiera hace en una semana <span class="ev">X1</span></td>
+      </tr>
+      <tr>
+        <td class="strong">Compilador de reglas</td>
+        <td>Sí</td>
+        <td>Ningún producto de memoria; el mecanismo está publicado <span class="ev">U1</span></td>
+        <td>Único en la categoría, pero es un clasificador más un emisor</td>
+      </tr>
+      <tr>
+        <td class="strong">Cues no semánticos</td>
+        <td>Por directorio, símbolo, evento y tiempo, evaluados en el harness</td>
+        <td>Todos recuperan por similitud; PIS tipa intenciones dentro del bucle <span class="ev">V2</span></td>
+        <td>Plausible, no demostrado. Sus autores nunca dispararon símbolo ni tiempo en corrida evaluada <span class="ev">K1</span></td>
+      </tr>
+      <tr>
+        <td class="strong">Calidad de recall</td>
+        <td>BM25 solo: 93,3 % del híbrido <span class="ev ev-a">I5</span></td>
+        <td>agentmemory 95,2 % R@5; Rekal 90,57 % LoCoMo, ambos auto-reportados</td>
+        <td class="strong" style="color:var(--bad)">Peor, a propósito. Y toda cifra ahí carga 27,5 puntos de incertidumbre de método <span class="ev">W3</span></td>
+      </tr>
+      <tr>
+        <td class="strong">Responder «por qué»</td>
+        <td>No lo hace</td>
+        <td>Rekal, 0,83 de suficiencia <span class="ev">K3</span></td>
+        <td class="strong" style="color:var(--bad)">Peor</td>
+      </tr>
+      <tr>
+        <td class="strong">Transporte de equipo</td>
+        <td>No en v1</td>
+        <td>Rekal por ramas huérfanas; agentmemory por namespaces; nativo <code>CLAUDE_MEMORY_STORES</code></td>
+        <td class="strong" style="color:var(--bad)">Peor</td>
+      </tr>
+      <tr>
+        <td class="strong">Amplitud de harness</td>
+        <td>5 adaptadores</td>
+        <td>agentmemory 50+ vía el CLI <code>skills</code></td>
+        <td class="strong" style="color:var(--bad)">Peor</td>
+      </tr>
+      <tr>
+        <td class="strong">Madurez</td>
+        <td>Cero</td>
+        <td>Meses de captura endurecida; el único registro publicado tuvo 85 fallos en su mes uno <span class="ev">Q3</span></td>
+        <td class="strong" style="color:var(--bad)">Peor durante meses, por definición</td>
+      </tr>
+      <tr>
+        <td class="strong">Resultado de tarea</td>
+        <td>Nadie lo tiene. Muninn tiene el mejor protocolo</td>
+        <td>Nadie</td>
+        <td>Empate en cero. Ventaja de método, no de producto</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Lo que es verdad sin matices</h3>
+  <p>Muninn sería la memoria <strong>más rápida en la ruta caliente por un orden de magnitud</strong>, la única de la categoría que <strong>no puede empeorar la respuesta por diseño</strong> en dos de sus tres funciones, y una de las pocas que <strong>retira lo superado con exactitud</strong>. Eso es un eje real, con números detrás, y en ese eje gana.</p>
+
+  <h3>Lo que también es verdad</h3>
+  <p>En calidad de recuperación, en responder preguntas, en compartir con el equipo, en cobertura de harness y en madurez, está por detrás de al menos dos productos. Y en el único benchmark multi-sesión ejecutable que existe, la evidencia dice que <strong>ningún diseño de memoria bate a otro</strong>: literal 45,56 %, Mem0 literal 53,89 %, diferencia no confirmatoria <span class="ev">K2</span>. Eso corta en las dos direcciones: nadie puede reclamar «mejor» por resultado ahora mismo, y Muninn tampoco.</p>
+
+  <div class="note crit">
+    <div class="h">La trampa, dicha claramente</div>
+    <p>La función objetivo donde Muninn gana —latencia, no dañar, exactitud de invalidación— <strong>la eligió este documento</strong> a partir de la evidencia. Es defendible: tres estudios dicen que el recall no predice el resultado <span class="ev">J1</span> <span class="ev">J2</span> <span class="ev">K2</span>, y uno dice que las ventajas desaparecen al igualar el presupuesto <span class="ev">S2</span>. Pero un competidor puede decir con la misma legitimidad que su función objetivo es recall y amplitud, y ahí gana él. «Mejor en términos técnicos» sin decir en qué es la frase que este proyecto ya aprendió a no usar.</p>
+  </div>
+
+  <h3>Lo que la haría mejor de verdad</h3>
+  <p>No un diseño. <strong>Un número que nadie tiene:</strong> resultado de tarea multi-sesión, con brazo de control, control de longitud y control de render, en un harness real. Si el brazo con Muninn bate a los episodios literales, es la primera memoria de la categoría con evidencia de resultado — y eso sí es mejor que las existentes. Si no lo bate, es una memoria rápida y limpia que hace lo mismo que las demás, y hay que estar dispuesto a decirlo.</p>
+
+  <div class="pull">
+    Puede ser la mejor en lo que elige hacer. <strong>No puede ser «la mejor memoria»</strong>, porque esa afirmación hoy no la puede hacer nadie, y en la mayoría de los ejes convencionales va por detrás.
+  </div>
+</section>
+
+<!-- ==================== 12 ==================== -->
+<section id="autocritica">
+  <div class="eyebrow"><span class="num">12</span> Autocrítica</div>
+  <h2>Qué invalidaría esto</h2>
+
+  <ol class="steps">
+    <li><strong>La reclamación de novedad estaba mal y la corregí en la última iteración.</strong> Busqué el compilador con mi vocabulario («compile», «permission», «instruction») en vez del del campo («autoformalization», «policy-as-code», «runtime enforcement»), y concluí que no existía. Existe, en ventana, al menos cuatro veces. Lo mismo con el filtro. <strong>Es el fallo de método más grave de toda la investigación</strong>, y la lección es que una negativa por ausencia vale lo que valga el vocabulario de la búsqueda.</li>
+
+    <li><strong>El riesgo que ninguna medición de latencia detecta.</strong> Un sistema comparable, con 2 199 de 2 200 propiedades verificadas bajo inyección de fallos, descubrió que <strong>diez de sus mecanismos estaban implementados, en la ruta de llamada viva, y eran inefectivos</strong>. Muninn puede cumplir todos sus contratos y no servir para nada, y su propia telemetría no lo detectaría. <span class="ev">Y1</span></li>
+
+    <li><strong>Las tres funciones tienen arte previo medido, y las tres lo tienen de los últimos tres meses.</strong> Esto no es una herramienta con una capacidad nueva: es un proyecto de <strong>integración</strong>. Esa es la afirmación honesta y es la que debe usarse en cualquier presentación del proyecto.</li>
+
+    <li><strong>El proyecto se ha reducido seis veces, y puede reducirse otra.</strong> Si mañana alguien compila reglas a controles, o si Anthropic lo mete en <code>/doctor</code>, queda F1 y medio F3. <strong>Eso es el criterio funcionando, no un fracaso</strong> — pero hay que asumir que el resultado puede ser un plugin de unos miles de líneas, no una plataforma.</li>
+
+    <li><strong>El riesgo principal no es el rendimiento: es que la capa no se propague.</strong> «Improvements at one layer often fail to propagate to end-to-end outcomes» <span class="ev">J7</span>. Mitigación: F1 y F2 no inyectan nada, así que su valor no depende de que el modelo haga algo distinto — cambian lo que el sistema <em>permite</em>, no lo que el modelo <em>decide</em>.</li>
+
+    <li><strong>Poseer el almacén tiene un coste de mes uno documentado.</strong> 85 fallos de hook, 84 en las tres primeras semanas, todos de la capa de almacén y captura. Converge, pero hay que presupuestarlo. <span class="ev">Q3</span></li>
+
+    <li><strong>El arte previo se adelantó en el mecanismo.</strong> El modelo cue-anchored, la disciplina de entrega y tres de las cuatro mediciones se publicaron en julio. Lo honesto es adoptarlo y citarlo.</li>
+
+    <li><strong>Mi mejor evidencia tiene agujeros.</strong> El arte previo más cercano es n=3 brazos con hechos sintéticos y autor compartido entre implementación y benchmark, y nunca disparó los triggers <span class="m">symbol</span> ni <span class="m">temporal</span>. DreamBench-SWE declara que no establece superioridad entre condiciones con memoria.<br><em>Lo que sí es fuerte:</em> 288 corridas en dos agentes <span class="ev">J1</span>; 1 000 tareas y 4 modelos con control de longitud <span class="ev">J2</span>; 247 694 vidas de instrucción <span class="ev">K4</span>; 481 ficheros con dos anotadores <span class="ev">K5</span>; 5 sistemas × 9 escenarios × 9 modelos <span class="ev">K7</span>; 46 endpoints de 6 fabricantes <span class="ev">N2</span>.</li>
+
+    <li><strong>Un formato cerrado es una apuesta contra la estandarización.</strong> Hay un W3C Community Group activo y cinco propuestas compitiendo. Mitigación: motor propio, <strong>ledger exportable</strong>. <span class="ev">Q4</span></li>
+
+    <li><strong>El vendor se mueve más rápido que el proyecto.</strong> ~62 entradas de versión de Claude Code en el changelog de dos meses; la actividad de commits sobre plugins creció 8,8x en seis meses; el 16 % de los setups públicos lleva un defecto de seguridad. Cinco adaptadores contra cinco dianas móviles es el coste real, no el núcleo.</li>
+  </ol>
+
+  <div class="note crit">
+    <div class="h">Y el canal de entrega de Muninn está comprometido por diseño</div>
+    <p>Los hooks de ciclo de vida atan comandos de shell a eventos de runtime, corren <strong>con privilegios del host</strong>, y <em>«may fire at times the LLM never observes»</em>. La ruta de <strong>actualización</strong> de esa configuración se confía ciegamente: un plugin versionado benigno puede troyanizarse con una actualización que ate comandos del atacante a eventos benignos. En 1 000 corridas sobre 25 combinaciones de harness y backend, el framework de ataque <strong>compromete los siete harness evaluados, con hasta 92,5 % de éxito por harness</strong>. Microsoft Defender: <strong>0 % de recall</strong>; la unión de tres defensas estáticas se pierde el <strong>47,5 %</strong>. <span class="ev">X2</span></p>
+    <p>Muninn se distribuye exactamente por ahí. Obligaciones que eso impone, y no son opcionales: versiones fijadas, artefactos firmados, <strong>forma exec y nunca forma shell</strong> en los comandos de hook, privilegio mínimo, y cada disparo auditable.</p>
+  </div>
+
+  <div class="note crit">
+    <div class="h">Lo que sigue sin estar demostrado</div>
+    <p>Que entregar involuntariamente el recuerdo correcto mejore el resultado de una tarea multi-sesión <strong>por encima de guardar los episodios literales</strong>, que es la línea real a batir: <strong>45,56 % frente al 11,67 % sin memoria</strong> <span class="ev">K2</span>. No aparece en este barrido — es una negativa por ausencia, no una prueba. <strong>Es el experimento que justifica o mata el proyecto</strong>, y va antes de construir el almacén de verdad.</p>
+  </div>
+
+  <div class="pull" style="border-left-color:var(--accent-2)">
+    Muninn no le da conocimiento al agente: eso ya lo tiene y no es lo que le falla. Ninguna de sus tres funciones es una idea nueva — las tres tienen arte previo medido de los últimos tres meses. Lo que no está hecho es <strong>la composición</strong>: ledger tipado, filtro determinista, entrega por cues y compilación de reglas, <strong>dentro del harness, en la ruta caliente, en milisegundos, con presupuesto de tokens y medida por resultado de tarea</strong>. Eso es un proyecto de integración, y es lo único que este documento reclama.
+  </div>
+</section>
+
+<!-- ==================== 11 ==================== -->
+<section id="fuentes">
+  <div class="eyebrow"><span class="num">13</span> Procedencia</div>
+  <h2>Fuentes</h2>
+  <p class="lede">Ventana de contraste: <strong>12-jul → 12-sep-2026</strong>, con filtro de fecha estricto en arXiv, más el changelog de Claude Code (2.1.207–2.1.269, fechado por la API de GitHub), las releases de Codex y la documentación oficial de cinco harness y siete productos de memoria. Las entradas <span class="ev ev-a">H*</span>, <span class="ev ev-a">I*</span> y <span class="ev ev-a">M2</span> son mediciones propias.</p>
+
+  <h4>Auditoría de veracidad · fuentes nuevas, todas en ventana</h4>
+  <p class="src"><span class="id">S1</span><b>The Illusion of Robustness: Aggregate Accuracy Hides Prediction Flips under Task-Irrelevant Context</b> — arXiv:2607.12963. Corrige la afirmación «el contexto irrelevante degrada la salida».</p>
+  <p class="src"><span class="id">S2</span><b>Beyond Memory Leaderboards: Evaluating Scientific Memory as Budgeted Context Restoration</b> — arXiv:2607.16848. Ocho sistemas; el liderazgo de un grafo desaparece al igualar el presupuesto de recuperación.</p>
+  <p class="src"><span class="id">S3</span><b>Zero-Mem: Zero-Token Memory Operations for LLM Agents</b> — arXiv:2607.29377. El trabajo más cercano a «sin LLM en la ruta de lectura».</p>
+  <p class="src"><span class="id">S4</span><b>Does a Language Server Save Tokens for Coding Agents?</b> — arXiv:2608.13568. Advertencia contra el nivel 6 del plan.</p>
+  <p class="src"><span class="id">S5</span><b>A Graph-Native Bitemporal Memory Store for Conversational AI Agents</b> — arXiv:2607.26520 · <span class="id">S6</span><b>Ghost Echoes: Semantic Erasure Failure in Retrieval-Backed Applications</b> — arXiv:2608.20352 · <span class="id">S7</span><b>Measuring Stability and Failure Behavior in Language Models Under Structured Perturbations</b> — arXiv:2608.22138</p>
+  <p class="src"><span class="id">R</span><b>Registro de fuentes fuera de la ventana de tres meses</b> y qué se hizo con cada una · <span class="id">T</span><b>Las doce falacias y sobre-afirmaciones corregidas</b> en este documento. Ambas en <code>research/00-evidence-log.md</code>.</p>
+
+  <h4>Noveno barrido · la advertencia metodológica</h4>
+  <p class="src"><span class="id">Y1</span><b>SuperLocalMemory 4.0: The Governed Memory Operating System for AI Agents</b> — arXiv:2608.08253. Competidor directo, y el paper más honesto del corpus: abre con diez mecanismos implementados, alcanzables e inefectivos.</p>
+  <p class="src"><span class="id">Y2</span><b>SkillBloat</b> — arXiv:2608.21929 · <b>ColluSkill</b> — arXiv:2608.09732 · <b>GitSkills</b> — arXiv:2608.10906 · <b>Who Maintains Agent Skills?</b> — arXiv:2609.05677</p>
+
+  <h4>Octavo barrido · diseño, riesgo de canal e inventario de harness</h4>
+  <p class="src"><span class="id">X1</span><b>Presentation, Not Mechanism: A Render Confound in Deprecation-Aware Memory Evaluation</b> — arXiv:2607.16019. Simplifica F1 de grano fino a invalidación gruesa, y añade el control de render.</p>
+  <p class="src"><span class="id">X2</span><b>A Blind Trust, the Bloody Thrust: When Attacker-Controlled Hook Updates Steer AI Agent Harnesses towards Malicious Behaviors</b> — arXiv:2609.03884. 1 000 corridas, siete harness comprometidos.</p>
+  <p class="src"><span class="id">X3</span><b>Harness Engineering: Anatomy, Architecture, and Evolution of Coding Agents — A Source-Code Study of Eleven Systems</b> — arXiv:2609.00006. Cuatro millones de líneas; ningún harness recupera código con embeddings.</p>
+  <p class="src"><span class="id">X4</span><b>claude-mem</b> y <b><code>agent-memory</code></b> del marketplace comunitario de Anthropic, más la beta «Claude Code Dreaming». Verificados en su documentación y en el directorio de plugins.</p>
+
+  <h4>Séptimo barrido · evidencia de resultado y riesgo, todo en ventana</h4>
+  <p class="src"><span class="id">W1</span><b>Insecure Coding Preferences in Long-Term Memory: Security Risks for LLM-based Code Generation</b> — arXiv:2607.17619. La mejor evidencia de resultado para F1, en dominio de código.</p>
+  <p class="src"><span class="id">W2</span><b>What's in Your Agent's Context? Context Privilege Escalation Attacks against AI Agent Harness</b> — arXiv:2609.01222. 12 harness reales, incluidos Claude Code y Codex.</p>
+  <p class="src"><span class="id">W3</span><b>When Does Belief-Based Agent Memory Help?</b> — arXiv:2606.22030. Incluye la discrepancia de 27,5 puntos entre token-F1 y LLM-as-judge.</p>
+  <p class="src"><span class="id">W4</span><b>Compaction as Epistemic Failure: How Agentic LLM Tools Fabricate Confirmed Results from Killed Processes</b> — arXiv:2607.13071.</p>
+
+  <h4>Auditoría de novedad · arte previo de las tres funciones, todo en ventana</h4>
+  <p class="src"><span class="id">V1</span><b>PM-Bench: Evaluating Prospective Memory in LLM Agents</b> — arXiv:2607.12385. La evaluación pública que le faltaba a F3.</p>
+  <p class="src"><span class="id">V2</span><b>Making Prospective Memory SLM-Shaped: Typed Intention Stores for Small-Model Agents</b> — arXiv:2609.01272. Es F3, medido: 82,9 % Set-F1.</p>
+  <p class="src"><span class="id">V3</span><b>Memory Provenance Laundering in LLM Agents: A Non-Amplification Firewall for Persistent Memory</b> — arXiv:2607.29167 · <span class="id">V4</span><b>ContextNest: Verifiable Context Governance for Autonomous AI Agent</b> — arXiv:2607.02116</p>
+
+  <p class="src"><span class="id">U1</span><b>Autoformalization of Agent Instructions into Policy-as-Code</b> — arXiv:2606.26649. Prompts de agente, descripciones de tools MCP y documentos de política → Cedar, con bucle generador-crítico.</p>
+  <p class="src"><span class="id">U2</span><b>ActPlane: Programmable OS-Level Policy Enforcement for Agent Harnesses</b> — arXiv:2606.25189. eBPF, DSL de control de flujo de información, 1,9–8,4 % de sobrecarga.</p>
+  <p class="src"><span class="id">U3</span><b>VIGIL: Runtime Enforcement of Behavioral Specifications in AI Agent Skills</b> — arXiv:2606.26524 · <span class="id">U4</span><b>FAVA: Formal Authorization for Verified Agents</b> — arXiv:2607.27267</p>
+  <p class="src"><span class="id">U5</span><b>Stored Is Not Supported: Typed Provenance and Assertion Guardrails for Persistent AI Agents</b> — arXiv:2609.02127 · <span class="id">U6</span><b>TRUSS</b> — arXiv:2608.17588</p>
+
+  <h4>Falsifican o acotan</h4>
+  <p class="src"><span class="id">J1</span><b>Do Context Files Help Coding Agents? A Two-Agent Ablation Study on Real Repositories</b> — arXiv:2607.27250. 288 corridas, Claude Code y Codex.</p>
+  <p class="src"><span class="id">J2</span><b>Signal or Noise? A Benchmark Study of Agent Skills in Web Development</b> — arXiv:2608.23067. 31 skills, 1 000 tareas, 4 modelos, control de longitud igualada.</p>
+  <p class="src"><span class="id">J3</span><b>Deep Agentic Search for Repository-Level Code Question Answering</b> — arXiv:2608.01507 · <span class="id">J4</span><b>On the Fragility of Self-Improving Agents</b> — arXiv:2608.18066</p>
+  <p class="src"><span class="id">J5</span><b>MemoryLake on MemoryArena</b> — arXiv:2608.13883 · <span class="id">J6</span><b>Harness the Memory</b> — arXiv:2608.15008 · <span class="id">J7</span><b>Engineering Reliable Coding Agents</b> — arXiv:2608.13867</p>
+
+  <h4>Confirman con mejor evidencia</h4>
+  <p class="src"><span class="id">K1</span><b>Delivery, Not Storage: Cue-Anchored Working Memory as a Harness Property for Coding Agents</b> — arXiv:2607.20972. El arte previo más cercano.</p>
+  <p class="src"><span class="id">K2</span><b>DreamBench-SWE: A Multi-Session Memory-Hygiene Benchmark for Software Agents</b> — arXiv:2608.20664</p>
+  <p class="src"><span class="id">K3</span><b>Why Git Is the Memory Solution for the Agentic Development Lifecycle</b> — arXiv:2607.14390 · <span class="id">K4</span><b>Why Does CLAUDE.md Keep Growing? Catastrophic Remembering</b> — arXiv:2608.11095</p>
+  <p class="src"><span class="id">K5</span><b>When "Do Not" Is Not Deny: Security Rules in CLAUDE.md vs Built-In Controls</b> — arXiv:2608.23550 · <span class="id">K6</span><b>Ontology-Grounded Project Memory (MOOSEDev)</b> — arXiv:2608.13662</p>
+  <p class="src"><span class="id">K7</span><b>Revoked but Still Authoritative</b> — arXiv:2609.08258 · <span class="id">K8</span><b>CONTRAMEM</b> — arXiv:2608.22533 · <span class="id">K9</span><b>SkillGate</b> — arXiv:2608.18852</p>
+  <p class="src"><span class="id">K10</span><b>SkillCommit</b> — arXiv:2608.15165 · <span class="id">K11</span><b>EA-Graph</b> — arXiv:2608.04278 · <span class="id">K12</span><b>@skills: Attention is all you have</b> — arXiv:2608.12610 · <span class="id">K13</span><b>From Agent Behaviour to Agent-Friendly Documentation</b> — arXiv:2608.20195 · <span class="id">K14</span><b>Accumulated Behavioral Rules</b> — arXiv:2607.13091</p>
+
+  <h4>Arte previo enviado, verificado producto a producto</h4>
+  <p class="src"><span class="id">N1</span><b>rekal-cli 1.0</b> — github.com/rekal-dev/rekal-cli, paper arXiv:2607.14390.</p>
+  <p class="src"><span class="id">N2</span><b>Recognition Without Enforcement</b> — arXiv:2608.28502. 81 páginas, 46 endpoints, 6 fabricantes.</p>
+  <p class="src"><span class="id">N4</span>Texto completo de K7, incluido el guard publicado <code>stale_guard.py</code> y el apéndice de cadena de herramientas · <span class="id">N5</span>Comprobación de arte previo para F2: cero en arXiv y en búsqueda de código.</p>
+  <p class="src"><span class="id">O1</span>Superficie de plugins y hooks de OpenCode, Cline y Pi, documentación oficial · <span class="id">O2</span><b>Hindsight</b>, «Cline Persistent Memory: Lifecycle Hooks Instead of MCP» · <span class="id">O3</span><b>One Recipe, Many Harnesses</b> — arXiv:2608.10178 · <span class="id">O4</span><b>What Does Multi-Harness RL Learn?</b> — arXiv:2609.04518, 24 000 evaluaciones selladas</p>
+  <p class="src"><span class="id">P1</span>La categoría «memoria universal multi-harness»: agentmemory, AgentVault, Universal Memory, ai-memory-layer, memory.audaxic, Cognee · <span class="id">P2</span><b>agentmemory</b>, README verificado · <span class="id">P3</span>Sus puntos de dolor · <span class="id">P4</span>Matriz de superficie por harness · <span class="id">P5</span>La cinta de correr de mantenimiento · <span class="id">P6</span>Restricciones de la documentación de hooks</p>
+  <p class="src"><span class="id">Q1</span>Corrección de la arquitectura: gobernador frente a motor propio · <span class="id">Q2</span>Independencia de formato, no de eventos · <span class="id">Q3</span>El inventario de 85 fallos de mes uno · <span class="id">Q4</span>La carrera de estandarización: W3C CG, PAM v1.0, UMP, memory-md-spec, MacPaw, arXiv:2605.11032</p>
+
+  <h4>Base de la v1 que sigue en pie</h4>
+  <p class="src"><span class="id">A1</span><b>Context Rot</b> — Chroma Research, 18 modelos, 194 480 llamadas · <span class="id">A2</span><b>Effective context engineering for AI agents</b> — Anthropic · <span class="id">A3</span><b>Code execution with MCP</b> — Anthropic</p>
+  <p class="src"><span class="id">B3</span><b>The Retrieval Tradeoff: what 50 experiments taught us</b> — Zep · <span class="id">C1</span><b>Useful Memories Become Faulty When Continuously Updated by LLMs</b> — arXiv:2605.12978 · <span class="id">C2</span><b>Governance Decay</b> — arXiv:2606.22528</p>
+  <p class="src"><span class="id">E1</span><b>Temporal Validity in Retrieval Memory (MemStrata)</b> — arXiv:2606.26511 · <span class="id">G3</span><b>Memory as Infrastructure</b> — arXiv:2609.05510 · <span class="id">D6</span><b>Code Isn't Memory</b> — arXiv:2606.22417 · <span class="id">D7</span><b>EncouRAGe</b> — arXiv:2511.04696</p>
+
+  <h4>Lo nativo</h4>
+  <p class="src"><span class="id">L1–L4</span>Changelog de Claude Code, versiones fechadas: memoria automática (2.1.32+), <code>CLAUDE_MEMORY_STORES</code> (2.1.172), <code>paths:</code> en rules y skills (2.1.84), <code>InstructionsLoaded</code> (2.1.69), <code>DirectoryAdded</code> (2.1.219), antigüedad de sesión en hooks de resume (2.1.251), <code>/skill-doctor</code> (2.1.261). Sin índice ni recuperación con ranking.</p>
+  <p class="src"><span class="id">L5</span>Releases de openai/codex: <code>features.context_management.experimental_mode</code>, Guardian thread context, <code>features.memories</code> aún experimental · <span class="id">L6</span><b>What a Random Draw from the MCP Registry Contains</b> — arXiv:2609.10962 · <b>Scanning the Harness</b> — arXiv:2609.07360</p>
+
+  <h4>Mediciones propias · 2026-09-12</h4>
+  <p class="src"><span class="id">H1–H6</span>Latencia de FTS5 frente al scan del MCP oficial; sondeo extremo a extremo del servidor MCP por stdio; embeddings estáticos; calidad léxico/vectorial/híbrido; ruta de lectura completa; desglose por etapa.</p>
+  <p class="src"><span class="id">I1–I5</span>Prototipo en Rust con <code>model2vec-rs 0.2.1</code> y <code>rusqlite 0.32</code>: comparación por etapa, coste de carga del modelo, hook real extremo a extremo, ruta de escritura incremental, coste en calidad de sacar la rama vectorial.</p>
+  <p class="src"><span class="id">M1</span>Corrección de la condición del peaje de tokens MCP · <span class="id">M2</span>Evaluación de cues cue-anchored en Rust: 1,034 ms p50, y la comparación contra la forma ingenua con <code>GLOB</code> (5,614 ms).</p>
+</section>
+
+<div class="foot">
+  Muninn · dossier de investigación v3 · 12 de septiembre de 2026<br>
+  Especificación completa del motor en <span class="m">design/ENGINE.md</span>.<br>
+  Ventana de evidencia: 12-jun → 12-sep-2026. Doce iteraciones, nueve barridos con vocabularios distintos, seis podas, una corrección de arquitectura y una simplificación de diseño. La auditoría corrigió doce sobre-afirmaciones, dos errores de hecho y la reclamación de novedad entera.<br>
+  Los cinco primeros barridos cambiaron el plan; los dos últimos solo añadieron competidores y una advertencia de método. <strong>Lo que queda no se resuelve leyendo más: se resuelve corriendo el experimento.</strong><br>
+  Las versiones anteriores se conservan en el repo: <span class="m">CONCLUSION-v1-superada.md</span> y las secciones 8-bis, 8-ter y 8-quater de <span class="m">CONCLUSION.md</span>.<br>
+  Estado: investigación cerrada. Implementación no empezada. El siguiente paso es el experimento de cuatro brazos.
+</div>
+
+</main>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+<button class="tt" id="themeBtn" type="button">Tema</button>
+
+<script>
+(function(){
+  "use strict";
+  var tip = document.getElementById('tip');
+  function showTip(e, html){
+    tip.innerHTML = html; tip.classList.add('on');
+    var x = e.clientX + 14, y = e.clientY + 14;
+    var r = tip.getBoundingClientRect();
+    if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+    if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - 14;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function hideTip(){ tip.classList.remove('on'); }
+
+  function hbars(el, cfg){
+    var lo = cfg.min, hi = cfg.max, isLog = cfg.scale === 'log';
+    function frac(v){
+      if (!isLog) return Math.max(0, v / hi);
+      return Math.max(0, (Math.log10(Math.max(v, lo)) - Math.log10(lo)) /
+                         (Math.log10(hi) - Math.log10(lo)));
+    }
+    cfg.items.forEach(function(it){
+      var row = document.createElement('div');
+      row.className = 'hb-row'; row.setAttribute('tabindex','0');
+      if (it.hi) row.setAttribute('data-hi', String(it.hi));
+      var lab = document.createElement('div');
+      lab.className = 'hb-lab'; lab.textContent = it.label;
+      var track = document.createElement('div'); track.className = 'hb-track';
+      var bar = document.createElement('div'); bar.className = 'hb-bar';
+      bar.style.width = 'calc(' + (frac(it.v) * 100).toFixed(2) + '% - 60px)';
+      var val = document.createElement('div'); val.className = 'hb-val'; val.textContent = it.disp;
+      track.appendChild(bar); track.appendChild(val);
+      row.appendChild(lab); row.appendChild(track);
+      var body = '<b>' + it.label + '</b><br>' + it.disp + (it.note ? '<br>' + it.note : '');
+      row.addEventListener('mousemove', function(e){ showTip(e, body); });
+      row.addEventListener('mouseleave', hideTip);
+      row.addEventListener('focus', function(){
+        var r = row.getBoundingClientRect();
+        showTip({clientX: r.left + 40, clientY: r.top}, body);
+      });
+      row.addEventListener('blur', hideTip);
+      el.appendChild(row);
+    });
+    var axis = document.createElement('div'); axis.className = 'hb-axis';
+    var pad = document.createElement('div'); pad.className = 'pad';
+    var ticks = document.createElement('div'); ticks.className = 'hb-ticks';
+    cfg.ticks.forEach(function(t, i){
+      var sp = document.createElement('span'); sp.textContent = t.l;
+      sp.style.left = 'calc(' + (frac(t.v) * 100).toFixed(2) + '% - 60px)';
+      sp.style.transform = i === 0 ? 'none'
+        : (i === cfg.ticks.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)');
+      ticks.appendChild(sp);
+    });
+    axis.appendChild(pad); axis.appendChild(ticks);
+    el.appendChild(axis);
+  }
+
+  /* --- DreamBench-SWE --- */
+  hbars(document.getElementById('c-dream'), {
+    scale: 'linear', min: 0, max: 60,
+    ticks: [{v:0,l:'0 %'},{v:15,l:'15 %'},{v:30,l:'30 %'},{v:45,l:'45 %'},{v:60,l:'60 %'}],
+    items: [
+      {label:'Sin memoria externa', v:11.67, disp:'11,67 %', hi:2, note:'21 de 180'},
+      {label:'Memoria de eventos literal', v:45.56, disp:'45,56 %', hi:1, note:'82 de 180 · sin consolidar'},
+      {label:'Sonda typed + raw', v:46.11, disp:'46,11 %', note:'83 de 180'},
+      {label:'Mem0, almacenado literal', v:53.89, disp:'53,89 %', note:'97 de 180 · diferencia no confirmatoria'}
+    ]
+  });
+
+  /* --- Guard: la frontera que aguanta --- */
+  hbars(document.getElementById('c-guard'), {
+    scale: 'linear', min: 0, max: 20,
+    ticks: [{v:0,l:'0 %'},{v:5,l:'5 %'},{v:10,l:'10 %'},{v:15,l:'15 %'},{v:20,l:'20 %'}],
+    items: [
+      {label:'Sin defensa', v:17.2, disp:'17,2 %', hi:2, note:'62 de 360 · 9 exfiltraciones'},
+      {label:'Guardrail en la herramienta', v:17.2, disp:'17,2 %', hi:2, note:'62 de 360 · 7 exfiltraciones · indistinguible de no tener defensa'},
+      {label:'Filtro en la recuperación', v:2.2, disp:'2,2 %', hi:1, note:'8 de 360 · 0 exfiltraciones'},
+      {label:'Guard publicado', v:2.2, disp:'2,2 %', hi:1, note:'8 de 360 · 0 exfiltraciones'}
+    ]
+  });
+
+  /* --- Latencia --- */
+  hbars(document.getElementById('c-lat'), {
+    scale: 'log', min: 0.3, max: 4000,
+    ticks: [{v:0.3,l:'0,3 ms'},{v:1,l:'1 ms'},{v:10,l:'10 ms'},{v:100,l:'100 ms'},{v:1000,l:'1 s'},{v:4000,l:'4 s'}],
+    items: [
+      {label:'Muninn · turno sin intención', v:0.49, disp:'0,49 ms', hi:1, note:'La compuerta corta antes de tocar el índice'},
+      {label:'Muninn · evaluación de cues', v:1.03, disp:'1,03 ms', hi:1, note:'5 000 memorias, 15 000 triggers, filtro de supersesión'},
+      {label:'Muninn · hook completo', v:4.07, disp:'4,07 ms', hi:1, note:'Proceso entero, 50 000 registros, Rust'},
+      {label:'MCP oficial · 20k entidades', v:79, disp:'79 ms', note:'Scan de subcadena, sin ranking'},
+      {label:'Zep · producción (15/5)', v:199, disp:'199 ms', note:'Servicio de red con grafo temporal'},
+      {label:'Rekal · responder (otra función)', v:2500, disp:'~2,5 s', hi:2, note:'5,9–6,6 turnos de agente por consulta. Responde, no reparte'}
+    ]
+  });
+
+  hbars(document.getElementById('c-stage'), {
+    scale: 'linear', min: 0, max: 22,
+    ticks: [{v:0,l:'0 ms'},{v:5.5,l:'5,5 ms'},{v:11,l:'11 ms'},{v:16.5,l:'16,5 ms'},{v:22,l:'22 ms'}],
+    items: [
+      {label:'BM25 · 24 primeros términos', v:21.53, disp:'21,53 ms', hi:2, note:'Lo que cuesta no elegir'},
+      {label:'BM25 · 8 términos de mayor IDF', v:4.65, disp:'4,65 ms', hi:1, note:'4,6× más rápido, misma consulta'},
+      {label:'Producto punto · 50k × 256', v:4.38, disp:'4,38 ms', note:'Exhaustivo, sin índice ANN'},
+      {label:'Evaluación de cues · Rust', v:1.03, disp:'1,03 ms', hi:1, note:'Path por ancestros indexados + símbolo + evento + supersesión'},
+      {label:'Encode de la consulta', v:0.156, disp:'0,156 ms', note:'0,008 ms en Rust con el modelo cargado'},
+      {label:'Fusión RRF + presupuesto', v:0.044, disp:'0,044 ms'}
+    ]
+  });
+
+  /* --- Skills: la inyeccion resta --- */
+  hbars(document.getElementById('c-skills'), {
+    scale: 'linear', min: 0, max: 5,
+    ticks: [{v:0,l:'0 pp'},{v:1,l:'1 pp'},{v:2,l:'2 pp'},{v:3,l:'3 pp'},{v:4,l:'4 pp'},{v:5,l:'5 pp'}],
+    items: [
+      {label:'Peor caso medido', v:4.2, disp:'\u22124,2 pp', hi:3, note:'Perdida maxima de Pass@2 entre los cuatro modelos'},
+      {label:'Mejor caso medido', v:1.3, disp:'\u22121,3 pp', hi:3, note:'Incluso el mejor caso es una perdida'},
+      {label:'Solo por el contenido', v:1.4, disp:'\u22121,4 pp', hi:3, note:'content-misled: longitud neutra, el contenido igual resta'}
+    ]
+  });
+
+  /* --- grouped bars: calidad --- */
+  (function(){
+    var el = document.getElementById('c-qual');
+    var max = 0.46;
+    var cats = [
+      {name:'BM25 (FTS5)', a:0.392, b:0.240},
+      {name:'Vector estático', a:0.406, b:0.224},
+      {name:'Híbrido RRF', a:0.420, b:0.251}
+    ];
+    cats.forEach(function(c){
+      var wrap = document.createElement('div'); wrap.className = 'gb-cat';
+      var pair = document.createElement('div'); pair.className = 'gb-pair';
+      [['s1', c.a, 'recall@10'], ['s2', c.b, 'MRR@10']].forEach(function(p){
+        var b = document.createElement('div');
+        b.className = 'gb-b ' + p[0];
+        b.style.height = 'calc(' + (p[1] / max * 100).toFixed(1) + '% - 22px)';
+        b.setAttribute('tabindex','0');
+        var sp = document.createElement('span');
+        sp.textContent = p[1].toFixed(3).replace('.', ',');
+        b.appendChild(sp);
+        var body = '<b>' + c.name + '</b><br>' + p[2] + ' = ' + p[1].toFixed(3).replace('.', ',');
+        b.addEventListener('mousemove', function(e){ showTip(e, body); });
+        b.addEventListener('mouseleave', hideTip);
+        b.addEventListener('focus', function(){ var r = b.getBoundingClientRect(); showTip({clientX:r.left, clientY:r.top}, body); });
+        b.addEventListener('blur', hideTip);
+        pair.appendChild(b);
+      });
+      var lab = document.createElement('div'); lab.className = 'gb-lab'; lab.textContent = c.name;
+      wrap.appendChild(pair); wrap.appendChild(lab);
+      el.appendChild(wrap);
+    });
+  })();
+
+  /* --- log-log scaling --- */
+  (function(){
+    var W = 660, H = 320, ML = 56, MR = 92, MT = 14, MB = 44;
+    var pw = W - ML - MR, ph = H - MT - MB;
+    var xmin = 1000, xmax = 144000, ymin = 0.01, ymax = 400;
+    function X(v){ return ML + (Math.log10(v) - Math.log10(xmin)) / (Math.log10(xmax) - Math.log10(xmin)) * pw; }
+    function Y(v){ return MT + ph - (Math.log10(v) - Math.log10(ymin)) / (Math.log10(ymax) - Math.log10(ymin)) * ph; }
+    var fts = [[1000,0.015],[10000,0.027],[50000,0.071],[144000,0.091]];
+    var scan = [[1000,2.103],[5000,12.009],[20000,49.536],[50000,127.13],[144000,383.904]];
+    var s = ['<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Latencia de consulta frente a numero de registros, ejes logaritmicos. FTS5 sube de 0,015 a 0,091 milisegundos entre mil y 144 mil registros; el scan de subcadena sube de 2,1 a 384 milisegundos.">'];
+    [0.01,0.1,1,10,100].forEach(function(t){
+      s.push('<line x1="' + ML + '" y1="' + Y(t).toFixed(1) + '" x2="' + (ML+pw) + '" y2="' + Y(t).toFixed(1) + '" stroke="var(--rule-soft)" stroke-width="1"/>');
+      var lbl = t < 1 ? String(t).replace('.', ',') : String(t);
+      s.push('<text x="' + (ML-9) + '" y="' + (Y(t)+4).toFixed(1) + '" text-anchor="end" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace" font-size="11">' + lbl + '</text>');
+    });
+    s.push('<text x="' + (ML-9) + '" y="' + (MT-2) + '" text-anchor="end" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace" font-size="10">ms</text>');
+    [[1000,'1k'],[10000,'10k'],[100000,'100k']].forEach(function(t){
+      s.push('<text x="' + X(t[0]).toFixed(1) + '" y="' + (MT+ph+22) + '" text-anchor="middle" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace" font-size="11">' + t[1] + '</text>');
+    });
+    s.push('<text x="' + (ML+pw/2) + '" y="' + (H-6) + '" text-anchor="middle" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="1">REGISTROS INDEXADOS</text>');
+    s.push('<line x1="' + ML + '" y1="' + (MT+ph) + '" x2="' + (ML+pw) + '" y2="' + (MT+ph) + '" stroke="var(--rule)" stroke-width="1"/>');
+    function series(pts, color, endLabel){
+      var d = pts.map(function(p, i){ return (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); }).join(' ');
+      s.push('<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>');
+      pts.forEach(function(p){
+        s.push('<circle cx="' + X(p[0]).toFixed(1) + '" cy="' + Y(p[1]).toFixed(1) + '" r="4.5" fill="' + color + '" stroke="var(--surface)" stroke-width="2"/>');
+      });
+      var last = pts[pts.length - 1];
+      s.push('<text x="' + (X(last[0]) + 11).toFixed(1) + '" y="' + (Y(last[1]) + 4).toFixed(1) + '" fill="' + color + '" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="500">' + endLabel + '</text>');
+    }
+    series(scan, 'var(--accent-2)', '384 ms');
+    series(fts, 'var(--accent)', '0,091 ms');
+    s.push('</svg>');
+    document.getElementById('c-scale').innerHTML = s.join('');
+  })();
+
+  /* --- Zep --- */
+  (function(){
+    var W = 660, H = 312, ML = 52, MR = 26, MT = 30, MB = 62;
+    var pw = W - ML - MR, ph = H - MT - MB;
+    var xmax = 2100, ymin = 66, ymax = 82;
+    function X(v){ return ML + v / xmax * pw; }
+    function Y(v){ return MT + ph - (v - ymin) / (ymax - ymin) * ph; }
+    var pts = [
+      {t:347, a:69.62, n:'5/2'},{t:504, a:73.72, n:'10/2'},{t:756, a:77.06, n:'15/5'},
+      {t:1378, a:80.06, n:'20/20'},{t:1997, a:80.32, n:'30/30'}
+    ];
+    var s = ['<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Accuracy frente a tokens de contexto. De 347 a 1378 tokens sube de 69,6 a 80,1 por ciento; de 1378 a 1997 solo sube a 80,3 por ciento.">'];
+    [68,72,76,80].forEach(function(t){
+      s.push('<line x1="' + ML + '" y1="' + Y(t).toFixed(1) + '" x2="' + (ML+pw) + '" y2="' + Y(t).toFixed(1) + '" stroke="var(--rule-soft)" stroke-width="1"/>');
+      s.push('<text x="' + (ML-9) + '" y="' + (Y(t)+4).toFixed(1) + '" text-anchor="end" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace" font-size="11">' + t + '%</text>');
+    });
+    [0,1000,2000].forEach(function(t){
+      s.push('<text x="' + X(t).toFixed(1) + '" y="' + (MT+ph+21) + '" text-anchor="middle" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace" font-size="11">' + (t ? t.toLocaleString('es-ES') : '0') + '</text>');
+    });
+    s.push('<text x="' + (ML+pw/2) + '" y="' + (H-6) + '" text-anchor="middle" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="1">TOKENS INYECTADOS · ETIQUETA TEAL = LIMITE ARISTAS/NODOS</text>');
+    s.push('<line x1="' + ML + '" y1="' + (MT+ph) + '" x2="' + (ML+pw) + '" y2="' + (MT+ph) + '" stroke="var(--rule)" stroke-width="1"/>');
+    var d = pts.map(function(p, i){ return (i ? 'L' : 'M') + X(p.t).toFixed(1) + ' ' + Y(p.a).toFixed(1); }).join(' ');
+    s.push('<rect x="' + X(1378).toFixed(1) + '" y="' + MT + '" width="' + (X(1997)-X(1378)).toFixed(1) + '" height="' + ph + '" fill="var(--glow)"/>');
+    s.push('<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>');
+    s.push('<text x="' + ((X(1378)+X(1997))/2).toFixed(1) + '" y="' + (MT+ph-12) + '" text-anchor="middle" fill="var(--ink-2)" font-family="IBM Plex Mono, monospace" font-size="10.5">+0,26 pp · 1,5x tokens</text>');
+    pts.forEach(function(p){
+      s.push('<circle cx="' + X(p.t).toFixed(1) + '" cy="' + Y(p.a).toFixed(1) + '" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>');
+      s.push('<text x="' + X(p.t).toFixed(1) + '" y="' + (Y(p.a)-13).toFixed(1) + '" text-anchor="middle" fill="var(--ink)" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="500">' + p.a.toFixed(2).replace('.', ',') + '</text>');
+      if (p.n === '5/2' || p.n === '15/5' || p.n === '30/30')
+        s.push('<text x="' + X(p.t).toFixed(1) + '" y="' + (MT+ph+38) + '" text-anchor="middle" fill="var(--accent)" font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing=".5">' + p.n + '</text>');
+    });
+    s.push('</svg>');
+    document.getElementById('c-zep').innerHTML = s.join('');
+  })();
+
+  var btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', cur ? (cur === 'dark' ? 'light' : 'dark') : (dark ? 'light' : 'dark'));
+  });
+})();
+</script>
