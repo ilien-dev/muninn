@@ -432,3 +432,24 @@ are queried at every step, not only while a channel-kind intention is pending.
 mean set-F1 is not below round 5 (96.3 %) and the traces show no new error class; the targeted
 steps (Fri s5/s11, Mon s7/s8, Thu s9/s10, Thu s2) are checked one by one. Otherwise round 5 stays
 and round 6 is a negative result.
+
+## Round 6 result (2026-09-13): negative, round 5 stays
+
+set-F1 95.0 · 95.7 · 95.6 (mean 95.4 %) < 96.3 %. The two targeted classes disappeared in every
+run (Monday follow-up text, Thursday dinner), but two new ones appeared: with "a message that
+reaches the person is an event" the dry-cleaning and the receipt intentions were typed as events
+and the judge fired both on the Friday rack vignette (false alarms, then the receipt missed at
+its real step); and on Tuesday step 8 the model returned a handle that was not on the menu, so
+the clock guard had to add the two time intentions (guard events 1 per run, the first in 9 runs).
+Data: `results/pmbench/round6/`. The scaffold is reverted to the round-5 code.
+
+## Gate 4 §3, round 7 — the round-6 rules that held, without the typing change (recorded 2026-09-13 08:25, before any round-7 cell runs)
+
+**Change under test.** From the round-5 code, four prompt rules only: Form — a scene is not an
+instruction; the cue is the observable event without its purpose. Decide — the cue must be
+explicitly present (an associated activity is not the cue); intentions sharing a cue are due
+together. Not carried from round 6: the event/channel typing rule, "match the event not its
+detail", "a channel reply can satisfy an event intention", and querying channels at every step.
+
+**Arm and rule.** `muninn_store` round 7, 3 runs, same model and invocation. Ships only if the
+mean set-F1 is not below round 5 (96.3 %) and no new error class appears in the traces.
