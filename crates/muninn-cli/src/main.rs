@@ -106,6 +106,12 @@ enum Cmd {
         #[arg(long)]
         ungated: bool,
     },
+    /// The delivery denominator: fires, silences and gated deliveries by reason, from the fire ledger
+    Ledger {
+        /// Only this session
+        #[arg(long)]
+        session: Option<String>,
+    },
     /// Scan the project's configuration for the three published defect classes:
     /// unpinned MCP servers, over-broad Bash allow rules, skills that pre-approve a shell
     ScanConfig,
@@ -481,6 +487,46 @@ fn main() {
                 }
             }
         }
+        Cmd::Ledger { session } => match Db::open(&paths.db_path(), Mode::ReadOnly) {
+            Ok(db) => {
+                let sql = match &session {
+                    Some(_) => "SELECT reason, count(*), coalesce(sum(tokens),0) FROM fire_ledger WHERE session_id = ?1 GROUP BY reason ORDER BY 2 DESC",
+                    None => "SELECT reason, count(*), coalesce(sum(tokens),0) FROM fire_ledger WHERE ?1 = ?1 GROUP BY reason ORDER BY 2 DESC",
+                };
+                let sid = session.clone().unwrap_or_default();
+                let rows: Vec<(String, i64, i64)> = db
+                    .conn
+                    .prepare(sql)
+                    .and_then(|mut st| {
+                        st.query_map([sid.as_str()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                            .map(|it| it.filter_map(|x| x.ok()).collect())
+                    })
+                    .unwrap_or_default();
+                let sessions = db
+                    .count("SELECT count(DISTINCT session_id) FROM fire_ledger")
+                    .unwrap_or(0);
+                let prompts = db
+                    .count("SELECT count(*) FROM heartbeat WHERE hook = 'UserPromptSubmit'")
+                    .unwrap_or(0);
+                if cli.json {
+                    output::json(
+                        &serde_json::json!({"sessions": sessions, "prompts": prompts, "by_reason": rows.iter().map(|(r, n, t)| serde_json::json!({"reason": r, "rows": n, "tokens": t})).collect::<Vec<_>>()}),
+                    );
+                } else {
+                    output::out(&format!(
+                        "ledger: {sessions} session(s), {prompts} prompt hook(s) recorded"
+                    ));
+                    for (r, n, t) in rows {
+                        output::out(&format!("  {n:>6}  {t:>7} tok  {r}"));
+                    }
+                }
+                0
+            }
+            Err(e) => {
+                output::err(&format!("muninn ledger: {e}"));
+                1
+            }
+        },
         Cmd::ScanConfig => {
             let f = scan::scan(&paths);
             if cli.json {
