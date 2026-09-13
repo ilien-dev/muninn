@@ -365,12 +365,12 @@ mod tests {
     #[test]
     fn passage_prefers_the_window_with_the_terms() {
         let body = format!(
-            "{}\nthe p95 was 10.27 ms on the synthetic vocab\n{}",
+            "{}\nthe p95 was 12.34 ms on the synthetic vocab\n{}",
             "x".repeat(900),
             "y".repeat(50)
         );
         let p = best_passage(&body, &["p95".into(), "vocab".into()], 200);
-        assert!(p.contains("10.27"), "{p}");
+        assert!(p.contains("12.34"), "{p}");
         assert!(p.starts_with('…'));
         // no hit: the head, unchanged
         let p = best_passage(&body, &["zzz".into()], 200);
