@@ -54,12 +54,31 @@ muninn status           # MUNINN 10/10 GREEN
 `muninn init --keep-native` leaves the harness's own memory on.
 `muninn clean --yes` undoes everything `init` touched.
 
+## Everyday commands
+
+```sh
+muninn why "why did we choose exponential backoff"   # literal records, provenance, lineage, conflicts
+muninn why 142                                        # one record and its history
+muninn why --all "retry policy"                       # include retired records
+muninn revoke 142 --reason "no longer true"           # retire by hand (kept, never served)
+muninn maintain          # the asynchronous write path, now: fold logs, resume ingest,
+                         # capture commits and reverts, validate anchors, project Markdown, embed
+muninn export --all      # JSONL of every record   ·   muninn import <file-or-dir>
+muninn embed --status    # sidecar state; `muninn embed` embeds pending records
+muninn compile && muninn apply   # F2: rules → permissions/hooks, applied only after the diff
+```
+
+The embedding model (`potion-base-8M`, three files, sha256-checked) is looked up in
+`$MUNINN_MODEL_DIR`, `$CLAUDE_PLUGIN_ROOT/models/potion-base-8M` and
+`~/.local/share/muninn/models/potion-base-8M`; without it everything works and the
+sidecar shows as cold.
+
 ## Layout
 
 ```
 crates/muninn-core      store, schema, sanitisation, heartbeat, health gate
 crates/muninn-cli       the `muninn` binary: commands and hook entry points
-crates/muninn-capture   transcript & git capture (Phase 2)
+crates/muninn-capture   transcript & git capture, typed extraction (Phases 2–3)
 crates/muninn-compile   F2 rule compiler (Phase 1)
 crates/muninn-embed     embedding sidecar (Phase 3)
 crates/muninn-symbols   tree-sitter symbol graph (Phase 5)
