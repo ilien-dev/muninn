@@ -38,6 +38,17 @@ Everything below carries a measurement; the reports live under
   `muninn scan-config` for unpinned MCP servers, over-broad Bash allow rules and skills
   that pre-approve a shell; block validator against role/instruction injection;
   boot block ≤ 1 000 tokens checked in CI.
+- **Post-gate improvements (measured).** Every delivered block carries an `evidence:`
+  line (transcript and offset); one block per turn; newly embedded records within
+  cosine 0.95 of an older active record of the same kind are retired as variants
+  (restated summaries measure 0.968, distinct-but-similar turns 0.69–0.89);
+  corrections only count a leading "no"; `muninn init` adds allow rules for
+  `muninn why`/`muninn status`; query expansion through the symbol graph, +0.125
+  [+0.000, +0.292] over plain lexical on the 72-cell cue grid, shipped opt-in
+  (`muninn config expand on`); PM-Bench with the fired items next to the step
+  measured worse (57.0 % vs 60.6 %) and was not kept. Dogfooding starts in this
+  repository (plugin from the local marketplace; the manifest no longer lists the
+  standard hook/skill/command directories, which Claude Code loads by itself).
 - **Not done, on purpose.** See `docs/scope.md`. Codex replication of the gates is
   parked (hooks did not fire under `codex exec` 0.154.0). PM-Bench is measured in
   `GATE4.md` (below the paper's 65.1 % line on claude-sonnet-5 in round 1).
