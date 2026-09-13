@@ -142,7 +142,7 @@ pub fn ingest_transcript_with(
             // the anchor's content hash at capture time; the validator compares later [K11]
             let anchor_hash = match (&c.anchor_path, paths) {
                 (Some(ap), Some(p)) if c.kind != "deadend" => {
-                    muninn_core::filter::file_hash(&p.root, ap)
+                    muninn_core::filter::file_hash(&p.source_root(), ap)
                 }
                 _ => None,
             };

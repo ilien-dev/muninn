@@ -396,6 +396,21 @@ fn run_cell(
         let seed_records = cfg.seed_records.as_deref().map(expand);
         cell.stored_episodes =
             seed_store_arm(muninn, &store, seeds, false, seed_records.as_deref(), arm)?;
+        // the symbol graph of the checkout, into the store (symbol cues need it), then
+        // the cues of the seeded records
+        let _ = run_ok(
+            Command::new(muninn)
+                .env("MUNINN_ROOT", &store)
+                .env("MUNINN_SOURCE_ROOT", &dir)
+                .args(["--cwd", store.to_str().unwrap(), "symbols"]),
+        );
+        let _ = run_ok(
+            Command::new(muninn)
+                .env("MUNINN_ROOT", &store)
+                .env("MUNINN_SOURCE_ROOT", &dir)
+                .env("MUNINN_NO_PROJECT", "1")
+                .args(["--cwd", store.to_str().unwrap(), "maintain"]),
+        );
         // the boot block goes into the checkout (every arm with Muninn), from the
         // plugin template of the repository under test
         if arm != "off" {
@@ -449,6 +464,7 @@ fn run_cell(
             .unwrap_or_default();
         cmd.env("PATH", format!("{bin_dir}:{path}"))
             .env("MUNINN_NO_PROJECT", "1")
+            .env("MUNINN_SOURCE_ROOT", &dir)
             .env("MUNINN_ARM", arm)
             .env("MUNINN_ROOT", &store)
             .env_remove("CLAUDECODE")
@@ -457,6 +473,9 @@ fn run_cell(
             .stderr(Stdio::piped());
         if let Some(c) = control_db {
             cmd.env("MUNINN_CONTROL_DB", c);
+        }
+        if arm == "lexical" {
+            cmd.env("MUNINN_NO_CUES", "1");
         }
         {
             use std::os::unix::process::CommandExt;

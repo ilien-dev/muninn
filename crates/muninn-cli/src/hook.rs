@@ -261,7 +261,12 @@ fn deliver_fused(
     let mut ctx = cue::load_context(paths, session, "prompt");
     // symbols the prompt itself names
     ctx.symbols.extend(cue::lexical_symbols(prompt, 6));
-    let cue_hits = cue::evaluate(db, &ctx, exclude)?;
+    // the lexical-only arm of the cue experiment switches the trigger conditions off
+    let cue_hits = if std::env::var_os("MUNINN_NO_CUES").is_some() {
+        vec![]
+    } else {
+        cue::evaluate(db, &ctx, exclude)?
+    };
     let ids: Vec<i64> = cue_hits.iter().map(|h| h.record_id).collect();
     let cue_records = cue::hits_for(db, &ids)?;
     Ok(cue::merge(
@@ -278,7 +283,7 @@ fn deliver_fused(
 /// ungated, under the turn budget; logged like any other delivery.
 fn event_delivery(paths: &ProjectPaths, db: &Db, session: &str, event: &str) -> Option<String> {
     use muninn_core::cue;
-    if arm() == "off" {
+    if arm() == "off" || std::env::var_os("MUNINN_NO_CUES").is_some() {
         return None;
     }
     let exclude = if event == "post_compact" {
@@ -346,11 +351,13 @@ fn post_tool_use(
         return Ok(None);
     };
     let empty = serde_json::Value::Null;
-    let (files, mut syms) = cue::context_of_tool(
-        tool,
-        input.tool_input.as_ref().unwrap_or(&empty),
-        &paths.root,
-    );
+    let base = input
+        .cwd
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| paths.source_root());
+    let (files, mut syms) =
+        cue::context_of_tool(tool, input.tool_input.as_ref().unwrap_or(&empty), &base);
     if files.is_empty() && syms.is_empty() {
         return Ok(None);
     }
