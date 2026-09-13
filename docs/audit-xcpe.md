@@ -13,7 +13,8 @@ opens the store for writing. Evidence ids refer to `research/00-evidence-log.md`
 | `PreToolUse` (Edit/Write) | `pre_edit` cues + F2 verdict | yes | `validate_block` | 700 |
 | `PostCompact` | event cues (ungated) + `[muninn:unverified]` claims | yes | `validate_block` | 700 |
 | `muninn why` (invoked) | literal records with origin, trust, lineage | shown as trust n | none (the agent asked) | 1 500 |
-| boot block (CLAUDE.md/AGENTS.md) | fixed template, ≤ 1 000 tokens, CI-checked | n/a | n/a | 1 000 |
+| boot summary (`SessionStart` additionalContext, default) | fixed template, ≤ 500 tokens, CI-checked | n/a | n/a | 500 |
+| boot block (CLAUDE.md/AGENTS.md, `init --boot-file`) | fixed template, ≤ 1 000 tokens, CI-checked | n/a | n/a | 1 000 |
 
 - No block is ever phrased as an instruction; every block starts with `[muninn:<kind>]`
   and carries origin and trust. Records with trust 0 (`agent_inferred`, `imported`)
