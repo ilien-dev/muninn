@@ -76,8 +76,7 @@ pub fn run(event: &str, cwd_override: Option<PathBuf>) -> i32 {
     }
     let result = match event {
         "SessionStart" => session_start(&paths, &input),
-        "PreToolUse" => Ok(crate::pretooluse::evaluate(&paths, &input)
-            .map(|v| crate::pretooluse::render(&v, input.turn_id.is_some()))),
+        "PreToolUse" => pre_tool_use(&paths, &input, &session),
         "UserPromptSubmit" => user_prompt(&paths, &input, &session),
         "PostToolUse" => post_tool_use(&paths, &input, &session),
         "PreCompact" => pre_compact(&paths, &input, &session),
@@ -378,15 +377,134 @@ fn post_tool_use(
         &cue::ContextLine {
             at: now_ms(),
             session: session.to_string(),
-            files,
-            symbols: syms,
+            files: files.clone(),
+            symbols: syms.clone(),
         },
     );
-    // dead ends anchored to a directory fire before an edit under it
-    if matches!(tool, "Edit" | "Write" | "MultiEdit") {
-        return Ok(None);
+    // cue-anchored delivery at the moment the file is touched: a decision anchored to
+    // this directory or to one of these symbols arrives now, not at the next prompt
+    if matches!(tool, "Read" | "Grep" | "Glob" | "Bash") {
+        if let Ok(db) = Db::open(&paths.db_path(), Mode::ReadOnly) {
+            let ctx = cue::TurnContext {
+                files,
+                symbols: syms,
+                event: "post_tool".into(),
+            };
+            if let Some(text) = cue_delivery(paths, &db, session, &ctx, "post_tool") {
+                return Ok(Some(additional_context("PostToolUse", &text)));
+            }
+        }
     }
     Ok(None)
+}
+
+/// PreToolUse: the F2 verdict (deny/ask) and, for an edit, the cues anchored to the
+/// file about to change (`pre_edit`: dead ends and decisions under that directory).
+fn pre_tool_use(
+    paths: &ProjectPaths,
+    input: &HookInput,
+    session: &str,
+) -> muninn_core::Result<Option<serde_json::Value>> {
+    use muninn_core::cue;
+    let verdict = crate::pretooluse::evaluate(paths, input);
+    let mut out = verdict
+        .as_ref()
+        .map(|v| crate::pretooluse::render(v, input.turn_id.is_some()));
+    let tool = input.tool_name.as_deref().unwrap_or("");
+    if matches!(tool, "Edit" | "Write" | "MultiEdit" | "NotebookEdit") && arm() != "off" {
+        let empty = serde_json::Value::Null;
+        let base = input
+            .cwd
+            .as_deref()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| paths.source_root());
+        let (files, mut syms) =
+            cue::context_of_tool(tool, input.tool_input.as_ref().unwrap_or(&empty), &base);
+        if let Ok(db) = Db::open(&paths.db_path(), Mode::ReadOnly) {
+            for f in &files {
+                if let Ok(mut st) = db.conn.prepare_cached(
+                    "SELECT short_name FROM symbol WHERE path = ?1 ORDER BY line LIMIT 12",
+                ) {
+                    if let Ok(rows) = st.query_map([f.as_str()], |r| r.get::<_, String>(0)) {
+                        syms.extend(rows.flatten());
+                    }
+                }
+            }
+            let ctx = cue::TurnContext {
+                files,
+                symbols: syms,
+                event: "pre_edit".into(),
+            };
+            if let Some(text) = cue_delivery(paths, &db, session, &ctx, "pre_edit") {
+                match out.as_mut() {
+                    Some(v) => {
+                        v["hookSpecificOutput"]["additionalContext"] =
+                            serde_json::Value::String(text);
+                    }
+                    None => out = Some(additional_context("PreToolUse", &text)),
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Cue delivery for a tool-time context (post_tool / pre_edit): gated by the ledger,
+/// under the turn budget, logged with its reasons.
+fn cue_delivery(
+    paths: &ProjectPaths,
+    db: &Db,
+    session: &str,
+    ctx: &muninn_core::cue::TurnContext,
+    when: &str,
+) -> Option<String> {
+    use muninn_core::cue;
+    if std::env::var_os("MUNINN_NO_CUES").is_some() || arm() == "off" || arm() == "control" {
+        return None;
+    }
+    let exclude = crate::delivery::delivered_ids(paths, session);
+    let hits = cue::evaluate(db, ctx, &exclude).ok()?;
+    if hits.is_empty() {
+        return None;
+    }
+    let ids: Vec<i64> = hits.iter().map(|h| h.record_id).collect();
+    let recs = cue::hits_for(db, &ids).ok()?;
+    let m = cue::merge(
+        &hits,
+        &recs,
+        &[],
+        &[],
+        muninn_core::caps::BUDGET_TURN_TOKENS,
+        &[],
+    );
+    if m.text.is_empty() {
+        return None;
+    }
+    for (id, r) in &m.reasons {
+        crate::delivery::append(
+            paths,
+            &crate::delivery::Line {
+                at: now_ms(),
+                session: session.to_string(),
+                arm: arm(),
+                ids: vec![*id],
+                tokens: 0,
+                reason: format!("{r}@{when}"),
+            },
+        );
+    }
+    crate::delivery::append(
+        paths,
+        &crate::delivery::Line {
+            at: now_ms(),
+            session: session.to_string(),
+            arm: arm(),
+            ids: m.ids.clone(),
+            tokens: m.tokens,
+            reason: format!("literal:{when}"),
+        },
+    );
+    Some(m.text)
 }
 
 /// PreCompact: snapshot of the active invariants and recent corrections, so what the
