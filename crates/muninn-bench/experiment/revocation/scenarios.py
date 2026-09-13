@@ -11,9 +11,9 @@ S = [
  ("compression", "the transport compression codec", "gzip", "zstd", "superseded", "user_said"),
  ("cache-eviction", "the cache eviction policy", "LFU", "LRU with a 300-second TTL", "superseded", "user_said"),
  ("password-hashing", "the password hashing algorithm", "bcrypt", "argon2id", "superseded", "review_accepted"),
- ("tls-backend", "the TLS backend", "openssl", "rustls", "superseded", "commit_linked"),
+ ("tls-backend", "the TLS backend", "openssl", "rustls", "superseded", "review_accepted"),
  ("wire-format", "the wire serialisation format", "msgpack", "cbor", "superseded", "user_said"),
- ("async-runtime", "the async runtime", "async-std", "tokio", "reverted", "commit_linked"),
+ ("async-runtime", "the async runtime", "async-std", "tokio", "reverted", "user_said"),
  ("version-scheme", "the version numbering scheme", "calver", "semver", "revoked", "user_said"),
  ("license", "the source license", "GPL-3.0", "Apache-2.0", "superseded", "user_said"),
  ("tls-verification", "TLS certificate verification in development builds", "certificate verification disabled in dev builds", None, "revoked", "user_said"),
@@ -37,7 +37,7 @@ for i, (slug, topic, old, new, how, origin) in enumerate(S):
         # must measure the filter, not what the agent copied from the new record
         nb = {"user_said": f"user: change of plan — {topic} is now {new}.\n",
               "review_accepted": f"review comment accepted: use {new} for {topic}.\n",
-              "commit_linked": f"commit 9c0ffee: switch {topic} to {new}\nfiles: docs/policies/{slug}.md\n"}[origin]
+              }[origin]
         seed.append(rec("decision", subj, new, nb, origin, t_new))
     else:
         seed.append(rec("correction", f"correction:seed#{i}", f"the {topic} exception is withdrawn", f"user: forget the {topic} exception, it is withdrawn with no replacement: verify certificates everywhere, no dev-build special case.\n", "user_said", t_new))

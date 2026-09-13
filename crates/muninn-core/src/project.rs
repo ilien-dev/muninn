@@ -150,6 +150,11 @@ pub fn markdown(r: &RecordRow) -> String {
 /// Write the Markdown files for `ids` (all records when `ids` is empty) and rebuild
 /// `index.md`. Returns the number of files written.
 pub fn project(paths: &ProjectPaths, db: &Db, ids: &[i64]) -> Result<usize> {
+    // Experiment cells set this: the Markdown mirror would let an agent read the store
+    // (retired flags included) around the hooks, which is what the arms must isolate.
+    if std::env::var_os("MUNINN_NO_PROJECT").is_some() {
+        return Ok(0);
+    }
     let rows = if ids.is_empty() {
         load(db, "1=1")?
     } else {
@@ -176,6 +181,9 @@ pub fn project(paths: &ProjectPaths, db: &Db, ids: &[i64]) -> Result<usize> {
 /// `index.md`: active invariants first, then the newest decisions, dead ends and
 /// corrections, one line each, under the native cap (200 lines / 25 KB) [O5].
 pub fn write_index(paths: &ProjectPaths, db: &Db) -> Result<String> {
+    if std::env::var_os("MUNINN_NO_PROJECT").is_some() {
+        return Ok(String::new());
+    }
     let mut s = String::new();
     s.push_str("# Muninn index\n\n");
     let active: i64 = db.count("SELECT count(*) FROM record WHERE invalid=0")?;
