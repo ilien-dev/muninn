@@ -45,7 +45,7 @@ Phases 0–2 complete.
   PostToolUse, tool-time delivery, compaction epochs, summary verification. Gate 4:
   compaction survival 100/100 (decay probe); dir/symbol cues vs lexical-only +0.08
   [−0.08, +0.25] — not distinguishable, so they ship **off by default** (`muninn config
-  cues on`); PM-Bench in progress (`crates/muninn-bench/experiment/GATE4.md`).
+  cues on`); PM-Bench: 60.6 % set F1 vs 61.8 % for the paper's ledger and 60.9 % baseline, all below the 65.1 % line (`crates/muninn-bench/experiment/GATE4.md`).
 Phase 6 (hardening, release) is in progress: signed releases, config scanner, audits.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 

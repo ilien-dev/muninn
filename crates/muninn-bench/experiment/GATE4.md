@@ -69,6 +69,31 @@ fired items):
 | todo_ledger | 48.1 % | 86.7 % | 48.1 % | 61.9 % |
 | muninn_ledger (v1) | 44.4 % | 73.5 % | 44.4 % | 55.4 % |
 
-Round 2 (three runs of `muninn_ledger` v2 — full ledger view plus DUE NOW — and two more
-of each baseline) is running; the table is completed when it finishes. As of round 1
-the condition (≥ 65.1 %) is not met by any scaffold on this model.
+Round 2 (`muninn_ledger` v2 keeps the full ledger view and adds the fired items on top;
+two more runs of each baseline; one baseline run crashed inside the benchmark's own
+parser on an odd model reply and is excluded):
+
+| scaffold | runs | set F1 per run | mean |
+|---|---|---|---|
+| single_baseline | 3 | 59.3 · 58.2 · 65.1 | 60.9 % |
+| todo_ledger | 3 | 61.9 · 66.2 · 57.4 | 61.8 % |
+| muninn_ledger v2 | 3 | 63.0 · 58.6 · 60.3 | 60.6 % |
+| muninn_ledger v1 (ledger view replaced) | 1 | 55.4 | — |
+
+Run-to-run spread on this model is ±4 points at temperature 0, larger than any
+difference between scaffolds. **Condition not met**: no scaffold reaches 65.1 % on
+average, and the Muninn scaffold is not distinguishable from the paper's own ledger.
+What the week exercises is the model's own intention discipline (the JSON ledger it
+rewrites each step); Muninn's trigger delivery fired correctly (DUE NOW blocks appear
+on every due step in the prompt logs) and did not change the outcome. Raw data:
+`results/pmbench/` (score logs and trajectories; `pmbench/` has the bridge and the
+scaffold to reproduce them).
+
+## Verdict
+
+- §1 cues vs lexical: not distinguishable → dir/symbol cue delivery ships off by default.
+- §2 compaction survival: 100/100 → event reinjection ships on by default.
+- §3 PM-Bench: below the line, and equal to the paper's ledger → not claimed.
+
+As the plan states for this outcome, F3 in the MVP is reinjection on compaction and at
+session start, plus lexical recall; the rest of F3 stays measurable and switchable.

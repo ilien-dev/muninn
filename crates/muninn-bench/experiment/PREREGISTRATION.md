@@ -264,3 +264,9 @@ literal − lexical = +0.083 [−0.083, +0.250] on 96 cells; the CI includes 0. 
 15/24 literal cells. As pre-registered, F3 reduces to event reinjection (session start,
 compaction) plus lexical recall; dir/symbol cue delivery stays available, off by
 default. Report: GATE4.md; raw data: results/gate4-cues/.
+
+## Gate 4 §3 result (2026-09-13): condition not met
+
+PM-Bench v9 on claude-sonnet-5 through the `claude -p` bridge, set F1: single_baseline
+60.9 % (3 runs), todo_ledger 61.8 % (3), muninn_ledger v2 60.6 % (3); spread ±4 points;
+the 65.1 % line is not reached. Report: GATE4.md; data: results/pmbench/.
