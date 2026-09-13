@@ -369,3 +369,31 @@ revised by this step's text is not eligible at this step (the notice is not the 
 any intention watches a channel, every channel is queried each step and the judge sees every
 non-empty reply, so a channel mistyped at Form time still reaches the judge. Prompts were not
 changed after the smoke test. The launched code is the version committed with this section.
+
+## Gate 4 §3, round 5 — channel eligibility only on new channel information (recorded 2026-09-13 06:40, before any round-5 cell runs)
+
+**Round 4 result, read before this section.** `muninn_store` set-F1 96.2 · 96.2 · 92.4 (mean
+94.9 %), cross-day miss 0/7 in every run, update miss 1/9 in every run, time-modality hit 100 %,
+guard events 0. Baselines through the isolated bridge still running at the time of writing.
+
+**Defect found in the round-4 traces (all three runs, same steps).** Snapshot channels
+(bank balance, price tracker, shipment, laundry) answer every query with their current state,
+so "some channel answered" held at every step and every channel-kind intention was on the
+board at every step. The judge then acted on "Move the check-in when the calendar update moves
+the call" from a vignette that was a reschedule notice about another intention (Tuesday step 6,
+false alarm), and the real calendar update two steps later found the intention already done
+(miss). Two errors per run from one rule.
+
+**Change under test (code only, prompts unchanged).** A channel reply counts as new
+information only if it is not "(no updates)" and differs from that channel's previous reply
+the same day. Channel-kind intentions are eligible only when at least one channel has new
+information this step; the judge sees only the new replies; the board line of a channel
+intention says it is satisfied only by a state channel reply, never by the vignette.
+Everything else is the round-4 code.
+
+**Arms.** `muninn_store` round 5, 3 runs, claude-sonnet-5, same invocation. The round-4
+baselines are the control for both rounds (same model, same isolation).
+
+**Primary outcome and rule.** Mean set-F1 over 3 runs, compared with round 4's 94.9 %. The
+round-5 code ships as the scaffold only if its mean is not below round 4's; otherwise round 4
+stays and round 5 is reported as a negative result. Secondary metrics as in round 4.
