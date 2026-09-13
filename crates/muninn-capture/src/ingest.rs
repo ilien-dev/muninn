@@ -93,6 +93,7 @@ pub fn ingest_transcript_with(
         ..Default::default()
     };
     let now = now_ms();
+    let mut typed: Vec<(i64, &'static str, Option<String>, String)> = Vec::new();
     let tx = db.conn.unchecked_transaction()?;
     {
         let mut ins = tx.prepare(INSERT)?;
@@ -170,6 +171,7 @@ pub fn ingest_transcript_with(
                 let id = tx.last_insert_rowid();
                 stats.inserted += 1;
                 stats.new_ids.push(id);
+                typed.push((id, c.kind, c.anchor_path.clone(), c.body.clone()));
                 match c.kind {
                     "decision" => stats.decisions += 1,
                     "deadend" => stats.deadends += 1,
@@ -212,6 +214,19 @@ pub fn ingest_transcript_with(
         )?;
     }
     tx.commit()?;
+    // F3: cues for the typed records — dir from the anchor, symbols from the graph
+    // (lexical fallback), one hop of callers, event by kind
+    for (id, kind, anchor, body) in &typed {
+        let syms: Vec<String> = anchor
+            .as_deref()
+            .map(|a| defs_in(db, a))
+            .unwrap_or_default();
+        let mut refs: Vec<String> = Vec::new();
+        for s in syms.iter().take(4) {
+            refs.extend(referrers_of(db, s));
+        }
+        let _ = muninn_core::cue::derive(db, *id, kind, anchor.as_deref(), body, &syms, &refs);
+    }
     db.meta_set(&key, &session.end_offset.to_string())?;
     db.meta_set("ingest_watermark_ms", &now.to_string())?;
     db.meta_set("records_changed_since_render", "1")?;
@@ -222,6 +237,25 @@ pub fn ingest_transcript_with(
         }
     }
     Ok(stats)
+}
+
+fn defs_in(db: &Db, path: &str) -> Vec<String> {
+    let Ok(mut st) = db
+        .conn
+        .prepare("SELECT short_name FROM symbol WHERE path = ?1 ORDER BY line LIMIT 12")
+    else {
+        return vec![];
+    };
+    st.query_map([path], |r| r.get(0))
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
+}
+
+fn referrers_of(db: &Db, short: &str) -> Vec<String> {
+    let Ok(mut st) = db.conn.prepare("SELECT DISTINCT from_name FROM symbol_ref WHERE to_name = ?1 AND from_name IS NOT NULL LIMIT 8") else { return vec![] };
+    st.query_map([short], |r| r.get(0))
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
 }
 
 /// RFC 3339 → epoch ms (UTC only, which is what both harnesses write).

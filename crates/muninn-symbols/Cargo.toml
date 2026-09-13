@@ -3,8 +3,21 @@ name = "muninn-symbols"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Symbol graph: tree-sitter definitions and references for Rust, TypeScript/TSX, JavaScript/JSX, Python and Go, indexed incrementally on the write path"
 
 [dependencies]
 muninn-core = { path = "../muninn-core" }
 serde.workspace = true
 serde_json.workspace = true
+rusqlite.workspace = true
+blake3.workspace = true
+tree-sitter = "0.27"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-python = "0.25"
+tree-sitter-go = "0.25"
+streaming-iterator = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

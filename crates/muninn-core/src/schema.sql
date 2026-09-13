@@ -73,6 +73,39 @@ CREATE TABLE IF NOT EXISTS record_vec (
     PRIMARY KEY (record_id, model_id)
 );
 
+-- Symbol graph (plan, Phase 5 §1-bis): definitions and references per file, rebuilt
+-- per file by content hash on the write path; the read path only does indexed lookups.
+CREATE TABLE IF NOT EXISTS symbol (
+    id             INTEGER PRIMARY KEY,
+    qualified_name TEXT    NOT NULL,
+    short_name     TEXT    NOT NULL,
+    kind           TEXT    NOT NULL,
+    path           TEXT    NOT NULL,
+    line           INTEGER NOT NULL,
+    file_hash      TEXT    NOT NULL,
+    partial        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS symbol_short ON symbol(short_name);
+CREATE INDEX IF NOT EXISTS symbol_path  ON symbol(path);
+CREATE TABLE IF NOT EXISTS symbol_ref (
+    path      TEXT    NOT NULL,
+    line      INTEGER NOT NULL,
+    from_name TEXT,
+    to_name   TEXT    NOT NULL,
+    ref_kind  TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS symbol_ref_to   ON symbol_ref(to_name);
+CREATE INDEX IF NOT EXISTS symbol_ref_path ON symbol_ref(path);
+CREATE TABLE IF NOT EXISTS symbol_file (
+    path      TEXT PRIMARY KEY,
+    file_hash TEXT NOT NULL,
+    lang      TEXT NOT NULL,
+    defs      INTEGER NOT NULL,
+    refs      INTEGER NOT NULL,
+    partial   INTEGER NOT NULL DEFAULT 0,
+    indexed_at INTEGER NOT NULL
+);
+
 -- 2.2 cue: permanent trigger conditions (F3).
 CREATE TABLE IF NOT EXISTS cue (
     record_id   INTEGER NOT NULL REFERENCES record(id),

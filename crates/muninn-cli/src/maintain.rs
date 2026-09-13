@@ -17,6 +17,7 @@ pub struct MaintainStats {
     pub projected: usize,
     pub embedded: usize,
     pub anchors_retired: usize,
+    pub symbols_indexed: usize,
     pub ms: u128,
 }
 
@@ -215,6 +216,11 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             Err(e) => output::err(&format!("muninn maintain: project: {e}")),
         }
     }
+    // symbol graph: only files whose content hash changed are re-parsed
+    match muninn_symbols::rebuild(&db, &paths.root, false) {
+        Ok(s) => st.symbols_indexed = s.files_indexed,
+        Err(e) => output::err(&format!("muninn maintain: symbols: {e}")),
+    }
     // the sidecar catches up here, never in a read hook; no model → stays cold
     if let Ok(emb) = muninn_embed::Embedder::load_default() {
         match muninn_embed::embed_pending(&db, &emb, false) {
@@ -228,8 +234,8 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         output::json(&st);
     } else {
         output::out(&format!(
-            "maintain: {} ingested, {} commit(s), {} revert(s), {} anchor(s) retired, {} file(s) projected, {} embedded, {} ms",
-            st.ingested, st.commits, st.reverts, st.anchors_retired, st.projected, st.embedded, st.ms
+            "maintain: {} ingested, {} commit(s), {} revert(s), {} anchor(s) retired, {} file(s) projected, {} embedded, {} symbol file(s) indexed, {} ms",
+            st.ingested, st.commits, st.reverts, st.anchors_retired, st.projected, st.embedded, st.symbols_indexed, st.ms
         ));
     }
     0

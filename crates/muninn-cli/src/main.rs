@@ -117,15 +117,15 @@ enum Cmd {
         #[arg(long)]
         status: bool,
     },
-    /// Symbol graph maintenance (Phase 5)
-    Symbols,
-}
-
-fn not_yet(what: &str, phase: &str) -> i32 {
-    output::err(&format!(
-        "muninn: `{what}` arrives in {phase}; see the plan's hard gates"
-    ));
-    2
+    /// Symbol graph: index changed files (--rebuild re-indexes all, --status reports, --lookup <name>)
+    Symbols {
+        #[arg(long)]
+        rebuild: bool,
+        #[arg(long)]
+        status: bool,
+        #[arg(long)]
+        lookup: Option<String>,
+    },
 }
 
 fn main() {
@@ -428,7 +428,11 @@ fn main() {
             }
         },
         Cmd::Embed { rebuild, status } => embed_cmd(&paths, rebuild, status, cli.json),
-        Cmd::Symbols => not_yet("symbols", "Phase 5"),
+        Cmd::Symbols {
+            rebuild,
+            status,
+            lookup,
+        } => symbols_cmd(&paths, rebuild, status, lookup, cli.json),
     };
     std::process::exit(code);
 }
@@ -492,6 +496,90 @@ fn embed_cmd(paths: &ProjectPaths, rebuild: bool, status: bool, json: bool) -> i
         }
         Err(e) => {
             output::err(&format!("muninn embed: {e}"));
+            1
+        }
+    }
+}
+
+fn symbols_cmd(
+    paths: &ProjectPaths,
+    rebuild: bool,
+    status: bool,
+    lookup: Option<String>,
+    json: bool,
+) -> i32 {
+    let ro = status || lookup.is_some();
+    let db = match Db::open(
+        &paths.db_path(),
+        if ro { Mode::ReadOnly } else { Mode::ReadWrite },
+    ) {
+        Ok(db) => db,
+        Err(e) => {
+            output::err(&format!("muninn symbols: {e}"));
+            return 1;
+        }
+    };
+    if let Some(name) = lookup {
+        return match muninn_symbols::lookup(&db, &name) {
+            Ok(rows) => {
+                if json {
+                    output::json(&rows);
+                } else if rows.is_empty() {
+                    output::out(&format!("no definition of `{name}` in the index"));
+                } else {
+                    for r in rows {
+                        output::out(&format!(
+                            "{}:{} {} {}",
+                            r.path, r.line, r.kind, r.qualified_name
+                        ));
+                    }
+                    if let Ok(refs) = muninn_symbols::referrers(&db, &name, 20) {
+                        for (p, l, from) in refs {
+                            output::out(&format!(
+                                "  ← {p}:{l}{}",
+                                from.map(|f| format!(" in {f}")).unwrap_or_default()
+                            ));
+                        }
+                    }
+                }
+                0
+            }
+            Err(e) => {
+                output::err(&format!("muninn symbols: {e}"));
+                1
+            }
+        };
+    }
+    if status {
+        let files = db.count("SELECT count(*) FROM symbol_file").unwrap_or(0);
+        let defs = db.count("SELECT count(*) FROM symbol").unwrap_or(0);
+        let refs = db.count("SELECT count(*) FROM symbol_ref").unwrap_or(0);
+        let partial = db
+            .count("SELECT count(*) FROM symbol_file WHERE partial=1")
+            .unwrap_or(0);
+        if json {
+            output::json(
+                &serde_json::json!({"files": files, "defs": defs, "refs": refs, "partial": partial}),
+            );
+        } else {
+            output::out(&format!("symbols: {files} file(s), {defs} definition(s), {refs} reference(s), {partial} with syntax errors"));
+        }
+        return 0;
+    }
+    match muninn_symbols::rebuild(&db, &paths.root, rebuild) {
+        Ok(st) => {
+            if json {
+                output::json(&st);
+            } else {
+                output::out(&format!(
+                    "symbols: {} file(s) seen, {} indexed, {} unchanged/skipped · {} defs, {} refs, {} partial · {:.0} ms",
+                    st.files_seen, st.files_indexed, st.files_skipped, st.defs, st.refs, st.partial, st.ms
+                ));
+            }
+            0
+        }
+        Err(e) => {
+            output::err(&format!("muninn symbols: {e}"));
             1
         }
     }

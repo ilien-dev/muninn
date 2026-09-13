@@ -3,6 +3,7 @@
 //! No server, no model and no LLM in the read path. See design/ENGINE.md.
 
 pub mod caps;
+pub mod cue;
 pub mod db;
 pub mod error;
 pub mod filter;

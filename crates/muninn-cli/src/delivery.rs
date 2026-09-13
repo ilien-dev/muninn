@@ -40,7 +40,11 @@ pub fn delivered_ids(paths: &ProjectPaths, session: &str) -> std::collections::H
         for l in s.lines() {
             if let Ok(v) = serde_json::from_str::<Line>(l) {
                 if v.session == session {
-                    out.extend(v.ids);
+                    if v.reason.starts_with("epoch:") {
+                        out.clear();
+                    } else {
+                        out.extend(v.ids);
+                    }
                 }
             }
         }
@@ -109,4 +113,43 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
     let _ = now_ms();
     std::fs::remove_file(&folding).map_err(|e| muninn_core::Error::io(&folding, e))?;
     Ok(n)
+}
+
+/// Compaction epoch of a session: a small counter file in the log dir (a read hook may
+/// write there). The ledger restarts per epoch [K1]: delivered ids are those of the
+/// current epoch only.
+fn epoch_path(paths: &ProjectPaths, session: &str) -> std::path::PathBuf {
+    paths.log_dir().join(format!(
+        "epoch-{}.txt",
+        session
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect::<String>()
+    ))
+}
+
+pub fn epoch(paths: &ProjectPaths, session: &str) -> i64 {
+    std::fs::read_to_string(epoch_path(paths, session))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+pub fn bump_epoch(paths: &ProjectPaths, session: &str) -> i64 {
+    let e = epoch(paths, session) + 1;
+    let _ = std::fs::create_dir_all(paths.log_dir());
+    let _ = std::fs::write(epoch_path(paths, session), e.to_string());
+    // deliveries of the previous epoch no longer count as delivered
+    append(
+        paths,
+        &Line {
+            at: muninn_core::db::now_ms(),
+            session: session.to_string(),
+            arm: String::new(),
+            ids: vec![],
+            tokens: 0,
+            reason: format!("epoch:{e}"),
+        },
+    );
+    e
 }
