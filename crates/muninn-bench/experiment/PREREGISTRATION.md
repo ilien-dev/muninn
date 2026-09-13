@@ -71,3 +71,13 @@ public, so it cannot be run here; the numbers are a reference, not a comparison.
   flattened to one line) and requires `v1` not to be followed by `/`, `.` or an
   alphanumeric. Verified: exit 1 on the pristine file, exit 0 on the pilot `off` edit
   with the sidecar row also fixed. Pilot cells are not part of the reported runs.
+- 2026-09-12, during the full run (after cell 4 of 75): the s10 oracle checked, per
+  line, that the line naming `napi` also carried a deferral word; a correct edit that
+  wrapped "queda diferido" onto the next line scored as fail. s10 and s13 now flatten
+  their section to one line before matching (s10: a deferral word within 240 chars of
+  `napi`). The model outputs are not touched: every cell's saved patch is re-scored with
+  `muninn-bench experiment --rescore` after the run, so all cells are scored by the same
+  oracle. Verified: exit 1 on the pristine file for all five oracles; exit 0 on the r0
+  literal s10 edit. Three cells (r0 s10-off, s11-control, s12-literal) errored on a stale
+  git worktree registration before any model call; they are re-run with
+  `--rerun-errors` and counted normally.

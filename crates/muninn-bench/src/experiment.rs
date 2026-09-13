@@ -234,6 +234,11 @@ fn run_cell(
     let dir = work.join(format!("cell-r{run}-{}-{arm}", task.id));
     let _ = std::fs::remove_dir_all(&dir);
     let res: Result<()> = (|| {
+        // a stale registration (worktree dir removed, metadata left) makes `add` fail
+        let _ = Command::new("git")
+            .current_dir(repo)
+            .args(["worktree", "prune"])
+            .output();
         run_ok(Command::new("git").current_dir(repo).args([
             "worktree",
             "add",
@@ -554,6 +559,8 @@ pub fn run(
     runs_override: Option<usize>,
     model_override: Option<String>,
     jobs: usize,
+    rerun_errors: bool,
+    rescore: bool,
 ) -> Result<()> {
     let text =
         std::fs::read_to_string(config).with_context(|| format!("reading {}", config.display()))?;
@@ -615,6 +622,102 @@ pub fn run(
         repo.display()
     );
     println!("seed transcripts: {}", seeds.len());
+    let results_path = out_dir.join("results.jsonl");
+    if rescore {
+        // Re-run every task's oracle on the saved per-cell patch applied to a pristine
+        // worktree at base_ref. Used when an oracle is amended after cells ran: the
+        // model output is untouched, only the scoring is redone, for every cell alike.
+        let dir = work.join("rescore");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = Command::new("git")
+            .current_dir(&repo)
+            .args(["worktree", "prune"])
+            .output();
+        run_ok(Command::new("git").current_dir(&repo).args([
+            "worktree",
+            "add",
+            "--detach",
+            dir.to_str().unwrap(),
+            &cfg.base_ref,
+        ]))?;
+        let prev = std::fs::read_to_string(&results_path).unwrap_or_default();
+        let mut cells: Vec<Cell> = prev
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Cell>(l).ok())
+            .collect();
+        let mut changed = 0usize;
+        for c in cells.iter_mut() {
+            if c.status == "error" {
+                continue;
+            }
+            let Some(task) = cfg.tasks.iter().find(|t| t.id == c.task) else {
+                continue;
+            };
+            let patch = out_dir.join("diffs").join(format!("r{}-{}-{}.patch", c.run, c.task, c.arm));
+            let _ = Command::new("git").current_dir(&dir).args(["checkout", "--", "."]).output();
+            let _ = Command::new("git").current_dir(&dir).args(["clean", "-fdq"]).output();
+            let body = std::fs::read(&patch).unwrap_or_default();
+            if !body.is_empty() {
+                let ok = Command::new("git")
+                    .current_dir(&dir)
+                    .args(["apply", "--whitespace=nowarn", patch.to_str().unwrap()])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if !ok {
+                    println!("rescore: patch did not apply for r{}-{}-{}; status kept", c.run, c.task, c.arm);
+                    continue;
+                }
+            }
+            let o = Command::new("sh")
+                .current_dir(&dir)
+                .args(["-c", &task.oracle])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .output()?;
+            let status = if o.status.success() { "pass" } else { "fail" };
+            if status != c.status {
+                println!("rescore: r{}-{}-{} {} → {}", c.run, c.task, c.arm, c.status, status);
+                changed += 1;
+            }
+            c.oracle_exit = o.status.code();
+            c.status = status.into();
+        }
+        let _ = Command::new("git")
+            .current_dir(&repo)
+            .args(["worktree", "remove", "--force", dir.to_str().unwrap()])
+            .output();
+        let mut f = std::fs::File::create(&results_path)?;
+        for c in &cells {
+            writeln!(f, "{}", serde_json::to_string(c)?)?;
+        }
+        let s = summary(&cells, &cfg);
+        std::fs::write(out_dir.join("summary.md"), &s)?;
+        println!("rescore: {} cell(s), {changed} changed\n\n{s}", cells.len());
+        return Ok(());
+    }
+    if rerun_errors {
+        let prev = std::fs::read_to_string(&results_path).unwrap_or_default();
+        let kept: Vec<Cell> = prev
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Cell>(l).ok())
+            .filter(|c| c.status != "error")
+            .collect();
+        let done: std::collections::HashSet<(usize, String, String)> = kept
+            .iter()
+            .map(|c| (c.run, c.task.clone(), c.arm.clone()))
+            .collect();
+        plan.retain(|c| !done.contains(c));
+        let mut f = std::fs::File::create(&results_path)?;
+        for c in &kept {
+            writeln!(f, "{}", serde_json::to_string(c)?)?;
+        }
+        println!(
+            "rerun-errors: {} cell(s) kept, {} to run",
+            kept.len(),
+            plan.len()
+        );
+    }
     if dry_run {
         for (i, (r, t, a)) in plan.iter().enumerate() {
             println!("  {i:>3}  run {r}  {t:<32} {a}");
@@ -639,14 +742,22 @@ pub fn run(
         None
     };
 
-    let results_path = out_dir.join("results.jsonl");
     let results = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&results_path)?;
     // Cells are independent (own worktree, own store); `jobs` of them run at once.
     // Results are appended in completion order; `order` keeps the planned position.
-    let state = std::sync::Mutex::new((results, Vec::<Cell>::new()));
+    let prior: Vec<Cell> = if rerun_errors {
+        std::fs::read_to_string(&results_path)
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Cell>(l).ok())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let state = std::sync::Mutex::new((results, prior));
     let next = std::sync::atomic::AtomicUsize::new(0);
     let jobs = jobs.max(1).min(plan.len().max(1));
     std::thread::scope(|scope| {

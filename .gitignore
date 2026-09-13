@@ -9,3 +9,4 @@ crates/muninn-bench/experiment/out/
 .muninn/log/
 .muninn/compact/
 crates/muninn-bench/experiment/out-*/
+crates/muninn-bench/experiment/run-gate2.log
