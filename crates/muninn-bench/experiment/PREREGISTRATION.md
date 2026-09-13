@@ -131,3 +131,12 @@ Same design, decision rule, model, runs and arms. Changes, all fixed before runn
   (literal, control) now get it, `off` does not, as the plan states; and the saved patch
   omitted new files, so `--rescore` could not have scored the fact tasks — patches now
   include untracked files, and each cell's model output is saved under `logs/`.
+- Pilot 3 (literal only, four fact tasks, $1.1): 1/4. The cells read `git log` at
+  `base_ref = HEAD`, found the run-2 design commit that says the numbers were kept out
+  of the repository on purpose, and rejected the delivered numbers as a trap; one cell
+  also found the number inside a unit test string added with the passage-selection fix.
+  Fixes: `base_ref` pinned to `0cb51ab` (the last commit before any run-2 design work;
+  the seed transcript is frozen earlier still), the test string changed, and the boot
+  block now defines the trust scale (1 = observed in the project's own transcript) so a
+  trust-1 block is not read as "low confidence". Whether an agent then uses the number
+  or insists on repository corroboration is part of what run 2 measures.

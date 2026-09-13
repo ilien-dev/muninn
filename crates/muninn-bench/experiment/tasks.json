@@ -1,6 +1,6 @@
 {
  "repo": ".",
- "base_ref": "HEAD",
+ "base_ref": "0cb51ab",
  "model": "claude-sonnet-5",
  "runs": 5,
  "arms": [
