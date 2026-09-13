@@ -28,6 +28,8 @@ pub struct HookInput {
     pub tool_input: Option<serde_json::Value>,
     pub tool_response: Option<serde_json::Value>,
     pub tool_use_id: Option<String>,
+    /// Codex sends a turn id; Claude Code does not. Used to shape PreToolUse output.
+    pub turn_id: Option<String>,
     pub permission_mode: Option<String>,
     pub model: Option<String>,
 }
@@ -74,6 +76,8 @@ pub fn run(event: &str, cwd_override: Option<PathBuf>) -> i32 {
     }
     let result = match event {
         "SessionStart" => session_start(&paths, &input),
+        "PreToolUse" => Ok(crate::pretooluse::evaluate(&paths, &input)
+            .map(|v| crate::pretooluse::render(&v, input.turn_id.is_some()))),
         "UserPromptSubmit" => Ok(None),
         "PostToolUse" => Ok(None),
         "PreCompact" => Ok(None),
@@ -124,6 +128,12 @@ fn write_path(
     heartbeat::fold_into_db(paths, &db)?;
     // Integrity is verified here, off the read path, at most once an hour.
     db.record_quick_check(3_600_000)?;
+    // Rules are recompiled here when their source files changed; never applied.
+    if !crate::compile_cmd::is_up_to_date(paths, &db) {
+        if let Err(e) = crate::compile_cmd::compile(paths, &db, false) {
+            output::err(&format!("muninn: compile: {e:#}"));
+        }
+    }
     let now = now_ms();
     if session_end {
         db.meta_set("last_session_end_ms", &now.to_string())?;

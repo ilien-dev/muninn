@@ -1,0 +1,23 @@
+# Held-out set 2 for Gate 1. The classifier was tuned on holdout.txt (set 1) after labelling,
+# so set 1 is contaminated. These files were fetched after the final pattern change and were
+# never listed or inspected before labelling. Frozen: classify.rs as of this file's commit.
+davila7__claude-code-templates__CLAUDE.md
+vectorize-io__hindsight__CLAUDE.md
+ntop__ntopng__CLAUDE.md
+InvoicePlane__InvoicePlane__CLAUDE.md
+NG-ZORRO__ng-zorro-antd__.claude_CLAUDE.md
+UfoMiao__zcf__CLAUDE.md
+gastownhall__gastown__internal_templates_townroot_claude.md
+sourcebot-dev__sourcebot__CLAUDE.md
+akshadjaiswal__Namaste-Nodejs__application_CLAUDE.md
+hydro13__tandem-browser__docs_archive_security-upgrade_CLAUDE.md
+hydro13__tandem-browser__docs_archive_code-review-fixes_CLAUDE.md
+duolahypercho__fusion-fable__CLAUDE.md
+Skyvern-AI__skyvern__skyvern_core_script_generations_CLAUDE.md
+tidyverse__dplyr__.claude_CLAUDE.md
+r-lib__devtools__.claude_CLAUDE.md
+authpass__authpass__CLAUDE.md
+r-lib__testthat__.claude_CLAUDE.md
+tidyverse__readr__.claude_CLAUDE.md
+affaan-m__ECC__examples_rails-app-CLAUDE.md
+Infisical__infisical__backend-go_CLAUDE.md

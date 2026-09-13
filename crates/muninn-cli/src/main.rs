@@ -1,8 +1,10 @@
 //! `muninn` — one binary for the CLI and every hook entry point.
 
+mod compile_cmd;
 mod hook;
 mod init;
 mod output;
+mod pretooluse;
 
 use clap::{Parser, Subcommand};
 use muninn_core::{health, Db, Mode, ProjectPaths};
@@ -62,10 +64,21 @@ enum Cmd {
     Import,
     /// Ask why: literal records with lineage (Phase 4)
     Why { query: Vec<String> },
-    /// Compile CLAUDE.md/AGENTS.md rules into enforceable controls (Phase 1)
-    Compile,
-    /// Apply compiled controls after showing the diff (Phase 1)
-    Apply,
+    /// Compile CLAUDE.md/AGENTS.md rules into enforceable controls (writes .muninn/compiled/, applies nothing)
+    Compile {
+        /// Recompile even if sources are unchanged
+        #[arg(long)]
+        force: bool,
+    },
+    /// Apply compiled controls to .claude/settings.json after showing the diff
+    Apply {
+        /// Remove exactly what a previous apply added
+        #[arg(long)]
+        revert: bool,
+        /// Apply without asking
+        #[arg(long)]
+        yes: bool,
+    },
     /// Embedding sidecar maintenance (Phase 3)
     Embed,
     /// Symbol graph maintenance (Phase 5)
@@ -201,8 +214,20 @@ fn main() {
         Cmd::Export => not_yet("export", "Phase 3"),
         Cmd::Import => not_yet("import", "Phase 3"),
         Cmd::Why { .. } => not_yet("why", "Phase 4"),
-        Cmd::Compile => not_yet("compile", "Phase 1"),
-        Cmd::Apply => not_yet("apply", "Phase 1"),
+        Cmd::Compile { force } => match compile_cmd::run_compile(&paths, force, cli.json) {
+            Ok(()) => 0,
+            Err(e) => {
+                output::err(&format!("muninn compile: {e:#}"));
+                1
+            }
+        },
+        Cmd::Apply { revert, yes } => match compile_cmd::run_apply(&paths, revert, yes, cli.json) {
+            Ok(()) => 0,
+            Err(e) => {
+                output::err(&format!("muninn apply: {e:#}"));
+                1
+            }
+        },
         Cmd::Embed => not_yet("embed", "Phase 3"),
         Cmd::Symbols => not_yet("symbols", "Phase 5"),
     };

@@ -24,6 +24,30 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Rule compiler over a corpus of CLAUDE.md/AGENTS.md files: stats, sampling, evaluation (Gate 1)
+    Rules {
+        /// Directory of corpus files
+        #[arg(long, default_value = "crates/muninn-bench/corpora/claude-md/files")]
+        dir: PathBuf,
+        /// Write a random sample of candidates to label (JSONL) instead of stats
+        #[arg(long)]
+        sample: Option<PathBuf>,
+        #[arg(long, default_value_t = 100)]
+        n: usize,
+        #[arg(long, default_value_t = 7)]
+        seed: u64,
+        /// Evaluate against a labelled JSONL (fields: text, label, class?)
+        #[arg(long)]
+        labels: Option<PathBuf>,
+        /// List every enforceable classification (pattern, source, text) for inspection
+        #[arg(long)]
+        list: bool,
+        /// Restrict to files listed (one name per line) — the held-out set for the gate
+        #[arg(long)]
+        holdout: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Performance contracts
     Perf {
         /// Fail on any contract violation
@@ -346,9 +370,229 @@ struct Contract {
     unit: &'static str,
 }
 
+fn rules_cmd(
+    dir: &Path,
+    sample: Option<PathBuf>,
+    n: usize,
+    seed: u64,
+    labels: Option<PathBuf>,
+    list: bool,
+    holdout: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
+    use muninn_compile::{classify::classify, parse::extract, Class};
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .with_context(|| format!("reading {}", dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_file())
+        .collect();
+    files.sort();
+    if let Some(h) = &holdout {
+        let names: std::collections::HashSet<String> = std::fs::read_to_string(h)?
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .collect();
+        files.retain(|f| names.contains(&f.file_name().unwrap().to_string_lossy().to_string()));
+    }
+    let mut all = Vec::new();
+    for f in &files {
+        let content = muninn_core::sanitize::from_bytes_lossy(&std::fs::read(f)?);
+        let name = f.file_name().unwrap().to_string_lossy().to_string();
+        for c in extract(&name, &content) {
+            let cl = classify(&c);
+            all.push((c, cl));
+        }
+    }
+    if list {
+        for (c, cl) in all
+            .iter()
+            .filter(|(_, cl)| cl.class != Class::InterpretiveOnly)
+        {
+            let arts: Vec<String> = cl
+                .permissions
+                .iter()
+                .map(|p| format!("{:?} {}", p.decision, p.render()))
+                .chain(cl.hooks.iter().map(|h| {
+                    format!(
+                        "hook {:?} {}{}",
+                        h.decision,
+                        h.tool_regex,
+                        h.command_regex
+                            .as_ref()
+                            .map(|c| format!(" ~{c}"))
+                            .unwrap_or_default()
+                    )
+                }))
+                .collect();
+            println!(
+                "{:<26} {}:{}\n    \"{}\"\n    → {}",
+                cl.pattern_id,
+                c.source_file,
+                c.source_line,
+                c.text,
+                arts.join(" | ")
+            );
+        }
+        return Ok(());
+    }
+    if let Some(out) = sample {
+        // stratified, deterministic: half predicted enforceable (measures precision),
+        // half hard negatives — interpretive candidates carrying a negation (measures recall).
+        let neg = regex::Regex::new(
+            r"(?i)\b(never|do not|don'?t|must not|mustn'?t|should not|forbidden|not allowed)\b",
+        )
+        .unwrap();
+        let mut rng = Rng(seed);
+        let mut idx: Vec<usize> = (0..all.len()).collect();
+        for i in (1..idx.len()).rev() {
+            let j = (rng.next() as usize) % (i + 1);
+            idx.swap(i, j);
+        }
+        let mut chosen: Vec<usize> = Vec::new();
+        let want_pos = n / 2;
+        for &i in &idx {
+            if chosen.len() >= want_pos {
+                break;
+            }
+            if all[i].1.class != Class::InterpretiveOnly {
+                chosen.push(i);
+            }
+        }
+        for &i in &idx {
+            if chosen.len() >= n {
+                break;
+            }
+            if all[i].1.class == Class::InterpretiveOnly
+                && neg.is_match(&all[i].0.text)
+                && !chosen.contains(&i)
+            {
+                chosen.push(i);
+            }
+        }
+        let mut f = std::fs::File::create(&out)?;
+        for (k, &i) in chosen.iter().enumerate() {
+            let (c, cl) = &all[i];
+            writeln!(
+                f,
+                "{}",
+                serde_json::json!({ "id": k, "file": c.source_file, "line": c.source_line, "text": c.text, "predicted": cl.pattern_id, "label": "" })
+            )?;
+        }
+        println!(
+            "wrote {} candidates to {} (from {} candidates in {} files)",
+            chosen.len(),
+            out.display(),
+            all.len(),
+            files.len()
+        );
+        return Ok(());
+    }
+    if let Some(lab) = labels {
+        // label ∈ {enforceable, interpretive}
+        let text = std::fs::read_to_string(&lab)?;
+        let (mut tp, mut fp, mut fn_, mut tn, mut n_l) = (0, 0, 0, 0, 0);
+        let mut errors = Vec::new();
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let v: serde_json::Value = serde_json::from_str(line)?;
+            let label = v["label"].as_str().unwrap_or("");
+            if label.is_empty() {
+                continue;
+            }
+            n_l += 1;
+            let t = v["text"].as_str().unwrap_or("");
+            let c = muninn_compile::Candidate {
+                source_file: v["file"].as_str().unwrap_or("").into(),
+                source_line: v["line"].as_u64().unwrap_or(0) as usize,
+                source_hash: String::new(),
+                text: t.into(),
+                heading: None,
+            };
+            let cl = classify(&c);
+            let pred_enf = cl.class != Class::InterpretiveOnly;
+            let gold_enf = label == "enforceable";
+            match (pred_enf, gold_enf) {
+                (true, true) => tp += 1,
+                (true, false) => {
+                    fp += 1;
+                    errors.push(format!(
+                        "FP [{}] {}:{} \"{}\"",
+                        cl.pattern_id, c.source_file, c.source_line, t
+                    ));
+                }
+                (false, true) => {
+                    fn_ += 1;
+                    errors.push(format!("FN {}:{} \"{}\"", c.source_file, c.source_line, t));
+                }
+                (false, false) => tn += 1,
+            }
+        }
+        let precision = if tp + fp == 0 {
+            1.0
+        } else {
+            tp as f64 / (tp + fp) as f64
+        };
+        let recall = if tp + fn_ == 0 {
+            1.0
+        } else {
+            tp as f64 / (tp + fn_) as f64
+        };
+        if json {
+            println!(
+                "{}",
+                serde_json::json!({ "labelled": n_l, "tp": tp, "fp": fp, "fn": fn_, "tn": tn, "precision": precision, "recall": recall, "errors": errors })
+            );
+        } else {
+            println!("labelled {n_l}: tp={tp} fp={fp} fn={fn_} tn={tn}  precision={precision:.3} recall={recall:.3}  (gate: precision ≥ 0.90, recall ≥ 0.70)");
+            for e in &errors {
+                println!("  {e}");
+            }
+        }
+        return Ok(());
+    }
+    let mut by_class = std::collections::BTreeMap::new();
+    let mut by_pattern = std::collections::BTreeMap::new();
+    for (_, cl) in &all {
+        *by_class.entry(cl.class.as_str()).or_insert(0usize) += 1;
+        *by_pattern.entry(cl.pattern_id).or_insert(0usize) += 1;
+    }
+    let interp = *by_class.get("interpretive_only").unwrap_or(&0);
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "files": files.len(), "candidates": all.len(), "by_class": by_class, "by_pattern": by_pattern, "interpretive_fraction": interp as f64 / all.len().max(1) as f64 })
+        );
+    } else {
+        println!(
+            "{} files, {} rule candidates, {:.1}% interpretive only",
+            files.len(),
+            all.len(),
+            100.0 * interp as f64 / all.len().max(1) as f64
+        );
+        for (k, v) in &by_class {
+            println!("  {k:<24} {v}");
+        }
+        println!("patterns:");
+        for (k, v) in &by_pattern {
+            println!("  {k:<28} {v}");
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
+        Cmd::Rules {
+            dir,
+            sample,
+            n,
+            seed,
+            labels,
+            list,
+            holdout,
+            json,
+        } => rules_cmd(&dir, sample, n, seed, labels, list, holdout, json),
         Cmd::Perf {
             strict,
             records,

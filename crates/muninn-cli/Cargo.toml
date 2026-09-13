@@ -21,6 +21,8 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 blake3.workspace = true
+regex = "1"
+rusqlite.workspace = true
 
 [features]
 default = []

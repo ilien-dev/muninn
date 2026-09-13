@@ -486,33 +486,65 @@ pub fn run(
         None => check(8, "caps", Status::Cold, "no database", None),
     });
 
-    // 9. compiled artefacts carry our marker
+    // 9. applied artefacts are still in place
     {
         let applied = paths.compiled_dir().join("applied.json");
         if !applied.exists() {
             checks.push(check(9, "compiled", Status::Green, "nothing applied", None));
         } else {
-            let targets: Vec<String> = std::fs::read_to_string(&applied)
+            let v: serde_json::Value = std::fs::read_to_string(&applied)
                 .ok()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                .and_then(|v| v.get("targets").cloned())
-                .and_then(|t| serde_json::from_value(t).ok())
-                .unwrap_or_default();
-            let missing: Vec<String> = targets
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(serde_json::Value::Null);
+            let want: Vec<String> = ["deny", "ask"]
                 .iter()
-                .filter(|t| {
-                    !std::fs::read_to_string(paths.root.join(t))
-                        .map(|s| s.contains("muninn:begin"))
-                        .unwrap_or(false)
+                .flat_map(|k| {
+                    v.get(*k)
+                        .and_then(|a| a.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| x.as_str().map(str::to_string))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
                 })
-                .cloned()
                 .collect();
-            if missing.is_empty() {
+            let settings: serde_json::Value =
+                std::fs::read_to_string(paths.root.join(".claude/settings.json"))
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or(serde_json::Value::Null);
+            let have: Vec<String> = ["deny", "ask"]
+                .iter()
+                .flat_map(|k| {
+                    settings
+                        .get("permissions")
+                        .and_then(|p| p.get(*k))
+                        .and_then(|a| a.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| x.as_str().map(str::to_string))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
+            let missing: Vec<&String> = want.iter().filter(|w| !have.contains(w)).collect();
+            let hooks_ok = paths.compiled_dir().join("pretooluse.json").exists();
+            if !hooks_ok {
+                checks.push(check(
+                    9,
+                    "compiled",
+                    Status::Red,
+                    "pretooluse.json missing while hooks are applied",
+                    Some("run `muninn compile` then `muninn apply`"),
+                ));
+            } else if missing.is_empty() {
                 checks.push(check(
                     9,
                     "compiled",
                     Status::Green,
-                    format!("{} target(s) carry the marker", targets.len()),
+                    format!("{} applied rule(s) present", want.len()),
                     None,
                 ));
             } else {
@@ -520,7 +552,10 @@ pub fn run(
                     9,
                     "compiled",
                     Status::Red,
-                    format!("marker missing in {}", missing.join(", ")),
+                    format!(
+                        "{} applied rule(s) missing from .claude/settings.json",
+                        missing.len()
+                    ),
                     Some("run `muninn apply` again or `muninn apply --revert`"),
                 ));
             }
