@@ -442,6 +442,23 @@ mod tests {
         assert_eq!(remove_block(&again), before);
     }
 
+    /// The repository's own CLAUDE.md keeps its rule: under 1 000 cl100k tokens.
+    #[test]
+    fn claude_md_within_budget() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../CLAUDE.md");
+        let text = std::fs::read_to_string(&p).expect("CLAUDE.md at the repository root");
+        let tokens = exact_count(&text).unwrap_or_else(|| tokens::estimate(&text));
+        println!(
+            "CLAUDE.md: {} chars, {} tokens",
+            text.chars().count(),
+            tokens
+        );
+        assert!(
+            tokens <= 1_000,
+            "CLAUDE.md is {tokens} tokens; the file's own rule is 1 000"
+        );
+    }
+
     #[test]
     fn boot_block_within_budget() {
         let b = check_budget();
