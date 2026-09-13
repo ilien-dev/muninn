@@ -2,7 +2,11 @@
 """A minimal OpenAI-compatible chat endpoint over `claude -p`, so PM-Bench (which only
 speaks the OpenAI API) can be run against Claude Code's own account. One request → one
 `claude -p` call with the messages flattened into a single prompt; no tools, no memory
-of its own. Usage: claude_bridge.py --port 30002 --model claude-sonnet-5"""
+of its own. Usage: claude_bridge.py --port 30002 --model claude-sonnet-5
+
+Round 4 (2026-09-13): `--setting-sources ""` added. Without it `claude -p` loads the user's
+global CLAUDE.md; a probe through the round 1-3 bridge answered "Svipall para acceso web;
+respuesta en español", so those eleven runs saw the user's instructions."""
 import argparse, json, subprocess, time, uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -35,7 +39,10 @@ class H(BaseHTTPRequestHandler):
         system, prompt = flatten(body.get("messages", []))
         max_tokens = int(body.get("max_tokens") or 256)
         args = ["claude", "-p", prompt, "--model", model, "--output-format", "json", "--max-turns", "1",
-                "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
+                "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                # round 4: no user/project/local settings, so no ~/.claude/CLAUDE.md, no output
+                # style, no language preference reaches the model under test (probe: "NONE")
+                "--setting-sources", ""]
         if system:
             args += ["--system-prompt", system + f"\n\nAnswer in at most {max_tokens} tokens."]
         t0 = time.time()

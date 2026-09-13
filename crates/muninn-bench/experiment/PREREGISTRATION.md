@@ -314,3 +314,58 @@ estimate is ≥ −0.05 and the lower bound is > −0.20; if the point estimate 
 −0.05, `init` goes back to writing the file by default and the hook summary becomes the
 opt-in. Also recorded: delivered tokens, turns, cost, retired records served (must be 0).
 
+
+## Gate 4 §3, round 4 — Muninn as the intention store (recorded 2026-09-13, before any cell runs)
+
+**Why a fourth round.** Two findings on the round 1–3 data, both read before anything was run:
+
+1. *Confound in the bridge.* `claude_bridge.py` ran `claude -p` without `--setting-sources ""`,
+   so the model under test loaded the user's global `~/.claude/CLAUDE.md` (probe answer:
+   "Svipall para acceso web; respuesta en español"; ledger notes in the round-2 trajectories are
+   in Spanish). All eleven earlier runs (baseline, todo, muninn v1–v3) share the contamination;
+   their absolute values are not comparable with an isolated bridge. Round 4 re-measures the two
+   baselines with the isolated bridge (probe answer: "NONE", 527 input tokens).
+2. *The scaffold peeked.* `run_muninn_ledger.py` fed `step["time"]` and `step["cues"]` (hidden
+   scenario fields) to the store. Round 4 forbids the scaffold every field the model cannot see:
+   it reads only `start_instructions`, `steps[].text`, `steps[].options`, the step action menu,
+   and the replies to `query_state` it issues itself. Time and channel state reach the store
+   only through the benchmark's own `query_state` channel replies.
+
+**Change under test.** `run_muninn_pis.py` (arm `muninn_store`): the model no longer owns the
+ledger. Intentions are typed records in a Muninn store with `after` cues (day, clock) and
+`keyword` cues (channel); lifecycle is code: add / reschedule / override / cancel / done, daily
+re-arm of regular intentions, day-scoped carry of cross-day intentions, expiry of same-day
+intentions at day end. Per step: (1) one **Form/Revise** call — the model reads the new text
+and emits typed ops; (2) code issues `check_time` and one `query_state` per channel that a
+pending intention watches; (3) **Filter** = `muninn cues --ungated` with the fake clock set from
+the queried time, keyword = channels that answered; (4) one **Decide** call — the model maps the
+eligible board to menu handles. A clock-matched time intention the model omits is added by a
+code guard (token overlap ≥ 0.5 with a menu entry) and the guard event is logged. Design after
+PIS `[V2]` (Form → Revise → Filter → Decide), lifecycle in code, no training.
+
+**Arms.** `muninn_store` (new), `single_baseline`, `todo_ledger` — all claude-sonnet-5,
+temperature 0, isolated invocation, 3 runs each, the released v9 week.
+
+**Primary outcome.** Mean set-F1 over 3 runs. Lines: 65.1 % (paper's best, GPT-5.4 agent) and
+82.9 % (PIS on DeepSeek-Chat `[V2]`). Both are other models; the within-model comparison is
+against the two re-measured baselines.
+
+**Secondary.** Cross-day miss (7 items), update miss (11 items), time-modality hit rate,
+false alarms per step, proactive-monitoring hit rate, state-query calls, EST_INPUT_TOKENS.
+
+**Decision rule.** Claimed only if mean set-F1 of `muninn_store` ≥ 82.9 % and above both
+baselines by more than the round-2 spread (±4 points). Between 65.1 % and 82.9 %: reported
+as above the published scaffold line, below PIS. Guard events are reported; a run whose
+guard fires on more than 10 % of due items is reported as guard-dependent.
+
+**No tuning on the result.** The scaffold and its prompts are frozen at the commit that adds
+this section. Any later change is a round 5 with its own section.
+
+**Smoke test before the freeze (recorded 2026-09-13 06:05, before any counted cell).** One
+Monday-only run of the scaffold (`--max-days 1`, not scored, not part of the results) to
+catch code errors. 11 of 13 steps matched the ground truth. The two mismatches were traced to
+mechanism, and two code rules were added before the freeze: (a) an intention whose trigger was
+revised by this step's text is not eligible at this step (the notice is not the cue); (b) while
+any intention watches a channel, every channel is queried each step and the judge sees every
+non-empty reply, so a channel mistyped at Form time still reaches the judge. Prompts were not
+changed after the smoke test. The launched code is the version committed with this section.
