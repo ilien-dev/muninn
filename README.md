@@ -34,7 +34,13 @@ Phases 0–2 complete.
   checksummed, write path only, exact kNN), 10-check gate, 15 fault scenarios. The
   literal arm re-run on the real engine: 21/25 vs 19/25 on the throwaway store
   (`crates/muninn-bench/experiment/PHASE3.md`).
-Phase 4 (F1 filter + `muninn why`) is next.
+- Phase 4 (F1 filter + `muninn why`): anchor validator, reverts, explicit revoke,
+  conflicts served as conflicts, lineage; routed `muninn why` (lexical + sidecar, RRF,
+  sufficiency marker, 55 ms). Gate 3 passed on two families: filtered vs render-matched
+  unfiltered +0.22 [+0.11, +0.33] (sonnet) and +0.19 [+0.07, +0.30] (haiku), retired
+  records served 0/180 cells, retired value written 0 % vs 7–22 % unfiltered
+  (`crates/muninn-bench/experiment/GATE3.md`).
+Phase 5 (F3 cues, tree-sitter symbol graph, compaction) is next.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 
 ## Install (development)

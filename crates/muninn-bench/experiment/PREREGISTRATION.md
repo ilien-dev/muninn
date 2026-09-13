@@ -217,3 +217,8 @@ fixes): off 1/3, unfiltered 1/3, literal 3/3, retired-served 0.
   repository's Cargo.toml says MIT, so a careful agent sees a real conflict between
   memory and code; two filtered cells wrote MIT or refused. Kept in the reported set
   (pre-registered); the per-scenario table shows it.
+
+## Gate 3 result (2026-09-13): PASS
+
+sonnet: literal − unfiltered +0.222 [+0.111, +0.333], retired served 0, unsafe 0 %.
+haiku: +0.185 [+0.074, +0.296], retired served 0, unsafe 0 %. Report: GATE3.md.
