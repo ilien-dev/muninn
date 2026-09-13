@@ -249,3 +249,11 @@ Measured before this registration, no model involved: decay probe — ten invari
 100 forced compactions (PostCompact hook with epoch bump), 100/100 compactions delivered
 all ten (1 000/1 000 facts), hook 1.4 ms median / 2.5 ms max. The published
 without-harness figure is 106/108 losses [K1]; it is cited, not re-measured.
+- Pilots of the cue grid (three iterations, 22 cells, $4.6) before this registration is
+  used: (1) prompts that named the file and records that shared its words were found
+  lexically (lexical 2/3) — scenarios rewritten so neither the prompt nor the record
+  names the file; (2) cues evaluated only at UserPromptSubmit never fire in a
+  single-prompt cell (the file is touched after the only prompt) — delivery now also
+  happens at PostToolUse (Read/Grep/Glob/Bash) and PreToolUse (Edit/Write, `pre_edit`),
+  both under the ledger and the budget; (3) with that, lexical 1/4, literal 3/4 on four
+  scenarios, one run. The grid runs with the engine as committed at that point.
