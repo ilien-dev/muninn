@@ -94,7 +94,7 @@ pub fn ingest_transcript_with(
     };
     let now = now_ms();
     let mut typed: Vec<(i64, &'static str, Option<String>, String)> = Vec::new();
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     {
         let mut ins = tx.prepare(INSERT)?;
         // 1. literal episodes, one or more per turn

@@ -448,7 +448,7 @@ pub fn import(db: &Db, path: &Path) -> Result<ImportStats> {
         duplicates: 0,
         rejected: 0,
     };
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     if path.is_dir() {
         let mut files: Vec<_> = walk_md(path);
         files.sort();
@@ -467,6 +467,7 @@ pub fn import(db: &Db, path: &Path) -> Result<ImportStats> {
         }
     }
     tx.commit()?;
+    let _ = crate::cue::derive_missing(db);
     db.meta_set("records_changed_since_render", "1")?;
     Ok(st)
 }

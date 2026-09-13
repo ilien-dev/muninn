@@ -127,6 +127,37 @@ pub fn derive(
     Ok(n)
 }
 
+/// Derive cues for every active typed record that has none yet (imported records,
+/// records from before the cue table was filled). Lexical fallback for symbols.
+pub fn derive_missing(db: &Db) -> Result<usize> {
+    let mut st = db.conn.prepare(
+        "SELECT r.id, r.kind, r.anchor_path, r.body FROM record r \
+         WHERE r.invalid = 0 AND r.kind <> 'episode' AND NOT EXISTS (SELECT 1 FROM cue c WHERE c.record_id = r.id) \
+         ORDER BY r.id",
+    )?;
+    let rows: Vec<(i64, String, Option<String>, String)> = st
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    let mut n = 0;
+    for (id, kind, anchor, body) in rows {
+        let syms: Vec<String> = anchor
+            .as_deref()
+            .and_then(|a| {
+                let mut s = db
+                    .conn
+                    .prepare("SELECT short_name FROM symbol WHERE path = ?1 ORDER BY line LIMIT 12")
+                    .ok()?;
+                s.query_map([a], |r| r.get::<_, String>(0))
+                    .ok()
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            })
+            .unwrap_or_default();
+        n += derive(db, id, &kind, anchor.as_deref(), &body, &syms, &[])?;
+    }
+    Ok(n)
+}
+
 /// The turn context as the read path sees it: a bounded window of files touched and
 /// symbols referenced in this session (from PostToolUse), plus the event.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

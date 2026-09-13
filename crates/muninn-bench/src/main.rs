@@ -201,7 +201,7 @@ fn populate(root: &Path, records: usize, cues: usize) -> Result<()> {
     let db = Db::open(&m.join("muninn.db"), Mode::ReadWrite)?;
     let mut rng = Rng(42);
     let t = Instant::now();
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     {
         let mut st = tx.prepare(
             "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) \
@@ -396,7 +396,7 @@ fn ingest_200(root: &Path) -> Result<f64> {
     let db = Db::open(&root.join(".muninn/muninn.db"), Mode::ReadWrite)?;
     let mut rng = Rng(99);
     let t = Instant::now();
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     {
         let mut st = tx.prepare(
             "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \

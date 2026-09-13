@@ -566,7 +566,7 @@ fn symbols_cmd(
         }
         return 0;
     }
-    match muninn_symbols::rebuild(&db, &paths.root, rebuild) {
+    match muninn_symbols::rebuild(&db, &paths.source_root(), rebuild) {
         Ok(st) => {
             if json {
                 output::json(&st);
