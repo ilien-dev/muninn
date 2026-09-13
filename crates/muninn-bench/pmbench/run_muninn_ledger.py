@@ -135,14 +135,15 @@ def _muninn_due(step: dict[str, Any], day_index: int, step_minutes: int, pending
         text = json.loads(out.stdout).get("text", "")
     except Exception:  # noqa: BLE001
         text = ""
-    pend = ", ".join(f"{e['task_id']}@{e['when']}" for e in pending if e.get("status") == "pending")[:400]
+    # F3 adds to the ledger, it does not replace it: the model keeps its full ledger
+    # view (as in the todo-ledger scaffold) and gets, on top, what fired for this step
     lines = ["Muninn memory for this step:"]
     if text.strip():
-        lines.append("DUE NOW (fired by time or cue):")
+        lines.append("DUE NOW (fired by time or cue) — act on these:")
         lines.append(text.strip())
     else:
-        lines.append("DUE NOW: nothing fired.")
-    lines.append(f"Pending (not due yet): [{pend}]")
+        lines.append("DUE NOW: nothing fired at this step.")
+    lines.append(_format_ledger(pending))
     return "\n".join(lines)
 # ---------------------------------------------------------------------------------
 

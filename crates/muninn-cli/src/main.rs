@@ -43,6 +43,9 @@ enum Cmd {
         /// Also write .codex/hooks.json pointing at this binary
         #[arg(long)]
         codex: bool,
+        /// Turn on dir/symbol cue delivery at prompt and tool time (off by default; see GATE4.md)
+        #[arg(long)]
+        cues: bool,
         /// Do not touch CLAUDE.md / AGENTS.md
         #[arg(long)]
         no_boot_block: bool,
@@ -112,6 +115,8 @@ enum Cmd {
         #[arg(long)]
         session: Option<String>,
     },
+    /// Read or set a project setting (`cues on|off`)
+    Config { key: String, value: Option<String> },
     /// Scan the project's configuration for the three published defect classes:
     /// unpinned MCP servers, over-broad Bash allow rules, skills that pre-approve a shell
     ScanConfig,
@@ -165,49 +170,56 @@ fn main() {
     let code = match cli.cmd {
         Cmd::Init {
             keep_native,
+            cues,
             refresh,
             codex,
             no_boot_block,
             check_budget,
         } => {
-            if check_budget {
-                let b = init::check_budget();
-                if cli.json {
-                    output::json(&serde_json::json!({
-                        "chars": b.chars, "est_tokens": b.est_tokens, "exact_tokens": b.exact_tokens, "ok": b.ok,
-                        "max_chars": muninn_core::caps::BOOT_BLOCK_MAX_CHARS, "max_tokens": muninn_core::caps::BOOT_BLOCK_MAX_TOKENS
-                    }));
-                } else {
-                    output::out(&format!(
-                        "boot block: {} chars, ~{} tokens (estimate){} — {}",
-                        b.chars,
-                        b.est_tokens,
-                        b.exact_tokens
-                            .map(|t| format!(", {t} tokens (cl100k)"))
-                            .unwrap_or_default(),
-                        if b.ok { "within budget" } else { "OVER BUDGET" }
-                    ));
-                }
-                if b.ok {
-                    0
-                } else {
-                    1
-                }
-            } else {
-                match init::run(
-                    &paths,
-                    init::InitOpts {
-                        keep_native,
-                        refresh,
-                        codex,
-                        no_boot_block,
-                    },
-                    cli.json,
-                ) {
-                    Ok(()) => 0,
-                    Err(e) => {
-                        output::err(&format!("muninn init: {e:#}"));
+            if cues {
+                let _ = std::fs::create_dir_all(&paths.muninn_dir);
+                let _ = std::fs::write(paths.muninn_dir.join("config.json"), "{\"cues\": true}\n");
+            }
+            {
+                if check_budget {
+                    let b = init::check_budget();
+                    if cli.json {
+                        output::json(&serde_json::json!({
+                            "chars": b.chars, "est_tokens": b.est_tokens, "exact_tokens": b.exact_tokens, "ok": b.ok,
+                            "max_chars": muninn_core::caps::BOOT_BLOCK_MAX_CHARS, "max_tokens": muninn_core::caps::BOOT_BLOCK_MAX_TOKENS
+                        }));
+                    } else {
+                        output::out(&format!(
+                            "boot block: {} chars, ~{} tokens (estimate){} — {}",
+                            b.chars,
+                            b.est_tokens,
+                            b.exact_tokens
+                                .map(|t| format!(", {t} tokens (cl100k)"))
+                                .unwrap_or_default(),
+                            if b.ok { "within budget" } else { "OVER BUDGET" }
+                        ));
+                    }
+                    if b.ok {
+                        0
+                    } else {
                         1
+                    }
+                } else {
+                    match init::run(
+                        &paths,
+                        init::InitOpts {
+                            keep_native,
+                            refresh,
+                            codex,
+                            no_boot_block,
+                        },
+                        cli.json,
+                    ) {
+                        Ok(()) => 0,
+                        Err(e) => {
+                            output::err(&format!("muninn init: {e:#}"));
+                            1
+                        }
                     }
                 }
             }
@@ -527,6 +539,46 @@ fn main() {
                 1
             }
         },
+        Cmd::Config { key, value } => {
+            let p = paths.muninn_dir.join("config.json");
+            let mut v: serde_json::Value = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            match value {
+                None => {
+                    output::out(&format!(
+                        "{key} = {}",
+                        v.get(&key)
+                            .map(|x| x.to_string())
+                            .unwrap_or_else(|| "unset".into())
+                    ));
+                    0
+                }
+                Some(val) => {
+                    let parsed = match val.to_ascii_lowercase().as_str() {
+                        "on" | "true" | "1" => serde_json::Value::Bool(true),
+                        "off" | "false" | "0" => serde_json::Value::Bool(false),
+                        _ => serde_json::Value::String(val.clone()),
+                    };
+                    v[&key] = parsed;
+                    let _ = std::fs::create_dir_all(&paths.muninn_dir);
+                    match std::fs::write(
+                        &p,
+                        serde_json::to_string_pretty(&v).unwrap_or_default() + "\n",
+                    ) {
+                        Ok(()) => {
+                            output::out(&format!("{key} = {}", v[&key]));
+                            0
+                        }
+                        Err(e) => {
+                            output::err(&format!("muninn config: {e}"));
+                            1
+                        }
+                    }
+                }
+            }
+        }
         Cmd::ScanConfig => {
             let f = scan::scan(&paths);
             if cli.json {

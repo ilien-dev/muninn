@@ -257,3 +257,10 @@ without-harness figure is 106/108 losses [K1]; it is cited, not re-measured.
   happens at PostToolUse (Read/Grep/Glob/Bash) and PreToolUse (Edit/Write, `pre_edit`),
   both under the ledger and the budget; (3) with that, lexical 1/4, literal 3/4 on four
   scenarios, one run. The grid runs with the engine as committed at that point.
+
+## Gate 4 §1 result (2026-09-13): condition not met
+
+literal − lexical = +0.083 [−0.083, +0.250] on 96 cells; the CI includes 0. Cues fired in
+15/24 literal cells. As pre-registered, F3 reduces to event reinjection (session start,
+compaction) plus lexical recall; dir/symbol cue delivery stays available, off by
+default. Report: GATE4.md; raw data: results/gate4-cues/.

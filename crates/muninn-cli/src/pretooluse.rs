@@ -57,6 +57,36 @@ pub struct Verdict {
 
 /// Evaluate. `None` = no rule matched (silence, still logged).
 pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
+    // Confinement: with MUNINN_CONFINE_ROOT set (experiment cells), an edit outside that
+    // directory is denied. The seeded memory carries the real repository's absolute
+    // paths, and an agent that follows them would write into the wrong tree.
+    if let Ok(root) = std::env::var("MUNINN_CONFINE_ROOT") {
+        let tool = input.tool_name.as_deref().unwrap_or("");
+        if matches!(tool, "Edit" | "Write" | "MultiEdit" | "NotebookEdit") {
+            let ti = input.tool_input.clone().unwrap_or(serde_json::Value::Null);
+            let path = input_str(&ti, &["file_path", "notebook_path"]).unwrap_or("");
+            let root = std::path::Path::new(&root);
+            let p = std::path::Path::new(path);
+            let abs = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                root.join(p)
+            };
+            let canon = abs.canonicalize().unwrap_or(abs.clone());
+            let rootc = root.canonicalize().unwrap_or(root.to_path_buf());
+            if !path.is_empty() && !canon.starts_with(&rootc) {
+                return Some(Verdict {
+                    decision: "deny".into(),
+                    reason: format!(
+                        "Muninn: write only inside {} (this checkout); {} is outside it",
+                        rootc.display(),
+                        path
+                    ),
+                    rule_id: "confine".into(),
+                });
+            }
+        }
+    }
     let applied = load_applied(paths)?;
     if !applied.hooks_enabled {
         return None;
