@@ -492,6 +492,7 @@ fn run_cell(
         cmd.env("PATH", format!("{bin_dir}:{path}"))
             .env("MUNINN_NO_PROJECT", "1")
             .env("MUNINN_SOURCE_ROOT", &dir)
+            .env("MUNINN_CONFINE_ROOT", &dir)
             .env("MUNINN_ARM", arm)
             .env("MUNINN_ROOT", &store)
             .env_remove("CLAUDECODE")
