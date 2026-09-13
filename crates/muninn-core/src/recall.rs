@@ -355,9 +355,14 @@ pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
 pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery> {
     let terms = select_terms(db, prompt, 8)?;
     let mut hits = recall(db, &terms, 8, exclude)?;
-    // F1: an unresolved conflict is served as two marked records, never ranked away
+    // F1: an unresolved conflict is served as two marked records, never ranked away.
+    // The render-matched control arm of the experiment [X1] keeps the layout and
+    // switches this marking off together with invalidation.
+    let mark = std::env::var("MUNINN_ARM")
+        .map(|a| a != "unfiltered")
+        .unwrap_or(true);
     for h in hits.iter_mut() {
-        if h.kind != "episode" {
+        if mark && h.kind != "episode" {
             if let Ok(c) = crate::filter::conflicts_of(db, h.id) {
                 if !c.is_empty() {
                     let ids: Vec<String> = c.iter().map(|i| format!("#{i}")).collect();
