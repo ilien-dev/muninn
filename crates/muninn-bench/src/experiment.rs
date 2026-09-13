@@ -353,7 +353,7 @@ fn run_cell(
             dir.to_str().unwrap(),
             &cfg.base_ref,
         ]))?;
-        let seed_records = cfg.seed_records.as_deref().map(|p| expand(p));
+        let seed_records = cfg.seed_records.as_deref().map(expand);
         cell.stored_episodes = seed_store_arm(
             muninn,
             &dir,
