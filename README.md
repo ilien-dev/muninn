@@ -58,8 +58,10 @@ cargo build --release -p muninn-cli
 mkdir -p plugin/bin && cp target/release/muninn plugin/bin/
 claude plugin add ./plugin        # or add the marketplace once published
 # In your project:
-muninn init             # creates .muninn/, disables native memory for this project,
-                        # inserts the boot block into CLAUDE.md and AGENTS.md
+muninn init             # creates .muninn/, disables native memory for this project;
+                        # touches no CLAUDE.md/AGENTS.md: the SessionStart hook injects
+                        # a ~425-token summary of how to read blocks (see GATE4.md)
+muninn init --boot-file # put the long boot block into CLAUDE.md and AGENTS.md instead
 muninn init --codex     # also writes .codex/hooks.json for Codex
 muninn status           # MUNINN 10/10 GREEN
 ```
