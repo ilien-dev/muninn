@@ -300,18 +300,6 @@ autoformalización publicada `[U1]`, no se inventa.
 - Privilegio mínimo: el hook de lectura abre la base en modo solo lectura; solo la ruta
   de escritura escribe.
 
-### Gramáticas
-
-Compiladas estáticamente en el binario (crate `muninn-symbols`), no como plugin externo:
-
-| Lenguaje | Crate | Extensiones |
-|---|---|---|
-| Rust | `tree-sitter-rust` | `.rs` |
-| TypeScript / TSX | `tree-sitter-typescript` | `.ts`, `.tsx`, `.mts`, `.cts` |
-| JavaScript / JSX | `tree-sitter-javascript` | `.js`, `.jsx`, `.mjs`, `.cjs` |
-| Python | `tree-sitter-python` | `.py`, `.pyi` |
-| Go | `tree-sitter-go` | `.go` |
-
 ## 11. Salud del motor (P10)
 
 Health gate en `SessionStart`, una línea: `MUNINN 9/9 GREEN` o el nombre del fallo y su
