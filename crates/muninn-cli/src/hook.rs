@@ -187,7 +187,7 @@ fn user_prompt(
             })?
             .filter_map(|r| r.ok())
             .collect();
-        let d = recall::render(&hits, target);
+        let d = recall::render(&hits, target, &[]);
         if d.text.is_empty() {
             log(vec![], 0, "control:empty");
             return Ok(None);

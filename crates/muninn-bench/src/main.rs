@@ -648,7 +648,18 @@ fn main() -> Result<()> {
                 p
             });
             anyhow::ensure!(bin.exists(), "muninn binary not found at {}", bin.display());
-            experiment::run(&config, &out, &bin, dry_run, pilot, runs, model, jobs, rerun_errors, rescore)
+            experiment::run(
+                &config,
+                &out,
+                &bin,
+                dry_run,
+                pilot,
+                runs,
+                model,
+                jobs,
+                rerun_errors,
+                rescore,
+            )
         }
         Cmd::Rules {
             dir,

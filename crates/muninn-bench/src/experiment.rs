@@ -653,9 +653,17 @@ pub fn run(
             let Some(task) = cfg.tasks.iter().find(|t| t.id == c.task) else {
                 continue;
             };
-            let patch = out_dir.join("diffs").join(format!("r{}-{}-{}.patch", c.run, c.task, c.arm));
-            let _ = Command::new("git").current_dir(&dir).args(["checkout", "--", "."]).output();
-            let _ = Command::new("git").current_dir(&dir).args(["clean", "-fdq"]).output();
+            let patch = out_dir
+                .join("diffs")
+                .join(format!("r{}-{}-{}.patch", c.run, c.task, c.arm));
+            let _ = Command::new("git")
+                .current_dir(&dir)
+                .args(["checkout", "--", "."])
+                .output();
+            let _ = Command::new("git")
+                .current_dir(&dir)
+                .args(["clean", "-fdq"])
+                .output();
             let body = std::fs::read(&patch).unwrap_or_default();
             if !body.is_empty() {
                 let ok = Command::new("git")
@@ -665,7 +673,10 @@ pub fn run(
                     .map(|o| o.status.success())
                     .unwrap_or(false);
                 if !ok {
-                    println!("rescore: patch did not apply for r{}-{}-{}; status kept", c.run, c.task, c.arm);
+                    println!(
+                        "rescore: patch did not apply for r{}-{}-{}; status kept",
+                        c.run, c.task, c.arm
+                    );
                     continue;
                 }
             }
@@ -677,7 +688,10 @@ pub fn run(
                 .output()?;
             let status = if o.status.success() { "pass" } else { "fail" };
             if status != c.status {
-                println!("rescore: r{}-{}-{} {} → {}", c.run, c.task, c.arm, c.status, status);
+                println!(
+                    "rescore: r{}-{}-{} {} → {}",
+                    c.run, c.task, c.arm, c.status, status
+                );
                 changed += 1;
             }
             c.oracle_exit = o.status.code();
