@@ -34,12 +34,12 @@ for i in $(seq 1 "$RUNS"); do
   nohup "$PY" -u "$PMB/sim/run_eval.py" --setup single_baseline --scenario "$SCN" --backend sglang \
     --base-url "http://127.0.0.1:$PORT/v1" --model "$MODEL" --out-dir "$OUT/single_baseline" --score \
     > "$OUT/single_baseline-r$i.log" 2>&1 &
-  pids+=($!)
+  pids+=($!); sleep 1.2   # the PM-Bench runner names the log by the launch second
   [[ " $ARMS " == *" todo_ledger "* ]] && \
   nohup "$PY" -u "$PMB/sim/run_eval.py" --setup todo_ledger --scenario "$SCN" --backend sglang \
     --base-url "http://127.0.0.1:$PORT/v1" --model "$MODEL" --out-dir "$OUT/todo_ledger" --score \
     > "$OUT/todo_ledger-r$i.log" 2>&1 &
-  pids+=($!)
+  pids+=($!); sleep 1.2
 done
 echo "${pids[*]}" > "$OUT/pids"
 echo "launched ${#pids[@]} runs; pids in $OUT/pids"

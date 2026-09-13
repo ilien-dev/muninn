@@ -46,7 +46,7 @@ Phases 0–2 complete.
   compaction survival 100/100 (decay probe); dir/symbol cues vs lexical-only +0.08
   [−0.08, +0.25] — not distinguishable, so they ship **off by default** (`muninn config
   cues on`); symbol-graph query expansion +0.13 [+0.00, +0.29] over plain lexical, opt-in
-  (`muninn config expand on`); PM-Bench: 60.6 % set F1 vs 61.8 % for the paper's ledger and 60.9 % baseline, all below the 65.1 % line (`crates/muninn-bench/experiment/GATE4.md`).
+  (`muninn config expand on`); PM-Bench: with Muninn as the typed intention store (lifecycle in code, the model only forms and decides) 96.3 % set F1 on claude-sonnet-5, 3 runs, vs 79.8 % and 77.9 % for the paper's two scaffolds on the same model through the same isolated bridge; the published lines are 65.1 % (GPT-5.4 agent) and 82.9 % (PIS, DeepSeek-Chat) (`crates/muninn-bench/experiment/GATE4.md` §3 rounds 4–5).
 Phase 6 (hardening, release) is in progress: signed releases, config scanner, audits.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 
