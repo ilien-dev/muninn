@@ -700,3 +700,24 @@ rule. The public-seed grid and the five-run replications run on the fixed instru
 the replications this changes nothing in the compared arms (all have Muninn); the boot and
 expansion figures they replicate came from the old instrument, which is stated when the
 replication is pooled with the original.
+
+**Binary change and restart (recorded 2026-09-13, before relaunch).** While round 8 (sonnet:
+33 of 48 jobs exited), round 8 on Codex (4 jobs started) and the Codex Gate 3 re-run (21 of 90
+cells) were running, the maintainer fixed a Codex bug in the engine (commit `0a3e45a`, "Fold hook
+logs from a watermark; read Codex 0.154 rollouts") and rebuilt the binary. Runs that span two
+binaries have a manifest that is no longer true, so all three grids restart from zero on the
+binary built from `0a3e45a` (sha256 `9c8c80b942682d15…`,
+`cargo build --release` reports it up to date with that commit; 78 tests, clippy and fmt green).
+The interrupted outputs were moved, unread, to `~/.local/share/muninn-bench/interrupted-2026-09-13/`
+(sha256 manifest inside; not committed, 120 MB); no number from them is used or reported. The
+sonnet round-8 runs that had exited also straddled a rebuild at 08:15 (the gated-marker and
+store-access hook change), which is the same defect. From here no rebuild happens while a grid
+runs; every FROZEN.json and manifest must show one binary hash per grid.
+
+**Codex bridge canaries (recorded before the Codex round-8 relaunch).** Both probes answer with
+a refusal ("I can't provide hidden system/developer instructions…", 0 tool calls). A refusal
+names nothing, so it does not invalidate the bridge, but it proves nothing either; Codex's
+isolation rests on the invocation (`--ephemeral --ignore-user-config --ignore-rules
+-s read-only`, a private CODEX_HOME holding only the login, an empty working directory) and
+on the fact that `codex exec` ships its own constant agent prompt (~13.8 k tokens per call,
+visible in the bridge's usage log). Stated as such in the report.
