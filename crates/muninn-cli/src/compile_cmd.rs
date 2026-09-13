@@ -252,6 +252,13 @@ fn set_list(v: &mut serde_json::Value, key: &str, items: Vec<String>) {
 }
 
 pub fn run_apply(paths: &ProjectPaths, revert: bool, yes: bool, json: bool) -> Result<()> {
+    if !revert {
+        // the scanner runs over what is about to be applied and over the target file
+        let findings = crate::scan::scan(paths);
+        if !findings.is_empty() {
+            crate::output::err(&crate::scan::render(&findings));
+        }
+    }
     if revert {
         return run_revert(paths, json);
     }

@@ -14,7 +14,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --features exact-tokens -- -D warnings
       - run: cargo test --workspace --features exact-tokens
-      - name: fault injection (11 scenarios x 200)
+      - name: fault injection (15 scenarios x 200)
         run: MUNINN_FAULT_REPS=200 cargo test -p muninn-cli --release --test fault -- --nocapture
       - name: boot block budget
         run: cargo run --release -p muninn-cli --features exact-tokens -- init --check-budget

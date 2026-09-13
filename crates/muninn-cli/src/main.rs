@@ -7,6 +7,7 @@ mod init;
 mod maintain;
 mod output;
 mod pretooluse;
+mod scan;
 
 use clap::{Parser, Subcommand};
 use muninn_core::{health, Db, Mode, ProjectPaths};
@@ -105,6 +106,9 @@ enum Cmd {
         #[arg(long)]
         ungated: bool,
     },
+    /// Scan the project's configuration for the three published defect classes:
+    /// unpinned MCP servers, over-broad Bash allow rules, skills that pre-approve a shell
+    ScanConfig,
     /// Retire a record by hand (retained, never served)
     Revoke {
         id: i64,
@@ -475,6 +479,19 @@ fn main() {
                     output::err(&format!("muninn cues: {e}"));
                     1
                 }
+            }
+        }
+        Cmd::ScanConfig => {
+            let f = scan::scan(&paths);
+            if cli.json {
+                output::json(&f);
+            } else {
+                output::out(&scan::render(&f));
+            }
+            if f.is_empty() {
+                0
+            } else {
+                2
             }
         }
         Cmd::Revoke { id, reason } => match Db::open(&paths.db_path(), Mode::ReadWrite) {

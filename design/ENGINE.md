@@ -328,12 +328,13 @@ diferida no es alarma, es "verificar en el siguiente límite".
 | Decaimiento tipo Ebbinghaus, importancia aprendida | Ninguna medición lo pide; agentmemory lo lleva `[P2]` |
 | Skills importadas | −1,3 a −4,2 pp `[J2]` |
 | Más de dos herramientas MCP | 0 operaciones voluntarias `[K1]`; peaje `[H2]` |
-| Respondedor de "por qué" enrutado | Fuera de la v1; si se hace, se hace como herramienta invocada y midiendo suficiencia `[K3]` |
+| Respondedor de "por qué" **proactivo** | El respondedor enrutado sí está en el MVP (decisión del usuario), pero solo como herramienta **invocada** (`muninn why`, fase 4), nunca inyectado por hook; su suficiencia se mide `[K3]` |
+| Vectores en el `recall` de los hooks | El sidecar de embeddings sí está en el MVP (decisión del usuario), pero vive en la ruta de escritura asíncrona y alimenta solo a `muninn why` y a la detección de duplicados; nunca al hook `[I2]` `[V4]` |
 
-Vector como **sidecar opcional**, apagado por defecto: embeddings estáticos calculados en
-la ruta de escritura y consultados solo por la herramienta `muninn why`, nunca por el hook.
-Se enciende únicamente si una medición con oráculo independiente lo justifica; el
-híbrido da +2,8 pp de recall@10 `[H4]` a cambio del determinismo `[V4]`.
+Medido en la fase 3: el sidecar carga en 52 ms y codifica 200 textos en 8,5 ms; el kNN
+exacto es bit-idéntico en 1 000 repeticiones; sobre auto-recuperación no sube el
+recall@10 léxico (1,000 → 1,000), así que su valor se mide donde se consume,
+`muninn why` (10/10 en la rejilla de la puerta 3, 55 ms), no en el hook.
 
 ## 13. Qué mide que el motor sirve
 
