@@ -443,7 +443,10 @@ fn run_cell(
         // `muninn why` / `muninn status` are part of the product the boot block
         // describes: the binary's directory goes on PATH for the agent's own shell
         let path = std::env::var("PATH").unwrap_or_default();
-        let bin_dir = muninn.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+        let bin_dir = muninn
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
         cmd.env("PATH", format!("{bin_dir}:{path}"))
             .env("MUNINN_NO_PROJECT", "1")
             .env("MUNINN_ARM", arm)

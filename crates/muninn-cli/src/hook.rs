@@ -79,9 +79,9 @@ pub fn run(event: &str, cwd_override: Option<PathBuf>) -> i32 {
         "PreToolUse" => Ok(crate::pretooluse::evaluate(&paths, &input)
             .map(|v| crate::pretooluse::render(&v, input.turn_id.is_some()))),
         "UserPromptSubmit" => user_prompt(&paths, &input, &session),
-        "PostToolUse" => Ok(None),
-        "PreCompact" => Ok(None),
-        "PostCompact" => Ok(None),
+        "PostToolUse" => post_tool_use(&paths, &input, &session),
+        "PreCompact" => pre_compact(&paths, &input, &session),
+        "PostCompact" => post_compact(&paths, &input, &session),
         "InstructionsLoaded" => Ok(None),
         "Stop" => write_path(&paths, &input, false),
         "SessionEnd" => write_path(&paths, &input, true),
@@ -118,7 +118,25 @@ fn session_start(
     // hook stays read-only and returns at once. At most one spawn per two minutes:
     // a burst of SessionStarts must not fan out into a burst of writers.
     crate::maintain::spawn_detached_throttled(paths, 120);
-    Ok(Some(additional_context("SessionStart", &report.summary())))
+    let mut text = report.summary();
+    // F3 event cues: invariants and corrections resurface at every session start; after
+    // a compaction they are reinjected without a gate and the ledger epoch moves on
+    if let Ok(db) = &db {
+        let compact = _input.source.as_deref() == Some("compact");
+        let event = if compact {
+            "post_compact"
+        } else {
+            "session_start"
+        };
+        if compact {
+            crate::delivery::bump_epoch(paths, &_input.session_id);
+        }
+        if let Some(d) = event_delivery(paths, db, &_input.session_id, event) {
+            text.push('\n');
+            text.push_str(&d);
+        }
+    }
+    Ok(Some(additional_context("SessionStart", &text)))
 }
 
 /// Experiment arms are selected by `MUNINN_ARM`: `literal` (default), `off`
@@ -159,7 +177,7 @@ fn user_prompt(
     }
     let db = Db::open(&paths.db_path(), Mode::ReadOnly)?;
     let exclude = crate::delivery::delivered_ids(paths, session);
-    let literal = recall::deliver(&db, prompt, &exclude)?;
+    let literal = deliver_fused(paths, &db, prompt, session, &exclude)?;
     if arm == "control" {
         // same token budget as the literal delivery would have used, filled from an unrelated store
         let Some(cpath) = std::env::var_os("MUNINN_CONTROL_DB") else {
@@ -203,8 +221,266 @@ fn user_prompt(
         log(vec![], 0, "silence:no_match");
         return Ok(None);
     }
+    for (id, r) in &literal.reasons {
+        if r.starts_with("cue:") {
+            log(vec![*id], 0, r);
+        }
+    }
+    for id in &literal.gated {
+        log(vec![*id], 0, "gated:budget");
+    }
     log(literal.ids.clone(), literal.tokens, "literal");
     Ok(Some(additional_context("UserPromptSubmit", &literal.text)))
+}
+
+/// Cues (turn context) and lexical recall fused by RRF under the turn budget.
+fn deliver_fused(
+    paths: &ProjectPaths,
+    db: &Db,
+    prompt: &str,
+    session: &str,
+    exclude: &std::collections::HashSet<i64>,
+) -> muninn_core::Result<muninn_core::cue::Merged> {
+    use muninn_core::{cue, recall};
+    let terms = recall::select_terms(db, prompt, 8)?;
+    let mut lexical = recall::recall(db, &terms, 8, exclude)?;
+    // F1: conflicts are served as conflicts (the render-matched control arm skips this)
+    let mark = std::env::var("MUNINN_ARM")
+        .map(|a| a != "unfiltered")
+        .unwrap_or(true);
+    for h in lexical.iter_mut() {
+        if mark && h.kind != "episode" {
+            if let Ok(c) = muninn_core::filter::conflicts_of(db, h.id) {
+                if !c.is_empty() {
+                    let ids: Vec<String> = c.iter().map(|i| format!("#{i}")).collect();
+                    h.kind = format!("{}:conflict with {}", h.kind, ids.join(","));
+                }
+            }
+        }
+    }
+    let mut ctx = cue::load_context(paths, session, "prompt");
+    // symbols the prompt itself names
+    ctx.symbols.extend(cue::lexical_symbols(prompt, 6));
+    let cue_hits = cue::evaluate(db, &ctx, exclude)?;
+    let ids: Vec<i64> = cue_hits.iter().map(|h| h.record_id).collect();
+    let cue_records = cue::hits_for(db, &ids)?;
+    Ok(cue::merge(
+        &cue_hits,
+        &cue_records,
+        &lexical,
+        &terms,
+        muninn_core::caps::BUDGET_TURN_TOKENS,
+        &[],
+    ))
+}
+
+/// Event-cue delivery (session_start / post_compact): invariants and corrections,
+/// ungated, under the turn budget; logged like any other delivery.
+fn event_delivery(paths: &ProjectPaths, db: &Db, session: &str, event: &str) -> Option<String> {
+    use muninn_core::cue;
+    if arm() == "off" {
+        return None;
+    }
+    let exclude = if event == "post_compact" {
+        std::collections::HashSet::new()
+    } else {
+        crate::delivery::delivered_ids(paths, session)
+    };
+    let ctx = cue::TurnContext {
+        event: event.to_string(),
+        ..Default::default()
+    };
+    let hits = cue::evaluate(db, &ctx, &exclude).ok()?;
+    if hits.is_empty() {
+        return None;
+    }
+    let ids: Vec<i64> = hits.iter().map(|h| h.record_id).collect();
+    let recs = cue::hits_for(db, &ids).ok()?;
+    let m = cue::merge(
+        &hits,
+        &recs,
+        &[],
+        &[],
+        muninn_core::caps::BUDGET_TURN_TOKENS,
+        &ids,
+    );
+    if m.text.is_empty() {
+        return None;
+    }
+    crate::delivery::append(
+        paths,
+        &crate::delivery::Line {
+            at: now_ms(),
+            session: session.to_string(),
+            arm: arm(),
+            ids: m.ids.clone(),
+            tokens: m.tokens,
+            reason: format!("cue:event:{event}"),
+        },
+    );
+    for id in &m.gated {
+        crate::delivery::append(
+            paths,
+            &crate::delivery::Line {
+                at: now_ms(),
+                session: session.to_string(),
+                arm: arm(),
+                ids: vec![*id],
+                tokens: 0,
+                reason: "gated:budget".into(),
+            },
+        );
+    }
+    Some(m.text)
+}
+
+/// PostToolUse: the turn context — files touched and symbols referenced — goes to
+/// an append-only log; a read hook never opens the store for writing.
+fn post_tool_use(
+    paths: &ProjectPaths,
+    input: &HookInput,
+    session: &str,
+) -> muninn_core::Result<Option<serde_json::Value>> {
+    use muninn_core::cue;
+    let Some(tool) = input.tool_name.as_deref() else {
+        return Ok(None);
+    };
+    let empty = serde_json::Value::Null;
+    let (files, mut syms) = cue::context_of_tool(
+        tool,
+        input.tool_input.as_ref().unwrap_or(&empty),
+        &paths.root,
+    );
+    if files.is_empty() && syms.is_empty() {
+        return Ok(None);
+    }
+    // definitions of the touched files, when the graph knows them (indexed lookup)
+    if let Ok(db) = Db::open(&paths.db_path(), Mode::ReadOnly) {
+        for f in &files {
+            if let Ok(mut st) = db.conn.prepare_cached(
+                "SELECT short_name FROM symbol WHERE path = ?1 ORDER BY line LIMIT 12",
+            ) {
+                if let Ok(rows) = st.query_map([f.as_str()], |r| r.get::<_, String>(0)) {
+                    syms.extend(rows.flatten());
+                }
+            }
+        }
+    }
+    cue::append_context(
+        paths,
+        &cue::ContextLine {
+            at: now_ms(),
+            session: session.to_string(),
+            files,
+            symbols: syms,
+        },
+    );
+    // dead ends anchored to a directory fire before an edit under it
+    if matches!(tool, "Edit" | "Write" | "MultiEdit") {
+        return Ok(None);
+    }
+    Ok(None)
+}
+
+/// PreCompact: snapshot of the active invariants and recent corrections, so what the
+/// summary loses is reinjected from the store, not from the summary.
+fn pre_compact(
+    paths: &ProjectPaths,
+    _input: &HookInput,
+    session: &str,
+) -> muninn_core::Result<Option<serde_json::Value>> {
+    let db = Db::open(&paths.db_path(), Mode::ReadOnly)?;
+    let rows = muninn_core::project::load(
+        &db,
+        "invalid = 0 AND kind IN ('invariant','correction') ORDER BY created_at DESC LIMIT 80",
+    )?;
+    let epoch = crate::delivery::epoch(paths, session);
+    let _ = std::fs::create_dir_all(paths.compact_dir());
+    let p = paths.compact_dir().join(format!("{session}-{epoch}.json"));
+    let _ = std::fs::write(&p, serde_json::to_string_pretty(&rows).unwrap_or_default());
+    Ok(None)
+}
+
+/// PostCompact: the epoch moves on (the ledger restarts), invariants come back without
+/// a gate, and the compaction summary's claims of success are checked against the
+/// exit codes the transcript actually holds [W4].
+fn post_compact(
+    paths: &ProjectPaths,
+    input: &HookInput,
+    session: &str,
+) -> muninn_core::Result<Option<serde_json::Value>> {
+    crate::delivery::bump_epoch(paths, session);
+    let db = Db::open(&paths.db_path(), Mode::ReadOnly)?;
+    let mut text = String::new();
+    if let Some(d) = event_delivery(paths, &db, session, "post_compact") {
+        text.push_str(&d);
+    }
+    if let (Some(summary), Some(tp)) = (
+        input.compact_summary.as_deref(),
+        input.transcript_path.as_deref(),
+    ) {
+        for claim in unverified_claims(summary, std::path::Path::new(tp)) {
+            text.push_str(&format!("[muninn:unverified] the compaction summary says \"{claim}\" but no command in the transcript ended with exit 0 for it; re-verify before relying on it\n"));
+        }
+    }
+    if text.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(additional_context("PostCompact", &text)))
+    }
+}
+
+/// Sentences of the summary that claim a result ("confirmed", "passes", "works",
+/// "verified", "all tests pass") when the transcript's last test/build command did not
+/// end with exit 0.
+fn unverified_claims(summary: &str, transcript: &std::path::Path) -> Vec<String> {
+    const CLAIMS: [&str; 10] = [
+        "confirmed",
+        "confirmado",
+        "tests pass",
+        "pasan los tests",
+        "all green",
+        "works",
+        "funciona",
+        "verified",
+        "verificado",
+        "build succeeds",
+    ];
+    let claims: Vec<String> = summary
+        .split(['.', '\n'])
+        .map(str::trim)
+        .filter(|s| {
+            let l = s.to_lowercase();
+            CLAIMS.iter().any(|c| l.contains(c))
+        })
+        .map(|s| s.chars().take(160).collect())
+        .collect();
+    if claims.is_empty() {
+        return vec![];
+    }
+    let Ok(session) = muninn_capture::parse_any(transcript, 0) else {
+        return claims;
+    };
+    let mut last_ok = false;
+    let mut any = false;
+    for t in &session.turns {
+        for c in &t.tools {
+            let cmd = c.target.to_lowercase();
+            if cmd.contains("test")
+                || cmd.contains("build")
+                || cmd.contains("clippy")
+                || cmd.contains("check")
+            {
+                any = true;
+                last_ok = c.exit_code == Some(0);
+            }
+        }
+    }
+    if any && last_ok {
+        vec![]
+    } else {
+        claims
+    }
 }
 
 /// Stop and SessionEnd: the only hooks that write. Fold heartbeats and
