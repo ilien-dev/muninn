@@ -49,6 +49,38 @@ fn input_str<'a>(v: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
     keys.iter().find_map(|k| v.get(k).and_then(|x| x.as_str()))
 }
 
+/// Every path a call touches: `file_paths` for a Codex patch (one call, several
+/// files; see `hook::normalize_apply_patch`), otherwise the single path field.
+fn touched_paths<'a>(v: &'a serde_json::Value, keys: &[&str]) -> Vec<&'a str> {
+    let many: Vec<&str> = v
+        .get("file_paths")
+        .and_then(|x| x.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+        .unwrap_or_default();
+    if many.is_empty() {
+        vec![input_str(v, keys).unwrap_or("")]
+    } else {
+        many
+    }
+}
+
+/// `a/b/../c` → `a/c` without touching the disk. A file that does not exist yet
+/// cannot be canonicalised, and `root/../x` still starts with `root` component-wise.
+fn lexical(p: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out = std::path::PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 pub struct Verdict {
     pub decision: String,
     pub reason: String,
@@ -64,26 +96,37 @@ pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
         let tool = input.tool_name.as_deref().unwrap_or("");
         if matches!(tool, "Edit" | "Write" | "MultiEdit" | "NotebookEdit") {
             let ti = input.tool_input.clone().unwrap_or(serde_json::Value::Null);
-            let path = input_str(&ti, &["file_path", "notebook_path"]).unwrap_or("");
             let root = std::path::Path::new(&root);
-            let p = std::path::Path::new(path);
-            let abs = if p.is_absolute() {
-                p.to_path_buf()
-            } else {
-                root.join(p)
-            };
-            let canon = abs.canonicalize().unwrap_or(abs.clone());
             let rootc = root.canonicalize().unwrap_or(root.to_path_buf());
-            if !path.is_empty() && !canon.starts_with(&rootc) {
-                return Some(Verdict {
-                    decision: "deny".into(),
-                    reason: format!(
-                        "Muninn: write only inside {} (this checkout); {} is outside it",
-                        rootc.display(),
-                        path
-                    ),
-                    rule_id: "confine".into(),
+            let root_lex = lexical(root);
+            for path in touched_paths(&ti, &["file_path", "notebook_path"]) {
+                let p = std::path::Path::new(path);
+                let abs = lexical(&if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    root.join(p)
                 });
+                // resolve symlinks through the file, or its directory for a new file;
+                // a path under directories that do not exist yet is judged lexically
+                let resolved = abs.canonicalize().ok().or_else(|| {
+                    let dir = abs.parent()?.canonicalize().ok()?;
+                    Some(dir.join(abs.file_name()?))
+                });
+                let inside = match resolved {
+                    Some(r) => r.starts_with(&rootc),
+                    None => abs.starts_with(&root_lex) || abs.starts_with(&rootc),
+                };
+                if !path.is_empty() && !inside {
+                    return Some(Verdict {
+                        decision: "deny".into(),
+                        reason: format!(
+                            "Muninn: write only inside {} (this checkout); {} is outside it",
+                            rootc.display(),
+                            path
+                        ),
+                        rule_id: "confine".into(),
+                    });
+                }
             }
         }
     }
@@ -96,7 +139,7 @@ pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
     let tool = input.tool_name.as_deref().unwrap_or("");
     let ti = input.tool_input.clone().unwrap_or(serde_json::Value::Null);
     let command = input_str(&ti, &["command"]).unwrap_or("");
-    let path = input_str(&ti, &["file_path", "path", "notebook_path"]).unwrap_or("");
+    let touched = touched_paths(&ti, &["file_path", "path", "notebook_path"]);
     let is_codex = input.turn_id.is_some();
 
     let mut verdict = None;
@@ -113,31 +156,42 @@ pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
                 _ => continue,
             }
         }
-        if let Some(pr) = &e.path_regex {
-            match Regex::new(pr) {
-                Ok(r) if r.is_match(path) => {}
-                _ => continue,
-            }
-        }
-        if let Some(cond) = &e.condition {
-            let ok = if let Some(list) = cond.strip_prefix("branch_in:") {
-                current_branch(&paths.root).is_some_and(|b| list.split(',').any(|x| x.trim() == b))
-            } else if cond == "new_file" {
-                !path.is_empty() && !std::path::Path::new(path).exists()
-            } else if cond == "root_file" {
-                let p = std::path::Path::new(path);
-                let abs = if p.is_absolute() {
-                    p.to_path_buf()
-                } else {
-                    paths.root.join(p)
-                };
-                !path.is_empty() && abs.parent() == Some(paths.root.as_path()) && !abs.exists()
-            } else {
-                false
-            };
-            if !ok {
+        let path_re = match e.path_regex.as_deref().map(Regex::new) {
+            None => None,
+            Some(Ok(r)) => Some(r),
+            Some(Err(_)) => continue,
+        };
+        let cond = e.condition.as_deref();
+        if let Some(list) = cond.and_then(|c| c.strip_prefix("branch_in:")) {
+            if !current_branch(&paths.root).is_some_and(|b| list.split(',').any(|x| x.trim() == b))
+            {
                 continue;
             }
+        } else if cond.is_some_and(|c| c != "new_file" && c != "root_file") {
+            continue;
+        }
+        // path regex and path condition hold for the same path; a patch matches when
+        // any one of its files does
+        let path_ok = |path: &str| {
+            if path_re.as_ref().is_some_and(|r| !r.is_match(path)) {
+                return false;
+            }
+            match cond {
+                Some("new_file") => !path.is_empty() && !std::path::Path::new(path).exists(),
+                Some("root_file") => {
+                    let p = std::path::Path::new(path);
+                    let abs = if p.is_absolute() {
+                        p.to_path_buf()
+                    } else {
+                        paths.root.join(p)
+                    };
+                    !path.is_empty() && abs.parent() == Some(paths.root.as_path()) && !abs.exists()
+                }
+                _ => true,
+            }
+        };
+        if !touched.iter().any(|p| path_ok(p)) {
+            continue;
         }
         verdict = Some(Verdict {
             decision: e.decision.clone(),
@@ -168,5 +222,52 @@ pub fn render(v: &Verdict, is_codex: bool) -> serde_json::Value {
         serde_json::json!({ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": format!("Muninn: this action needs the user's confirmation. {}", v.reason) } })
     } else {
         serde_json::json!({ "hookSpecificOutput": { "hookEventName": "PreToolUse", "permissionDecision": v.decision, "permissionDecisionReason": v.reason } })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn touched_paths_prefers_the_patch_list() {
+        let patch = serde_json::json!({ "file_path": "a.rs", "file_paths": ["a.rs", "b/c.rs"] });
+        assert_eq!(
+            touched_paths(&patch, &["file_path"]),
+            vec!["a.rs", "b/c.rs"]
+        );
+        let edit = serde_json::json!({ "file_path": "a.rs" });
+        assert_eq!(touched_paths(&edit, &["file_path"]), vec!["a.rs"]);
+        assert_eq!(
+            touched_paths(&serde_json::Value::Null, &["file_path"]),
+            vec![""]
+        );
+    }
+
+    /// A relative path to a new file that climbs out of the root is denied (Codex
+    /// sends relative patch paths; `root/../x` used to pass the component check).
+    #[test]
+    fn confine_denies_a_new_file_outside_the_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("cell");
+        std::fs::create_dir_all(&root).unwrap();
+        let paths = ProjectPaths::from_root(&root);
+        let call = |file_paths: serde_json::Value| HookInput {
+            tool_name: Some("Write".into()),
+            tool_input: Some(serde_json::json!({ "file_path": "x", "file_paths": file_paths })),
+            ..Default::default()
+        };
+        std::env::set_var("MUNINN_CONFINE_ROOT", &root);
+        let out = evaluate(
+            &paths,
+            &call(serde_json::json!(["ok.txt", "../outside.txt"])),
+        );
+        let inside = evaluate(
+            &paths,
+            &call(serde_json::json!(["a/../ok.txt", "./b/c.rs"])),
+        );
+        std::env::remove_var("MUNINN_CONFINE_ROOT");
+        assert_eq!(out.map(|v| v.rule_id).as_deref(), Some("confine"));
+        assert!(inside.is_none());
     }
 }

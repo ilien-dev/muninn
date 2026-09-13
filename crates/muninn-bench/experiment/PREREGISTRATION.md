@@ -201,6 +201,20 @@ fixes): off 1/3, unfiltered 1/3, literal 3/3, retired-served 0.
   run hang until the timeout (a trust prompt with no TTY is the likely cause). The
   runner keeps the `codex` harness for when this is resolved; Gate 3 is measured on
   Claude Code with two model families (sonnet, haiku) and reported as such.
+  - Unparked 2026-09-13 (infrastructure, no grid run). Probe on codex-cli 0.154.0: with
+    the project `.codex/hooks.json` that `muninn init --codex` writes, hooks fire in the
+    interactive TUI (after "Trust all and continue") and under `codex exec` with
+    `--dangerously-bypass-hook-trust` and stdin closed; a canary invariant was delivered
+    by UserPromptSubmit and answered in both. Codex reports file edits as `apply_patch`
+    (relative paths, several files per call), which no Muninn matcher named; the hook
+    now reshapes it into Edit/Write, and the confinement check no longer lets
+    `root/../x` through for a file that does not exist yet (live: the patch to
+    `../outside.txt` is denied). The runner now writes that `hooks.json` into the cell
+    (excluded from the diff) and gives Codex a private HOME holding only the login: the
+    real HOME had leaked `~/.agents/skills` into the model's context. Smoke, one cell,
+    gpt-5.6-terra, `fact-userprompt-p95` literal: pass, 831 tokens delivered, hook p95
+    2.56 ms (the same cell had timed out at 303 s before). A Codex grid needs its own
+    pre-registration here before any cell runs.
 - Oracle amendment after the sonnet grid, applied by `--rescore` to every cell of every
   arm: `revoke-internal-http` required the English phrase "https everywhere"; the three
   filtered cells had written "HTTPS en todo / en todos lados / en todas partes" (the

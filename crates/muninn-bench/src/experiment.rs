@@ -50,22 +50,52 @@ fn d_harness() -> String {
     "claude".into()
 }
 
-/// `codex exec` takes its hooks as `-c` overrides (TOML inline tables), so a cell needs
-/// no file in the worktree and no persisted hook trust.
-fn codex_hook_overrides(muninn: &Path) -> Vec<String> {
-    let bin = muninn.to_string_lossy();
-    let one = |key: &str, ev: &str, timeout: u64, is_async: bool| {
-        format!(
-            "hooks.{key}=[{{hooks=[{{type=\"command\",command=\"{bin} hook {ev}\",timeout={timeout}{}}}]}}]",
-            if is_async { ",async=true" } else { "" }
+/// Prepare a Codex cell the way a user's project is prepared: the `.codex/hooks.json`
+/// that `muninn init --codex` ships (hooks passed as `-c` overrides never fire under
+/// `codex exec` 0.154), and a private HOME whose only Codex state is the login, so no
+/// global AGENTS.md, config, hook or `~/.agents/skills` entry reaches the model.
+/// Returns the environment the harness runs with. The copied login goes away with
+/// the store when the cell ends.
+fn codex_cell(muninn: &Path, dir: &Path, store: &Path) -> Result<Vec<(String, PathBuf)>> {
+    // the shipped generator, run in a scratch project of its own (its own `.git`, so
+    // the init cannot resolve upwards into the cell's store)
+    let gen = store.join("codex-init");
+    std::fs::create_dir_all(gen.join(".git"))?;
+    run_ok(Command::new(muninn).env_remove("MUNINN_ROOT").args([
+        "init",
+        "--codex",
+        "--keep-native",
+        "--cwd",
+        gen.to_str().unwrap(),
+    ]))?;
+    std::fs::create_dir_all(dir.join(".codex"))?;
+    std::fs::copy(gen.join(".codex/hooks.json"), dir.join(".codex/hooks.json"))?;
+
+    let real_home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
+    let real_codex = std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".codex"));
+    let home = store.join("home");
+    let codex_home = home.join(".codex");
+    std::fs::create_dir_all(&codex_home)?;
+    std::fs::copy(real_codex.join("auth.json"), codex_home.join("auth.json"))
+        .with_context(|| format!("no Codex login at {}", real_codex.display()))?;
+    std::fs::write(codex_home.join("config.toml"), "[features]\nhooks = true\n")?;
+    // toolchains resolve through HOME; the cell keeps the real ones
+    let keep = |var: &str, default: &str| {
+        (
+            var.to_string(),
+            std::env::var_os(var)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| real_home.join(default)),
         )
     };
-    vec![
-        one("session_start", "SessionStart", 5, false),
-        one("user_prompt_submit", "UserPromptSubmit", 2, false),
-        one("stop", "Stop", 30, false),
-        one("session_end", "SessionEnd", 5, false),
-    ]
+    Ok(vec![
+        ("HOME".into(), home),
+        ("CODEX_HOME".into(), codex_home),
+        keep("CARGO_HOME", ".cargo"),
+        keep("RUSTUP_HOME", ".rustup"),
+    ])
 }
 
 /// Reduce `codex exec --json` events to the shape the cell expects: the final agent
@@ -471,15 +501,13 @@ fn run_cell(
                 "workspace-write",
                 "--skip-git-repo-check",
                 "--dangerously-bypass-hook-trust",
-                "-c",
-                "features.hooks=true",
                 "-m",
                 &cfg.model,
+                &prompt,
             ]);
-            for o in codex_hook_overrides(muninn) {
-                c.args(["-c", &o]);
+            for (k, v) in codex_cell(muninn, &dir, &store)? {
+                c.env(k, v);
             }
-            c.arg(&prompt);
             c
         } else {
             let mut c = Command::new("claude");
@@ -648,6 +676,7 @@ fn run_cell(
                 ":(exclude)CLAUDE.md",
                 ":(exclude)AGENTS.md",
                 ":(exclude).claude",
+                ":(exclude).codex",
                 ":(exclude).gitignore",
             ])
             .output();

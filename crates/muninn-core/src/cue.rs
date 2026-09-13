@@ -281,7 +281,10 @@ pub fn context_of_tool(
     };
     match tool {
         "Read" | "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
-            if let Some(p) = input
+            // a Codex patch reshaped by the hook names several files
+            if let Some(list) = input.get("file_paths").and_then(|v| v.as_array()) {
+                files.extend(list.iter().filter_map(|v| v.as_str()).map(rel));
+            } else if let Some(p) = input
                 .get("file_path")
                 .or_else(|| input.get("notebook_path"))
                 .and_then(|v| v.as_str())
@@ -632,6 +635,18 @@ pub const _BUDGET: usize = BUDGET_TURN_TOKENS;
 mod tests {
     use super::*;
     use crate::db::Mode;
+
+    #[test]
+    fn patch_context_names_every_file() {
+        let root = Path::new("/r");
+        let patch = serde_json::json!({ "file_path": "a.rs", "file_paths": ["a.rs", "/r/b/c.rs"] });
+        assert_eq!(
+            context_of_tool("Edit", &patch, root).0,
+            vec!["a.rs", "b/c.rs"]
+        );
+        let edit = serde_json::json!({ "file_path": "/r/x.rs" });
+        assert_eq!(context_of_tool("Write", &edit, root).0, vec!["x.rs"]);
+    }
 
     #[test]
     fn dirs_symbols_and_blocks() {

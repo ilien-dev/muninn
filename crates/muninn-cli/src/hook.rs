@@ -43,7 +43,66 @@ pub fn read_input() -> HookInput {
         .take(MAX_STDIN)
         .read_to_end(&mut buf);
     let text = from_bytes_lossy(&buf);
-    serde_json::from_str(&text).unwrap_or_default()
+    let mut input: HookInput = serde_json::from_str(&text).unwrap_or_default();
+    normalize_apply_patch(&mut input);
+    input
+}
+
+/// Codex edits files through one `apply_patch` tool whose input is the patch text.
+/// Every hook reads its input here, so the call is reshaped once into the form the
+/// engine matches on: `Write` when the patch creates a path, `Edit` otherwise, with
+/// `file_path` (the first file) and `file_paths` (every file the patch touches).
+fn normalize_apply_patch(input: &mut HookInput) {
+    if input.tool_name.as_deref() != Some("apply_patch") {
+        return;
+    }
+    let Some(patch) = input.tool_input.as_ref().and_then(|v| {
+        v.get("command")
+            .and_then(|c| c.as_str())
+            .or_else(|| v.as_str())
+            .map(str::to_string)
+    }) else {
+        return;
+    };
+    let (files, creates) = patch_files(&patch);
+    let Some(first) = files.first().cloned() else {
+        return;
+    };
+    input.tool_name = Some(if creates { "Write" } else { "Edit" }.into());
+    input.tool_input = Some(serde_json::json!({
+        "file_path": first,
+        "file_paths": files,
+        "patch": patch,
+    }));
+}
+
+/// The paths named by an `apply_patch` envelope, in order, without repeats, and
+/// whether any of them is created (`Add File`, or the target of a `Move to`).
+fn patch_files(patch: &str) -> (Vec<String>, bool) {
+    let mut files: Vec<String> = Vec::new();
+    let mut creates = false;
+    for line in patch.lines() {
+        let line = line.trim_end();
+        let path = if let Some(p) = line
+            .strip_prefix("*** Add File: ")
+            .or_else(|| line.strip_prefix("*** Move to: "))
+        {
+            creates = true;
+            p
+        } else if let Some(p) = line
+            .strip_prefix("*** Update File: ")
+            .or_else(|| line.strip_prefix("*** Delete File: "))
+        {
+            p
+        } else {
+            continue;
+        };
+        let path = path.trim();
+        if !path.is_empty() && !files.iter().any(|f| f == path) {
+            files.push(path.to_string());
+        }
+    }
+    (files, creates)
 }
 
 fn additional_context(event: &str, text: &str) -> serde_json::Value {
@@ -769,4 +828,43 @@ fn expand_terms(db: &Db, prompt: &str, terms: &[String]) -> Vec<String> {
     }
     out.truncate(6);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The payload Codex 0.154 sends for a patch (captured from a live session).
+    #[test]
+    fn codex_apply_patch_becomes_edit_or_write() {
+        let mut add = HookInput {
+            tool_name: Some("apply_patch".into()),
+            tool_input: Some(serde_json::json!({
+                "command": "*** Begin Patch\n*** Add File: probe.txt\n+hello\n*** Update File: src/a.rs\n@@\n-x\n+y\n*** End Patch"
+            })),
+            ..Default::default()
+        };
+        normalize_apply_patch(&mut add);
+        assert_eq!(add.tool_name.as_deref(), Some("Write"));
+        let ti = add.tool_input.unwrap();
+        assert_eq!(ti["file_path"], "probe.txt");
+        assert_eq!(
+            ti["file_paths"],
+            serde_json::json!(["probe.txt", "src/a.rs"])
+        );
+
+        let (files, creates) = patch_files(
+            "*** Begin Patch\n*** Update File: a.rs\n*** Delete File: b.rs\n*** End Patch",
+        );
+        assert_eq!(files, vec!["a.rs", "b.rs"]);
+        assert!(!creates);
+
+        let mut shell = HookInput {
+            tool_name: Some("Bash".into()),
+            tool_input: Some(serde_json::json!({ "command": "*** Add File: x" })),
+            ..Default::default()
+        };
+        normalize_apply_patch(&mut shell);
+        assert_eq!(shell.tool_name.as_deref(), Some("Bash"));
+    }
 }

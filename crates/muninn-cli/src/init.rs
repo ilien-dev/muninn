@@ -249,8 +249,9 @@ pub fn codex_hooks_json(binary: &Path) -> serde_json::Value {
         "hooks": {
             "SessionStart":     [{ "matcher": "startup|resume|compact", "hooks": [cmd("SessionStart")] }],
             "UserPromptSubmit": [{ "hooks": [cmd("UserPromptSubmit")] }],
-            "PreToolUse":       [{ "matcher": "^(Bash|Edit|Write|MultiEdit|Read)$", "hooks": [cmd("PreToolUse")] }],
-            "PostToolUse":      [{ "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit)$", "hooks": [cmd("PostToolUse")] }],
+            // Codex edits files through `apply_patch`; the hook reshapes it into Edit/Write
+            "PreToolUse":       [{ "matcher": "^(Bash|Edit|Write|MultiEdit|Read|apply_patch)$", "hooks": [cmd("PreToolUse")] }],
+            "PostToolUse":      [{ "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit|apply_patch)$", "hooks": [cmd("PostToolUse")] }],
             "PreCompact":       [{ "hooks": [cmd("PreCompact")] }],
             "PostCompact":      [{ "hooks": [cmd("PostCompact")] }],
             "Stop":             [{ "hooks": [cmd_async("Stop")] }],
