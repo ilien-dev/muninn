@@ -453,3 +453,12 @@ detail", "a channel reply can satisfy an event intention", and querying channels
 
 **Arm and rule.** `muninn_store` round 7, 3 runs, same model and invocation. Ships only if the
 mean set-F1 is not below round 5 (96.3 %) and no new error class appears in the traces.
+
+## Round 7 result (2026-09-13): ships
+
+set-F1 95.7 · 97.5 · 96.9 (mean 96.7 %, sd 0.9), not below round 5 (96.3 %, sd 0.6); the
+difference is within the run-to-run spread and is not claimed as an improvement of the mean.
+The two targeted classes (Monday follow-up text, Thursday dinner) are absent in all three runs.
+Remaining in every run: Thursday "package visible behind the counter" (miss) and Friday's
+dry-cleaning override typed as an email-channel cue firing one step early on the receipt's
+email (false alarm + miss). Data: `results/pmbench/round7/`; report: `GATE4.md`.

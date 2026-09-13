@@ -57,5 +57,5 @@ Everything below carries a measurement; the reports live under
   parked (hooks did not fire under `codex exec` 0.154.0). PM-Bench is measured in
   `GATE4.md`: rounds 1–3 below the paper's 65.1 % line (bridge later found to leak the
   user's global CLAUDE.md); rounds 4–5 with Muninn as the typed intention store and an
-  isolated bridge reach 96.3 % set F1 on claude-sonnet-5 (3 runs) against 79.8 % / 77.9 %
+  isolated bridge reach 96.3–96.7 % set F1 on claude-sonnet-5 (rounds 5 and 7, 3 runs each) against 79.8 % / 77.9 %
   for the paper's own scaffolds on the same model.
