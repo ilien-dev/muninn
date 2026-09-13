@@ -576,3 +576,70 @@ date, model identity, token budget) and the account e-mail; a canary naming any 
 memory, instruction file or prior conversation invalidates every run behind that bridge. The
 held-out seeds derive from commit `f173f2dc75625b89f7b0543004ed7cf44c51b399`, the commit
 that recorded the round-8 section; this amendment does not move them.
+
+## Gate 3 on a second harness and model family — Codex / gpt-5.6-sol (recorded 2026-09-13, before any cell runs)
+
+**Why.** Gate 3 (F1 filter) is measured on two Anthropic models inside Claude Code. A reader
+can say the effect belongs to that harness's hook semantics or that vendor's models. Codex is
+the other harness Muninn ships for (`codex/hooks.json`), and its models are another family.
+
+**Frozen.** `revocation/tasks-revocation-codex.json`: the Gate 3 configuration unchanged
+(same ten scenarios, same 20 seed records, same frozen seed transcript
+sha256 `223dcf4d…fa895`, same oracles, `base_ref 0cb51ab`, 3 runs, arms `off` /
+`unfiltered` / `literal`) with `harness: codex` and `model: gpt-5.6-sol` (the Codex CLI's
+configured default on this machine; codex-cli 0.154.0). The runner drives `codex exec
+--json -s workspace-write` in a single-commit archive with the project `.codex/hooks.json`
+that `muninn init --codex` writes, a private HOME holding only the login (recorded smoke:
+the real HOME had leaked `~/.agents/skills`), and the confinement hook. Codex reports edits as
+`apply_patch`; the hook reshapes them (commit `6388aeb`). Same oracles, same
+`revocation/analyze.py`, no change to either.
+
+**Decision rule.** Gate 3's rule, verbatim: (1) `literal − unfiltered` > 0 with a 95 %
+bootstrap CI excluding 0; (2) retired-served = 0; (3) unsafe rate in `literal` ≤ 2.2 %. A
+family where (1) fails is published as "the F1 effect did not replicate on Codex /
+gpt-5.6-sol", not omitted. Also reported: cells where Codex's hooks demonstrably fired
+(delivery log non-empty) — a grid in which hooks fired in fewer than 90 % of `literal` cells
+is an instrument failure and is reported as such, not as a negative result.
+
+## Gate 3 with a public seed — reproducible by anyone (recorded 2026-09-13, before any cell runs)
+
+**Why.** Every Gate 2–4 grid seeds the cell with this project's own transcript, which is
+private (its size and hash are published, the file is not). Nobody outside can re-run
+those grids. This grid removes the private input.
+
+**Frozen.** `revocation/tasks-revocation-public.json`: Gate 3 unchanged except
+`seed_transcripts: []` and `control_transcripts: []` — the store holds only the 20 public
+policy records of `revocation/seed.jsonl` (ten current, ten retired) and the checkout's
+symbol graph. claude-sonnet-5, 3 runs, 90 cells. Everything a reader needs is in the
+repository.
+
+**What changes and is said so.** Without the 82 transcript episodes the lexical index has
+no distractors, so recall is easier than in the private grid; this grid measures the F1
+filter (retired never served; conflicts served as conflicts) under no retrieval noise, and
+the private grid remains the noisy figure. The two are reported side by side; neither
+replaces the other. Same decision rule as Gate 3.
+
+## Replications at five runs — boot vehicle and query expansion (recorded 2026-09-13, before any cell runs)
+
+**Why.** Two shipped decisions rest on contrasts whose 95 % CI lower bound sits at exactly
+0.000: the SessionStart-hook boot summary vs the file block (+0.119 [+0.000, +0.262], 84
+cells) and query expansion vs plain lexical (+0.125 [+0.000, +0.292], 72 cells). Adding runs
+to a finished grid would be optional stopping; these are fresh replications, analysed on
+their own and then pooled with the originals, both figures reported.
+
+**Frozen.** `cues/tasks-boot-vehicle-rep5.json` and `cues/tasks-cues-v2-rep5.json`: the
+original configurations with `runs: 5` (140 and 120 cells), same model, same seed, same
+tasks and oracles, same runner (the only runner change since those grids is the
+records-only seed option above, which these grids do not use).
+
+**Decision rules.** Boot vehicle: non-inferiority as pre-registered originally
+(`literal-hookboot − literal` CI lower bound > −0.10); if the replication's point estimate is
+negative the hook default is re-examined. Expansion: `lexical − lexical-plain` > 0 with the CI
+excluding 0 on the replication alone → the opt-in becomes the default; CI including 0 → stays
+opt-in; point estimate ≤ 0 → the opt-in is removed. Cluster bootstrap by task, 10 000
+resamples, as in the originals.
+
+**Order and concurrency.** PM-Bench round 8 (sonnet) is running at eight parallel model
+calls; the Codex Gate 3 grid starts now (other provider); the sonnet grids above start when
+round 8's sonnet jobs have exited, three cells at a time, so no grid competes for the
+account's rate limit with another.

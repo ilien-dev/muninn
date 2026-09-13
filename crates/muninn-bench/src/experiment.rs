@@ -988,7 +988,11 @@ pub fn run(
         repo
     };
     let seeds = transcripts(&cfg.seed_transcripts);
-    anyhow::ensure!(!seeds.is_empty(), "no seed transcripts found");
+    // a public grid seeds records only (`seed_records`), no private transcript
+    anyhow::ensure!(
+        !seeds.is_empty() || cfg.seed_records.is_some(),
+        "no seed transcripts found and no seed_records"
+    );
     std::fs::create_dir_all(out_dir)?;
     let out_dir = &std::fs::canonicalize(out_dir)?;
     let work = out_dir.join("work");
