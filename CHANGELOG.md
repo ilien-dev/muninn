@@ -53,8 +53,13 @@ Everything below carries a measurement; the reports live under
   the SessionStart hook injects a ~425-token summary (capped at 500, CI-checked) and
   the skill keeps the long form. Measured against the file vehicle on 84 paired cells:
   +0.119 [+0.000, +0.262], not inferior. `muninn init --boot-file` restores the file.
+- **Codex tool-time hooks.** Codex edits files through `apply_patch`; PreToolUse and
+  PostToolUse now match it and read every file in the patch, so compiled deny rules,
+  pre-edit cues and the turn context cover Codex edits. Confinement denies a relative
+  `../` path to a new file. `muninn init --codex` writes the new matchers.
 - **Not done, on purpose.** See `docs/scope.md`. Codex replication of the gates is
-  parked (hooks did not fire under `codex exec` 0.154.0). PM-Bench is measured in
+  not measured yet: the harness now runs (hooks fire under `codex exec` 0.154.0 with
+  the project `hooks.json`; one smoke cell, `PREREGISTRATION.md`), no grid has. PM-Bench is measured in
   `GATE4.md`: rounds 1–3 below the paper's 65.1 % line (bridge later found to leak the
   user's global CLAUDE.md); rounds 4–5 with Muninn as the typed intention store and an
   isolated bridge reach 96.3–96.7 % set F1 on claude-sonnet-5 (rounds 5 and 7, 3 runs each) against 79.8 % / 77.9 %
