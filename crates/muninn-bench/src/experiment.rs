@@ -504,11 +504,14 @@ fn run_cell(
         if let Some(c) = control_db {
             cmd.env("MUNINN_CONTROL_DB", c);
         }
+        // query expansion is an opt-in in the shipped default (GATE4.md §1, second
+        // grid); the arms that carry it say so explicitly
         if arm == "lexical" {
-            cmd.env("MUNINN_NO_CUES", "1");
+            cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_EXPAND", "1");
         } else if arm == "lexical-plain" {
-            cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_NO_EXPAND", "1");
+            cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_EXPAND", "0");
         } else {
+            cmd.env("MUNINN_EXPAND", "1");
             // experiments measure the full mechanism; the shipped default keeps
             // dir/symbol cues off (GATE4.md)
             cmd.env("MUNINN_CUES", "1");

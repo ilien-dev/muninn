@@ -41,6 +41,32 @@ prompt vocabulary cannot reach — the case F3 was designed for — or more runs
 estimate is positive). Neither was available here; this grid used this repository and
 three runs.
 
+### §1, second grid — query expansion through the symbol graph (`results/gate4-cues-v2/`)
+
+Post-gate change: the read hook adds to the lexical query the definitions of files
+whose path contains a prompt word (`expand_terms`), so "the embedding crate" reaches a
+record that only says `embed_pending`. Pre-registered in `PREREGISTRATION.md` (after
+launch, before any result was read). Same eight tasks and seed, claude-sonnet-5,
+3 runs, 72 cells, $17.57, 1 error re-run; cells confined by a PreToolUse deny.
+
+| arm | pass | tokens delivered (mean) | turns (mean) | cost/cell |
+|---|---|---|---|---|
+| lexical-plain (no cues, no expansion) | 10/24 | 503 | 10.5 | $0.231 |
+| lexical (no cues, expansion) | 13/24 | 522 | 12.0 | $0.260 |
+| literal (cues + expansion) | 15/24 | 741 | 11.0 | $0.242 |
+
+| contrast | point | 95 % cluster-bootstrap CI (by task) |
+|---|---|---|
+| lexical − lexical-plain | +0.125 | [+0.000, +0.292] |
+| literal − lexical | +0.083 | [−0.083, +0.292] |
+| literal − lexical-plain | +0.208 | [−0.042, +0.417] |
+
+Per task, expansion turned `cue-busy-cap` 0/3 → 2/3 and `cue-azure-pattern` 1/3 → 2/3;
+the other six are unchanged. Retired records served: 0. The lower bound sits at
+exactly zero, so by the rule it ships as an **opt-in** (`muninn config expand on`,
+`MUNINN_EXPAND=1`) and the experiments keep it on in the arms that name it. Cues on
+top of expansion repeat the first grid's figure (+0.083); the verdict on cues stands.
+
 ## §2 Compaction survival (decay probe): 100 %
 
 Ten invariants seeded, 100 forced compactions (`PostCompact` hook, epoch bump each

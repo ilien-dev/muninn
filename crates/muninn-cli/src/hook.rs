@@ -156,6 +156,21 @@ fn cues_enabled(paths: &ProjectPaths) -> bool {
         .unwrap_or(false)
 }
 
+/// Query expansion through the symbol graph. Measured on the cue grid (72 cells,
+/// sonnet): +0.125 [+0.000, +0.292] over plain lexical recall — the interval touches
+/// zero, so it ships as an opt-in (`muninn config expand on`; `MUNINN_EXPAND=1|0`
+/// overrides `.muninn/config.json`).
+fn expand_enabled(paths: &ProjectPaths) -> bool {
+    if let Ok(v) = std::env::var("MUNINN_EXPAND") {
+        return v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on");
+    }
+    std::fs::read_to_string(paths.muninn_dir.join("config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("expand").and_then(|c| c.as_bool()))
+        .unwrap_or(false)
+}
+
 fn arm() -> String {
     std::env::var("MUNINN_ARM").unwrap_or_else(|_| "literal".into())
 }
@@ -261,7 +276,7 @@ fn deliver_fused(
     // the prompt names an area of the code ("the embedding crate", "redact"): the
     // definitions of the files whose path carries that word join the query, so a record
     // anchored there is reachable by the words it actually contains
-    if std::env::var_os("MUNINN_NO_EXPAND").is_none() {
+    if expand_enabled(paths) {
         for t in expand_terms(db, prompt, &terms) {
             if !terms.contains(&t) {
                 terms.push(t);
