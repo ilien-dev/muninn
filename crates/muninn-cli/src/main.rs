@@ -454,7 +454,7 @@ fn main() {
                     let exclude = if ungated {
                         Default::default()
                     } else {
-                        delivery::delivered_ids(&paths, &session)
+                        delivery::delivered_ids(&paths, &db, &session)
                     };
                     let ctx = cue::TurnContext {
                         files,

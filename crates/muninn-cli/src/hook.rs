@@ -288,7 +288,7 @@ fn user_prompt(
         return Ok(None);
     }
     let db = Db::open(&paths.db_path(), Mode::ReadOnly)?;
-    let exclude = crate::delivery::delivered_ids(paths, session);
+    let exclude = crate::delivery::delivered_ids(paths, &db, session);
     let literal = deliver_fused(paths, &db, prompt, session, &exclude)?;
     if arm == "control" {
         // same token budget as the literal delivery would have used, filled from an unrelated store
@@ -412,7 +412,7 @@ fn event_delivery(paths: &ProjectPaths, db: &Db, session: &str, event: &str) -> 
     let exclude = if event == "post_compact" {
         std::collections::HashSet::new()
     } else {
-        crate::delivery::delivered_ids(paths, session)
+        crate::delivery::delivered_ids(paths, db, session)
     };
     let ctx = cue::TurnContext {
         event: event.to_string(),
@@ -459,7 +459,20 @@ fn event_delivery(paths: &ProjectPaths, db: &Db, session: &str, event: &str) -> 
             },
         );
     }
-    Some(m.text)
+    if m.gated.is_empty() {
+        Some(m.text)
+    } else {
+        // the budget is hard; silence about what it cut is not. The decay probe found
+        // that with more invariants than fit (16 of ~30 tokens under 700), the rest
+        // vanished without a trace at every compaction.
+        let mut text = m.text;
+        text.push_str(&format!(
+            "[muninn:gated] {} more invariant/correction record(s) exist but did not fit the {}-token turn budget; run `muninn why <topic>` before assuming a rule is absent\n",
+            m.gated.len(),
+            muninn_core::caps::BUDGET_TURN_TOKENS
+        ));
+        Some(text)
+    }
 }
 
 /// PostToolUse: the turn context — files touched and symbols referenced — goes to
@@ -592,7 +605,7 @@ fn cue_delivery(
     {
         return None;
     }
-    let exclude = crate::delivery::delivered_ids(paths, session);
+    let exclude = crate::delivery::delivered_ids(paths, db, session);
     let hits = cue::evaluate(db, ctx, &exclude).ok()?;
     if hits.is_empty() {
         return None;

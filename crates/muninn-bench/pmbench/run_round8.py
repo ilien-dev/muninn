@@ -119,6 +119,12 @@ def ensure_bridge(py: str, kind: str, port: int, model: str, out: Path) -> str:
     canary = http_get(base + "/canary")
     (out / "canary.json").write_text(json.dumps(canary, indent=1))
     print("canary:", json.dumps(canary)[:300], flush=True)
+    try:   # marker-based leak probe (bridges built after the sonnet launch)
+        canary2 = http_get(base + "/canary2")
+        (out / "canary2.json").write_text(json.dumps(canary2, indent=1))
+        print("canary2:", json.dumps(canary2)[:300], flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print("canary2 unavailable:", exc, flush=True)
     return base + "/v1"
 
 
