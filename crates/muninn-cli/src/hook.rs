@@ -78,7 +78,7 @@ pub fn run(event: &str, cwd_override: Option<PathBuf>) -> i32 {
         "SessionStart" => session_start(&paths, &input),
         "PreToolUse" => Ok(crate::pretooluse::evaluate(&paths, &input)
             .map(|v| crate::pretooluse::render(&v, input.turn_id.is_some()))),
-        "UserPromptSubmit" => Ok(None),
+        "UserPromptSubmit" => user_prompt(&paths, &input, &session),
         "PostToolUse" => Ok(None),
         "PreCompact" => Ok(None),
         "PostCompact" => Ok(None),
@@ -117,8 +117,94 @@ fn session_start(
     Ok(Some(additional_context("SessionStart", &report.summary())))
 }
 
-/// Stop and SessionEnd: the only hooks that write. Phase 0 folds heartbeats and
-/// records the session boundary; ingestion arrives in Phase 2.
+/// Experiment arms are selected by `MUNINN_ARM`: `literal` (default), `off`
+/// (no delivery), `control` (length-matched irrelevant episodes from the store at
+/// `MUNINN_CONTROL_DB`). Everything else about the hook is identical across arms.
+fn arm() -> String {
+    std::env::var("MUNINN_ARM").unwrap_or_else(|_| "literal".into())
+}
+
+fn user_prompt(
+    paths: &ProjectPaths,
+    input: &HookInput,
+    session: &str,
+) -> muninn_core::Result<Option<serde_json::Value>> {
+    use muninn_core::recall;
+    let arm = arm();
+    let prompt = input.prompt.as_deref().unwrap_or("");
+    let log = |ids: Vec<i64>, tokens: usize, reason: &str| {
+        crate::delivery::append(
+            paths,
+            &crate::delivery::Line {
+                at: now_ms(),
+                session: session.to_string(),
+                arm: arm.clone(),
+                ids,
+                tokens,
+                reason: reason.into(),
+            },
+        );
+    };
+    if arm == "off" {
+        log(vec![], 0, "arm_off");
+        return Ok(None);
+    }
+    if !recall::intent_gate(prompt) {
+        log(vec![], 0, "gated:intent");
+        return Ok(None);
+    }
+    let db = Db::open(&paths.db_path(), Mode::ReadOnly)?;
+    let exclude = crate::delivery::delivered_ids(paths, session);
+    let literal = recall::deliver(&db, prompt, &exclude)?;
+    if arm == "control" {
+        // same token budget as the literal delivery would have used, filled from an unrelated store
+        let Some(cpath) = std::env::var_os("MUNINN_CONTROL_DB") else {
+            log(vec![], 0, "control:no_db");
+            return Ok(None);
+        };
+        let cdb = Db::open(std::path::Path::new(&cpath), Mode::ReadOnly)?;
+        let target = literal.tokens;
+        if target == 0 {
+            log(vec![], 0, "control:literal_empty");
+            return Ok(None);
+        }
+        let seed = (blake3::hash(prompt.as_bytes()).as_bytes()[0] as i64) % 97;
+        let mut stmt = cdb.conn.prepare("SELECT id, kind, subject, object, body, origin, trust, created_at, session_id FROM record WHERE invalid=0 AND kind='episode' ORDER BY (id + ?1) % 101, id LIMIT 40")?;
+        let hits: Vec<recall::Hit> = stmt
+            .query_map([seed], |r| {
+                Ok(recall::Hit {
+                    id: r.get(0)?,
+                    kind: r.get(1)?,
+                    subject: r.get(2)?,
+                    object: r.get(3)?,
+                    body: r.get(4)?,
+                    origin: r.get(5)?,
+                    trust: r.get(6)?,
+                    created_at: r.get(7)?,
+                    session_id: r.get(8)?,
+                    score: 0.0,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        let d = recall::render(&hits, target);
+        if d.text.is_empty() {
+            log(vec![], 0, "control:empty");
+            return Ok(None);
+        }
+        log(d.ids.iter().map(|i| -i).collect(), d.tokens, "control");
+        return Ok(Some(additional_context("UserPromptSubmit", &d.text)));
+    }
+    if literal.text.is_empty() {
+        log(vec![], 0, "silence:no_match");
+        return Ok(None);
+    }
+    log(literal.ids.clone(), literal.tokens, "literal");
+    Ok(Some(additional_context("UserPromptSubmit", &literal.text)))
+}
+
+/// Stop and SessionEnd: the only hooks that write. Fold heartbeats and
+/// deliveries, ingest the transcript from its watermark, verify integrity.
 fn write_path(
     paths: &ProjectPaths,
     _input: &HookInput,
@@ -126,6 +212,23 @@ fn write_path(
 ) -> muninn_core::Result<Option<serde_json::Value>> {
     let db = Db::open(&paths.db_path(), Mode::ReadWrite)?;
     heartbeat::fold_into_db(paths, &db)?;
+    crate::delivery::fold_into_db(paths, &db)?;
+    if let Some(t) = _input.transcript_path.as_deref() {
+        let p = std::path::Path::new(t);
+        if p.is_file() {
+            match muninn_capture::ingest::ingest_transcript(&db, p, &_input.session_id) {
+                Ok(st) => {
+                    if st.inserted > 0 {
+                        output::err(&format!(
+                            "muninn: ingested {} episode(s) from {} turn(s)",
+                            st.inserted, st.turns
+                        ));
+                    }
+                }
+                Err(e) => output::err(&format!("muninn: ingest: {e}")),
+            }
+        }
+    }
     // Integrity is verified here, off the read path, at most once an hour.
     db.record_quick_check(3_600_000)?;
     // Rules are recompiled here when their source files changed; never applied.
@@ -137,7 +240,6 @@ fn write_path(
     let now = now_ms();
     if session_end {
         db.meta_set("last_session_end_ms", &now.to_string())?;
-        // Nothing to ingest yet (Phase 0): the watermark advances with the session.
         db.meta_set("ingest_watermark_ms", &now.to_string())?;
     }
     Ok(None)

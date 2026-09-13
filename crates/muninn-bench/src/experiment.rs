@@ -1,0 +1,673 @@
+//! Four-arm experiment runner (Gate 2). See experiment/PREREGISTRATION.md.
+//! Every cell: fresh worktree at base_ref, fresh store seeded from prior-session
+//! transcripts, one `claude -p` run with the hooks wired through `--settings`,
+//! then the task's executable oracle. Nothing is scored by a model.
+
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Task {
+    pub id: String,
+    #[serde(default)]
+    pub inferable: bool,
+    pub prompt: String,
+    pub oracle: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Config {
+    pub repo: String,
+    pub base_ref: String,
+    pub model: String,
+    pub runs: usize,
+    pub arms: Vec<String>,
+    #[serde(default = "d_turns")]
+    pub max_turns: usize,
+    #[serde(default = "d_timeout")]
+    pub timeout_s: u64,
+    pub seed_transcripts: Vec<String>,
+    #[serde(default)]
+    pub control_transcripts: Vec<String>,
+    pub tasks: Vec<Task>,
+}
+fn d_turns() -> usize {
+    25
+}
+fn d_timeout() -> u64 {
+    600
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cell {
+    pub run: usize,
+    pub task: String,
+    pub inferable: bool,
+    pub arm: String,
+    pub order: usize,
+    pub status: String, // pass | fail | error
+    pub oracle_exit: Option<i32>,
+    pub claude_exit: Option<i32>,
+    pub cost_usd: Option<f64>,
+    pub num_turns: Option<u64>,
+    pub duration_ms: u128,
+    pub delivered_tokens: i64,
+    pub delivered_records: i64,
+    pub hook_p95_ms: Option<f64>,
+    pub stored_episodes: i64,
+    pub error: Option<String>,
+}
+
+fn expand(p: &str) -> PathBuf {
+    if let Some(rest) = p.strip_prefix("~/") {
+        if let Some(h) = std::env::var_os("HOME") {
+            return PathBuf::from(h).join(rest);
+        }
+    }
+    PathBuf::from(p)
+}
+
+fn transcripts(list: &[String]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for p in list {
+        let p = expand(p);
+        if p.is_dir() {
+            if let Ok(rd) = std::fs::read_dir(&p) {
+                let mut v: Vec<PathBuf> = rd
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|x| x.extension().is_some_and(|e| e == "jsonl"))
+                    .collect();
+                v.sort();
+                out.extend(v);
+            }
+        } else if p.is_file() {
+            out.push(p);
+        }
+    }
+    out
+}
+
+fn run_ok(cmd: &mut Command) -> Result<String> {
+    let out = cmd
+        .output()
+        .with_context(|| format!("spawning {:?}", cmd))?;
+    if !out.status.success() {
+        bail!("{:?} failed: {}", cmd, String::from_utf8_lossy(&out.stderr));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+fn seed_store(muninn: &Path, dir: &Path, seeds: &[PathBuf]) -> Result<i64> {
+    run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
+        "--cwd",
+        dir.to_str().unwrap(),
+        "init",
+        "--keep-native",
+        "--no-boot-block",
+    ]))?;
+    for s in seeds {
+        run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
+            "--cwd",
+            dir.to_str().unwrap(),
+            "ingest",
+            s.to_str().unwrap(),
+        ]))?;
+    }
+    let db = rusqlite::Connection::open(dir.join(".muninn/muninn.db"))?;
+    Ok(
+        db.query_row("SELECT count(*) FROM record WHERE invalid=0", [], |r| {
+            r.get(0)
+        })?,
+    )
+}
+
+fn settings_json(muninn: &Path) -> serde_json::Value {
+    let bin = muninn.to_string_lossy().to_string();
+    let h = |ev: &str, timeout: u64| serde_json::json!([{ "hooks": [{ "type": "command", "command": bin, "args": ["hook", ev], "timeout": timeout }] }]);
+    serde_json::json!({
+        "autoMemoryEnabled": false,
+        "hooks": {
+            "SessionStart": h("SessionStart", 5),
+            "UserPromptSubmit": h("UserPromptSubmit", 5),
+            "PostToolUse": [{ "matcher": "Bash|Edit|Write|MultiEdit|Read", "hooks": [{ "type": "command", "command": bin, "args": ["hook", "PostToolUse"], "timeout": 5 }] }],
+            "Stop": h("Stop", 30),
+            "SessionEnd": h("SessionEnd", 5)
+        }
+    })
+}
+
+fn pct(v: &mut [f64], p: f64) -> Option<f64> {
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Some(v[((v.len() as f64 * p) as usize).min(v.len() - 1)])
+}
+
+fn measure_store(dir: &Path) -> (i64, i64, Option<f64>) {
+    let Ok(db) = rusqlite::Connection::open(dir.join(".muninn/muninn.db")) else {
+        return (0, 0, None);
+    };
+    let tokens: i64 = db.query_row("SELECT coalesce(sum(tokens),0) FROM fire_ledger WHERE reason LIKE 'literal%' OR reason LIKE 'control%'", [], |r| r.get(0)).unwrap_or(0);
+    let recs: i64 = db
+        .query_row(
+            "SELECT count(*) FROM fire_ledger WHERE record_id IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    // delivery.jsonl may not have been folded if Stop did not fire; count it too
+    let mut extra_tokens = 0i64;
+    let mut extra_recs = 0i64;
+    if let Ok(s) = std::fs::read_to_string(dir.join(".muninn/log/delivery.jsonl")) {
+        for l in s.lines() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
+                if v["reason"]
+                    .as_str()
+                    .map(|r| r.starts_with("literal") || r.starts_with("control"))
+                    .unwrap_or(false)
+                {
+                    extra_tokens += v["tokens"].as_i64().unwrap_or(0);
+                    extra_recs += v["ids"].as_array().map(|a| a.len() as i64).unwrap_or(0);
+                }
+            }
+        }
+    }
+    let mut ms: Vec<f64> = Vec::new();
+    if let Ok(mut st) =
+        db.prepare("SELECT ms FROM heartbeat WHERE hook='UserPromptSubmit' AND ms IS NOT NULL")
+    {
+        if let Ok(rows) = st.query_map([], |r| r.get::<_, f64>(0)) {
+            ms.extend(rows.filter_map(|r| r.ok()));
+        }
+    }
+    if let Ok(s) = std::fs::read_to_string(dir.join(".muninn/log/heartbeat.jsonl")) {
+        for l in s.lines() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
+                if v["ev"] == "finish" && v["hook"] == "UserPromptSubmit" {
+                    if let Some(m) = v["ms"].as_f64() {
+                        ms.push(m);
+                    }
+                }
+            }
+        }
+    }
+    (tokens + extra_tokens, recs + extra_recs, pct(&mut ms, 0.95))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_cell(
+    cfg: &Config,
+    muninn: &Path,
+    repo: &Path,
+    seeds: &[PathBuf],
+    control_db: Option<&Path>,
+    task: &Task,
+    arm: &str,
+    run: usize,
+    order: usize,
+    work: &Path,
+) -> Cell {
+    let t0 = Instant::now();
+    let mut cell = Cell {
+        run,
+        task: task.id.clone(),
+        inferable: task.inferable,
+        arm: arm.into(),
+        order,
+        status: "error".into(),
+        oracle_exit: None,
+        claude_exit: None,
+        cost_usd: None,
+        num_turns: None,
+        duration_ms: 0,
+        delivered_tokens: 0,
+        delivered_records: 0,
+        hook_p95_ms: None,
+        stored_episodes: 0,
+        error: None,
+    };
+    let dir = work.join(format!("cell-r{run}-{}-{arm}", task.id));
+    let _ = std::fs::remove_dir_all(&dir);
+    let res: Result<()> = (|| {
+        run_ok(Command::new("git").current_dir(repo).args([
+            "worktree",
+            "add",
+            "--detach",
+            dir.to_str().unwrap(),
+            &cfg.base_ref,
+        ]))?;
+        cell.stored_episodes = seed_store(muninn, &dir, seeds)?;
+        let settings = dir.join(".muninn/claude-settings.json");
+        std::fs::write(
+            &settings,
+            serde_json::to_string_pretty(&settings_json(muninn))?,
+        )?;
+        let mut cmd = Command::new("claude");
+        cmd.current_dir(&dir)
+            .args(["-p", &task.prompt, "--model", &cfg.model, "--output-format", "json", "--max-turns", &cfg.max_turns.to_string(), "--permission-mode", "acceptEdits", "--settings", settings.to_str().unwrap()])
+            .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *)"])
+            .env("MUNINN_ARM", arm)
+            .env("MUNINN_ROOT", &dir)
+            .env_remove("CLAUDECODE")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(c) = control_db {
+            cmd.env("MUNINN_CONTROL_DB", c);
+        }
+        let mut child = cmd.spawn().context("spawning claude")?;
+        let deadline = Instant::now() + Duration::from_secs(cfg.timeout_s);
+        let status = loop {
+            if let Some(s) = child.try_wait()? {
+                break Some(s);
+            }
+            if Instant::now() > deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        };
+        let out = child.wait_with_output()?;
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        match status {
+            None => {
+                cell.error = Some("timeout".into());
+            }
+            Some(s) => {
+                cell.claude_exit = s.code();
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                    cell.cost_usd = v["total_cost_usd"].as_f64();
+                    cell.num_turns = v["num_turns"].as_u64();
+                    if v["is_error"].as_bool().unwrap_or(false) {
+                        cell.error = Some(format!(
+                            "claude is_error: {}",
+                            v["result"]
+                                .as_str()
+                                .unwrap_or("")
+                                .chars()
+                                .take(200)
+                                .collect::<String>()
+                        ));
+                    }
+                } else {
+                    cell.error = Some(format!(
+                        "claude exit {:?}: {}",
+                        s.code(),
+                        String::from_utf8_lossy(&out.stderr)
+                            .chars()
+                            .take(300)
+                            .collect::<String>()
+                    ));
+                }
+            }
+        }
+        // make sure the write path ran even if the harness skipped SessionEnd
+        let _ = Command::new(muninn)
+            .env("MUNINN_ROOT", &dir)
+            .current_dir(&dir)
+            .args(["hook", "SessionEnd"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .and_then(|mut c| {
+                if let Some(mut si) = c.stdin.take() {
+                    let _ = si.write_all(
+                        format!("{{\"session_id\":\"cell\",\"cwd\":\"{}\"}}", dir.display())
+                            .as_bytes(),
+                    );
+                }
+                c.wait()
+            });
+        // keep the diff for audit before the worktree goes away
+        if let Ok(d) = Command::new("git").current_dir(&dir).args(["diff"]).output() {
+            let diffs = work.parent().unwrap_or(work).join("diffs");
+            let _ = std::fs::create_dir_all(&diffs);
+            let _ = std::fs::write(diffs.join(format!("r{run}-{}-{arm}.patch", task.id)), &d.stdout);
+        }
+        let (tok, recs, p95) = measure_store(&dir);
+        cell.delivered_tokens = tok;
+        cell.delivered_records = recs;
+        cell.hook_p95_ms = p95;
+        if cell.error.is_none() {
+            let o = Command::new("sh")
+                .current_dir(&dir)
+                .args(["-c", &task.oracle])
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output()?;
+            cell.oracle_exit = o.status.code();
+            cell.status = if o.status.success() {
+                "pass".into()
+            } else {
+                "fail".into()
+            };
+        }
+        Ok(())
+    })();
+    if let Err(e) = res {
+        cell.error = Some(format!("{e:#}"));
+        cell.status = "error".into();
+    }
+    let _ = Command::new("git")
+        .current_dir(repo)
+        .args(["worktree", "remove", "--force", dir.to_str().unwrap()])
+        .output();
+    let _ = std::fs::remove_dir_all(&dir);
+    cell.duration_ms = t0.elapsed().as_millis();
+    cell
+}
+
+fn bootstrap_diff(cells: &[Cell], a: &str, b: &str, iters: usize, seed: u64) -> (f64, f64, f64) {
+    // stratified by task: resample within each task's cells for each arm
+    let mut tasks: Vec<String> = cells.iter().map(|c| c.task.clone()).collect();
+    tasks.sort();
+    tasks.dedup();
+    let pick = |arm: &str, t: &str| -> Vec<f64> {
+        cells
+            .iter()
+            .filter(|c| c.arm == arm && c.task == t && c.status != "error")
+            .map(|c| if c.status == "pass" { 1.0 } else { 0.0 })
+            .collect()
+    };
+    let mut rng = crate::Rng(seed);
+    let mut diffs = Vec::with_capacity(iters);
+    let point = {
+        let (mut sa, mut na, mut sb, mut nb) = (0.0, 0, 0.0, 0);
+        for t in &tasks {
+            for x in pick(a, t) {
+                sa += x;
+                na += 1;
+            }
+            for x in pick(b, t) {
+                sb += x;
+                nb += 1;
+            }
+        }
+        if na == 0 || nb == 0 {
+            return (f64::NAN, f64::NAN, f64::NAN);
+        }
+        sa / na as f64 - sb / nb as f64
+    };
+    for _ in 0..iters {
+        let (mut sa, mut na, mut sb, mut nb) = (0.0, 0, 0.0, 0);
+        for t in &tasks {
+            let va = pick(a, t);
+            let vb = pick(b, t);
+            for _ in 0..va.len() {
+                sa += va[(rng.next() as usize) % va.len()];
+                na += 1;
+            }
+            for _ in 0..vb.len() {
+                sb += vb[(rng.next() as usize) % vb.len()];
+                nb += 1;
+            }
+        }
+        if na > 0 && nb > 0 {
+            diffs.push(sa / na as f64 - sb / nb as f64);
+        }
+    }
+    diffs.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let lo = diffs[(diffs.len() as f64 * 0.025) as usize];
+    let hi = diffs[((diffs.len() as f64 * 0.975) as usize).min(diffs.len() - 1)];
+    (point, lo, hi)
+}
+
+pub fn summary(cells: &[Cell], cfg: &Config) -> String {
+    let mut s = String::new();
+    s.push_str(&format!(
+        "# Gate 2 experiment — {} cells, model {}, {} run(s)\n\n",
+        cells.len(),
+        cfg.model,
+        cfg.runs
+    ));
+    s.push_str("| arm | non-inferable pass | inferable pass | errors | delivered tokens (mean) | hook p95 ms (max) | cost/cell (mean) |\n|---|---|---|---|---|---|---|\n");
+    for arm in &cfg.arms {
+        let a: Vec<&Cell> = cells.iter().filter(|c| &c.arm == arm).collect();
+        let ni: Vec<&Cell> = a
+            .iter()
+            .copied()
+            .filter(|c| !c.inferable && c.status != "error")
+            .collect();
+        let inf: Vec<&Cell> = a
+            .iter()
+            .copied()
+            .filter(|c| c.inferable && c.status != "error")
+            .collect();
+        let errs = a.iter().filter(|c| c.status == "error").count();
+        let pr = |v: &[&Cell]| {
+            if v.is_empty() {
+                "n/a".to_string()
+            } else {
+                format!(
+                    "{}/{} ({:.0}%)",
+                    v.iter().filter(|c| c.status == "pass").count(),
+                    v.len(),
+                    100.0 * v.iter().filter(|c| c.status == "pass").count() as f64 / v.len() as f64
+                )
+            }
+        };
+        let tok = if a.is_empty() {
+            0.0
+        } else {
+            a.iter().map(|c| c.delivered_tokens as f64).sum::<f64>() / a.len() as f64
+        };
+        let p95 = a
+            .iter()
+            .filter_map(|c| c.hook_p95_ms)
+            .fold(0.0f64, f64::max);
+        let cost = {
+            let v: Vec<f64> = a.iter().filter_map(|c| c.cost_usd).collect();
+            if v.is_empty() {
+                0.0
+            } else {
+                v.iter().sum::<f64>() / v.len() as f64
+            }
+        };
+        s.push_str(&format!(
+            "| {arm} | {} | {} | {errs} | {tok:.0} | {p95:.2} | ${cost:.3} |\n",
+            pr(&ni),
+            pr(&inf)
+        ));
+    }
+    let ni: Vec<Cell> = cells.iter().filter(|c| !c.inferable).cloned().collect();
+    if cfg.arms.contains(&"literal".to_string()) && cfg.arms.contains(&"off".to_string()) {
+        let (p, lo, hi) = bootstrap_diff(&ni, "literal", "off", 10_000, 42);
+        s.push_str(&format!(
+            "\nliteral − off (non-inferable): {p:+.3} [95% CI {lo:+.3}, {hi:+.3}]\n"
+        ));
+        if cfg.arms.contains(&"control".to_string()) {
+            let (pc, loc, hic) = bootstrap_diff(&ni, "control", "off", 10_000, 43);
+            s.push_str(&format!(
+                "control − off (non-inferable): {pc:+.3} [95% CI {loc:+.3}, {hic:+.3}]\n"
+            ));
+            let pass1 = !p.is_nan() && lo > 0.0;
+            let pass2 = pc.is_nan() || (loc <= 0.0 && hic >= 0.0) || pc < p / 2.0;
+            s.push_str(&format!(
+                "\nGate 2: {}\n",
+                if pass1 && pass2 {
+                    "PASS"
+                } else if ni.is_empty() {
+                    "NOT RUN"
+                } else {
+                    "FAIL (see PREREGISTRATION.md decision rule)"
+                }
+            ));
+        }
+    }
+    s.push_str("\n## Per task\n\n| task | inferable | ");
+    for arm in &cfg.arms {
+        s.push_str(&format!("{arm} | "));
+    }
+    s.push('\n');
+    s.push_str("|---|---|");
+    for _ in &cfg.arms {
+        s.push_str("---|");
+    }
+    s.push('\n');
+    for t in &cfg.tasks {
+        s.push_str(&format!("| {} | {} | ", t.id, t.inferable));
+        for arm in &cfg.arms {
+            let v: Vec<&Cell> = cells
+                .iter()
+                .filter(|c| c.task == t.id && &c.arm == arm)
+                .collect();
+            let p = v.iter().filter(|c| c.status == "pass").count();
+            let e = v.iter().filter(|c| c.status == "error").count();
+            s.push_str(&format!(
+                "{p}/{}{} | ",
+                v.len(),
+                if e > 0 {
+                    format!(" ({e} err)")
+                } else {
+                    String::new()
+                }
+            ));
+        }
+        s.push('\n');
+    }
+    let total_cost: f64 = cells.iter().filter_map(|c| c.cost_usd).sum();
+    s.push_str(&format!("\nTotal model cost: ${total_cost:.2}. Errors are excluded from pass rates and listed in results.jsonl.\n"));
+    s
+}
+
+pub fn run(
+    config: &Path,
+    out_dir: &Path,
+    muninn: &Path,
+    dry_run: bool,
+    pilot: bool,
+    runs_override: Option<usize>,
+    model_override: Option<String>,
+) -> Result<()> {
+    let text =
+        std::fs::read_to_string(config).with_context(|| format!("reading {}", config.display()))?;
+    let mut cfg: Config = serde_json::from_str(&text)?;
+    if let Some(r) = runs_override {
+        cfg.runs = r;
+    }
+    if let Some(m) = model_override {
+        cfg.model = m;
+    }
+    if pilot {
+        cfg.runs = 1;
+        cfg.arms = vec!["off".into(), "literal".into()];
+        cfg.tasks = cfg
+            .tasks
+            .iter()
+            .filter(|t| !t.inferable)
+            .take(1)
+            .cloned()
+            .collect();
+    }
+    let repo =
+        std::fs::canonicalize(expand(&cfg.repo).as_path()).unwrap_or_else(|_| expand(&cfg.repo));
+    let repo = if repo.is_relative() {
+        std::env::current_dir()?.join(repo)
+    } else {
+        repo
+    };
+    let seeds = transcripts(&cfg.seed_transcripts);
+    anyhow::ensure!(!seeds.is_empty(), "no seed transcripts found");
+    std::fs::create_dir_all(out_dir)?;
+    let out_dir = &std::fs::canonicalize(out_dir)?;
+    let work = out_dir.join("work");
+    std::fs::create_dir_all(&work)?;
+
+    // plan
+    let mut plan: Vec<(usize, String, String)> = Vec::new();
+    for run in 0..cfg.runs {
+        let mut cells: Vec<(String, String)> = cfg
+            .tasks
+            .iter()
+            .flat_map(|t| cfg.arms.iter().map(move |a| (t.id.clone(), a.clone())))
+            .collect();
+        let mut rng = crate::Rng(1000 + run as u64);
+        for i in (1..cells.len()).rev() {
+            let j = (rng.next() as usize) % (i + 1);
+            cells.swap(i, j);
+        }
+        plan.extend(cells.into_iter().map(|(t, a)| (run, t, a)));
+    }
+    println!(
+        "plan: {} cells ({} tasks × {} arms × {} runs), model {}, base {} of {}",
+        plan.len(),
+        cfg.tasks.len(),
+        cfg.arms.len(),
+        cfg.runs,
+        cfg.model,
+        cfg.base_ref,
+        repo.display()
+    );
+    println!("seed transcripts: {}", seeds.len());
+    if dry_run {
+        for (i, (r, t, a)) in plan.iter().enumerate() {
+            println!("  {i:>3}  run {r}  {t:<32} {a}");
+        }
+        return Ok(());
+    }
+
+    // control store: built once
+    let control_db = if cfg.arms.iter().any(|a| a == "control") {
+        let cdir = out_dir.join("control-store");
+        let _ = std::fs::remove_dir_all(&cdir);
+        std::fs::create_dir_all(cdir.join(".git"))?;
+        let ct = transcripts(&cfg.control_transcripts);
+        anyhow::ensure!(!ct.is_empty(), "control arm needs control_transcripts");
+        let n = seed_store(muninn, &cdir, &ct)?;
+        println!(
+            "control store: {n} episodes from {} transcript(s)",
+            ct.len()
+        );
+        Some(cdir.join(".muninn/muninn.db"))
+    } else {
+        None
+    };
+
+    let results_path = out_dir.join("results.jsonl");
+    let mut results = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&results_path)?;
+    let mut cells: Vec<Cell> = Vec::new();
+    for (order, (run, tid, arm)) in plan.iter().enumerate() {
+        let task = cfg.tasks.iter().find(|t| &t.id == tid).unwrap();
+        print!("[{:>3}/{}] run {run} {tid} {arm} … ", order + 1, plan.len());
+        std::io::stdout().flush().ok();
+        let cell = run_cell(
+            &cfg,
+            muninn,
+            &repo,
+            &seeds,
+            control_db.as_deref(),
+            task,
+            arm,
+            *run,
+            order,
+            &work,
+        );
+        println!(
+            "{} ({:.0}s, {} tok, ${:.3}){}",
+            cell.status,
+            cell.duration_ms as f64 / 1000.0,
+            cell.delivered_tokens,
+            cell.cost_usd.unwrap_or(0.0),
+            cell.error
+                .as_ref()
+                .map(|e| format!(" — {e}"))
+                .unwrap_or_default()
+        );
+        writeln!(results, "{}", serde_json::to_string(&cell)?)?;
+        cells.push(cell);
+        let s = summary(&cells, &cfg);
+        std::fs::write(out_dir.join("summary.md"), &s)?;
+    }
+    println!("\n{}", summary(&cells, &cfg));
+    Ok(())
+}

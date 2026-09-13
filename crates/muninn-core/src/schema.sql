@@ -59,6 +59,9 @@ WHEN old.invalid = 1 AND new.invalid = 0 BEGIN
     UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'fts_rows';
 END;
 
+-- Term statistics for IDF-based term selection in the read path [H6].
+CREATE VIRTUAL TABLE IF NOT EXISTS record_vocab USING fts5vocab('record_fts', 'col');
+
 -- 2.2 cue: permanent trigger conditions (F3).
 CREATE TABLE IF NOT EXISTS cue (
     record_id   INTEGER NOT NULL REFERENCES record(id),

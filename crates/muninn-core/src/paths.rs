@@ -20,8 +20,12 @@ impl ProjectPaths {
         Self { root, muninn_dir }
     }
 
-    /// Resolve from an arbitrary working directory.
+    /// Resolve from an arbitrary working directory. `MUNINN_ROOT` overrides the
+    /// search (used by the experiment runner to give each worktree its own store).
     pub fn resolve(cwd: &Path) -> Self {
+        if let Some(r) = std::env::var_os("MUNINN_ROOT") {
+            return Self::from_root(PathBuf::from(r));
+        }
         let mut dir: Option<&Path> = Some(cwd);
         while let Some(d) = dir {
             // An explicit `.muninn` directory wins: it is where `muninn init` ran.
