@@ -40,7 +40,13 @@ Phases 0–2 complete.
   unfiltered +0.22 [+0.11, +0.33] (sonnet) and +0.19 [+0.07, +0.30] (haiku), retired
   records served 0/180 cells, retired value written 0 % vs 7–22 % unfiltered
   (`crates/muninn-bench/experiment/GATE3.md`).
-Phase 5 (F3 cues, tree-sitter symbol graph, compaction) is next.
+- Phase 5 (F3): tree-sitter symbol graph for Rust/TS/TSX/JS/JSX/Python/Go (5 000 files
+  in 6.8 s, incremental by hash), cues derived on the write path, turn context from
+  PostToolUse, tool-time delivery, compaction epochs, summary verification. Gate 4:
+  compaction survival 100/100 (decay probe); dir/symbol cues vs lexical-only +0.08
+  [−0.08, +0.25] — not distinguishable, so they ship **off by default** (`muninn config
+  cues on`); PM-Bench in progress (`crates/muninn-bench/experiment/GATE4.md`).
+Phase 6 (hardening, release) is in progress: signed releases, config scanner, audits.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 
 ## Install (development)
