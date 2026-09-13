@@ -53,6 +53,16 @@ Everything below carries a measurement; the reports live under
   the SessionStart hook injects a ~425-token summary (capped at 500, CI-checked) and
   the skill keeps the long form. Measured against the file vehicle on 84 paired cells:
   +0.119 [+0.000, +0.262], not inferior. `muninn init --boot-file` restores the file.
+- **Log folds without loss.** Heartbeat and delivery logs are folded from a watermark
+  kept in the store, inside the write transaction, instead of renaming the live file:
+  concurrent SessionEnd hooks lost heartbeats (fault scenario 9 failed in each of three
+  200-repetition runs, one of them without the Codex changes; passes now), and a log over the
+  64 MB read bound lost its remainder. Files rotate at 4 MB. Per-session delivery
+  de-duplication still reads only unfolded lines, the window the gates measured.
+- **Codex 0.154 transcripts.** codex-cli 0.154 writes turns as typed items and wraps
+  tool calls in code-mode scripts; capture read 0 turns from its rollouts. The parser
+  now reads the items (prompts, replies, commands with exit codes, file changes): the
+  five rollouts of the probe yield 7 turns.
 - **Codex tool-time hooks.** Codex edits files through `apply_patch`; PreToolUse and
   PostToolUse now match it and read every file in the patch, so compiled deny rules,
   pre-edit cues and the turn context cover Codex edits. Confinement denies a relative

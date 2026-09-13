@@ -9,6 +9,7 @@ pub mod error;
 pub mod filter;
 pub mod health;
 pub mod heartbeat;
+pub mod logfold;
 pub mod paths;
 pub mod project;
 pub mod recall;
