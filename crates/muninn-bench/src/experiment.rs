@@ -33,6 +33,12 @@ pub struct Config {
     pub seed_transcripts: Vec<String>,
     #[serde(default)]
     pub control_transcripts: Vec<String>,
+    /// JSONL records imported into every cell's store after the transcripts (the
+    /// revocation grid seeds retired and replacement facts this way). The `unfiltered`
+    /// arm imports them with every `invalid` flag cleared: same records, same layout,
+    /// invalidation off — the render-matched control [X1].
+    #[serde(default)]
+    pub seed_records: Option<String>,
     /// `claude` (default) or `codex`: the harness that runs each cell. Hooks, arms,
     /// oracles and the store are identical; only the agent process differs.
     #[serde(default = "d_harness")]
@@ -133,6 +139,9 @@ pub struct Cell {
     pub delivered_records: i64,
     pub hook_p95_ms: Option<f64>,
     pub stored_episodes: i64,
+    /// Deliveries of records that were retired in the store (must be 0 with the filter).
+    #[serde(default)]
+    pub served_invalid: i64,
     pub error: Option<String>,
 }
 
@@ -178,6 +187,17 @@ fn run_ok(cmd: &mut Command) -> Result<String> {
 /// `boot`: write the ≤1000-token boot block into the cell's CLAUDE.md — every arm that
 /// has Muninn pays for it (plan, Phase 0 §10-bis); the `off` arm has no Muninn.
 fn seed_store(muninn: &Path, dir: &Path, seeds: &[PathBuf], boot: bool) -> Result<i64> {
+    seed_store_arm(muninn, dir, seeds, boot, None, "literal")
+}
+
+fn seed_store_arm(
+    muninn: &Path,
+    dir: &Path,
+    seeds: &[PathBuf],
+    boot: bool,
+    records: Option<&Path>,
+    arm: &str,
+) -> Result<i64> {
     let mut args = vec!["--cwd", dir.to_str().unwrap(), "init", "--keep-native"];
     if !boot {
         args.push("--no-boot-block");
@@ -191,7 +211,19 @@ fn seed_store(muninn: &Path, dir: &Path, seeds: &[PathBuf], boot: bool) -> Resul
             s.to_str().unwrap(),
         ]))?;
     }
+    if let Some(r) = records {
+        run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
+            "--cwd",
+            dir.to_str().unwrap(),
+            "import",
+            r.to_str().unwrap(),
+        ]))?;
+    }
     let db = rusqlite::Connection::open(dir.join(".muninn/muninn.db"))?;
+    if arm == "unfiltered" {
+        // invalidation off: every seeded record is active and indexed
+        db.execute("UPDATE record SET invalid = 0, invalid_reason = NULL, invalidated_by = NULL WHERE invalid = 1", [])?;
+    }
     Ok(
         db.query_row("SELECT count(*) FROM record WHERE invalid=0", [], |r| {
             r.get(0)
@@ -303,6 +335,7 @@ fn run_cell(
         delivered_records: 0,
         hook_p95_ms: None,
         stored_episodes: 0,
+        served_invalid: 0,
         error: None,
     };
     let dir = work.join(format!("cell-r{run}-{}-{arm}", task.id));
@@ -320,7 +353,15 @@ fn run_cell(
             dir.to_str().unwrap(),
             &cfg.base_ref,
         ]))?;
-        cell.stored_episodes = seed_store(muninn, &dir, seeds, arm != "off")?;
+        let seed_records = cfg.seed_records.as_deref().map(|p| expand(p));
+        cell.stored_episodes = seed_store_arm(
+            muninn,
+            &dir,
+            seeds,
+            arm != "off",
+            seed_records.as_deref(),
+            arm,
+        )?;
         let settings = dir.join(".muninn/claude-settings.json");
         std::fs::write(
             &settings,
@@ -364,20 +405,48 @@ fn run_cell(
         if let Some(c) = control_db {
             cmd.env("MUNINN_CONTROL_DB", c);
         }
-        let mut child = cmd.spawn().context("spawning claude")?;
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+        let mut child = cmd.spawn().context("spawning the harness")?;
         let deadline = Instant::now() + Duration::from_secs(cfg.timeout_s);
+        // stdout/stderr are drained by threads: a harness that spawns grandchildren
+        // (codex → node → vendor binary) must not be able to hold the pipe open past
+        // the deadline, and a chatty --json stream must not fill the pipe buffer
+        let mut so = child.stdout.take().expect("piped stdout");
+        let mut se = child.stderr.take().expect("piped stderr");
+        let so_t = std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = std::io::Read::read_to_end(&mut so, &mut b);
+            b
+        });
+        let se_t = std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = std::io::Read::read_to_end(&mut se, &mut b);
+            b
+        });
         let status = loop {
             if let Some(s) = child.try_wait()? {
                 break Some(s);
             }
             if Instant::now() > deadline {
+                // the whole process group, not just the direct child
+                let _ = Command::new("kill")
+                    .args(["-9", "--", &format!("-{}", child.id())])
+                    .output();
                 let _ = child.kill();
                 let _ = child.wait();
                 break None;
             }
             std::thread::sleep(Duration::from_millis(200));
         };
-        let out = child.wait_with_output()?;
+        let out = std::process::Output {
+            status: status
+                .unwrap_or_else(|| child.wait().unwrap_or(std::process::ExitStatus::default())),
+            stdout: so_t.join().unwrap_or_default(),
+            stderr: se_t.join().unwrap_or_default(),
+        };
         let raw = String::from_utf8_lossy(&out.stdout).to_string();
         let stdout = if cfg.harness == "codex" {
             codex_summary(&raw).to_string()
@@ -473,6 +542,15 @@ fn run_cell(
         cell.delivered_tokens = tok;
         cell.delivered_records = recs;
         cell.hook_p95_ms = p95;
+        cell.served_invalid = rusqlite::Connection::open(dir.join(".muninn/muninn.db"))
+            .and_then(|db| {
+                db.query_row(
+                    "SELECT count(*) FROM fire_ledger f JOIN record r ON r.id = f.record_id WHERE r.invalid = 1",
+                    [],
+                    |r| r.get(0),
+                )
+            })
+            .unwrap_or(0);
         if cell.error.is_none() {
             let o = Command::new("sh")
                 .current_dir(&dir)
@@ -671,6 +749,12 @@ pub fn summary(cells: &[Cell], cfg: &Config) -> String {
         s.push('\n');
     }
     let total_cost: f64 = cells.iter().filter_map(|c| c.cost_usd).sum();
+    let served: i64 = cells.iter().map(|c| c.served_invalid).sum();
+    if cells.iter().any(|c| c.stored_episodes > 0) {
+        s.push_str(&format!(
+            "\nRetired records delivered (all arms, all cells): {served}.\n"
+        ));
+    }
     s.push_str(&format!("\nTotal model cost: ${total_cost:.2}. Errors are excluded from pass rates and listed in results.jsonl.\n"));
     s
 }
