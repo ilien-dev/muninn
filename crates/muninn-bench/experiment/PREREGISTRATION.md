@@ -397,3 +397,12 @@ baselines are the control for both rounds (same model, same isolation).
 **Primary outcome and rule.** Mean set-F1 over 3 runs, compared with round 4's 94.9 %. The
 round-5 code ships as the scaffold only if its mean is not below round 4's; otherwise round 4
 stays and round 5 is reported as a negative result. Secondary metrics as in round 4.
+
+## Rounds 4 and 5 results (2026-09-13)
+
+Round 4 baselines (isolated bridge, 3 runs each): single_baseline 79.7 · 76.7 · 77.2 (mean
+77.9 %), todo_ledger 78.3 · 80.0 · 81.1 (mean 79.8 %). muninn_store round 4: 94.9 %; round 5:
+96.2 · 95.7 · 96.9 (mean 96.3 %). Decision rule met; the round-5 rule ships. The three baseline
+runs of each arm collided on one log file (same launch second); their action logs were rebuilt
+from each run's console output and validated against the surviving original (identical). Report
+and caveats: `GATE4.md` §3 rounds 4–5; data: `results/pmbench/round4/`, `results/pmbench/round5/`.

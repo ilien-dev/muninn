@@ -1,4 +1,4 @@
-# Gate 4 — F3: cue-anchored delivery, compaction survival, PM-Bench (measured 2026-09-13)
+# Gate 4 — F3: cue-anchored delivery, compaction survival, PM-Bench (measured 2026-09-13; PM-Bench rounds 4–5 the same day)
 
 Gate 4 has three conditions. Two are measured below; the third (PM-Bench) is measured
 in the same document once its replicate runs finish.
@@ -148,11 +148,81 @@ on every due step in the prompt logs) and did not change the outcome. Raw data:
 `results/pmbench/` (score logs and trajectories; `pmbench/` has the bridge and the
 scaffold to reproduce them).
 
+## §3 rounds 4–5 — Muninn as the intention store (measured 2026-09-13)
+
+Pre-registered in `PREREGISTRATION.md` ("round 4", "round 5") before any cell ran. Two
+findings on the round 1–3 data motivated the rounds:
+
+- **The round 1–3 bridge leaked the user's global `~/.claude/CLAUDE.md`** to the model under
+  test (`claude -p` without `--setting-sources ""`; probe answer through the old bridge:
+  "Svipall para acceso web; respuesta en español"; the round-2 ledger notes are in Spanish).
+  All eleven earlier runs share it. The round-4 bridge passes `--setting-sources ""` (probe:
+  "NONE", 527 input tokens) and both baselines were re-measured through it.
+- **The v1–v3 scaffold read hidden fields** (`step["time"]`, `step["cues"]`) into the store.
+  The round-4 scaffold reads only what the model can see (day plan, vignette, options, step
+  menu, and the replies to the `check_time` / `query_state` actions it issues).
+
+**Scaffold** (`pmbench/run_muninn_pis.py`, arm `muninn_store`). The model no longer owns a
+ledger. Intentions are typed records in a Muninn store (`after` cues for day and clock,
+`keyword` cues for channels); lifecycle is code: add / reschedule / override / cancel / done,
+daily re-arm of regular intentions, day-scoped carry of cross-day intentions, same-day expiry.
+Per step: one **Form/Revise** call (new text → typed ops), code-issued **observation**
+(`check_time` while a time intention is pending; while any intention watches a channel, one
+`query_state` per channel), **Filter** = `muninn cues --ungated` with the fake clock set from
+the queried time, one **Decide** call (eligible board → menu handles). A clock-matched time
+intention the model omits would be added by a token-overlap guard; it never fired (0 events in
+6 runs). Round 5 changed one rule: a channel-kind intention is eligible only when some channel
+reply is new information (not "(no updates)" and different from that channel's previous reply
+the same day). Design after PIS `[V2]`; prompts unchanged between rounds.
+
+**Results** — claude-sonnet-5, temperature 0, isolated invocation, the released v9 week (80
+steps, 81 due items), 3 runs per arm:
+
+| arm | set F1 per run | mean (sd) | cross-day miss | update miss | time-modality hit | proactive-monitoring hit | FA/step |
+|---|---|---|---|---|---|---|---|
+| single_baseline (PM-Bench's own) | 79.7 · 76.7 · 77.2 | **77.9 (1.6)** | 0.0 % | 40.7 % | 70.8 % | 44.4 % | 7.5 % |
+| todo_ledger (PM-Bench's own) | 78.3 · 80.0 · 81.1 | **79.8 (1.4)** | 9.5 % | 33.3 % | 63.9 % | 39.3 % | 2.5 % |
+| muninn_store, round 4 | 96.2 · 96.2 · 92.4 | **94.9 (2.2)** | 0.0 % | 11.1 % | 100 % | 96.6 % | 2.9 % |
+| muninn_store, round 5 | 96.2 · 95.7 · 96.9 | **96.3 (0.6)** | 0.0 % | 11.1 % | 100 % | 100 % | 1.7 % |
+
+Lines from the literature: 65.1 % (the paper's best scaffold, a GPT-5.4 agent `[V1]`) and
+82.9 % (PIS on DeepSeek-Chat `[V2]`). Both are other models; PIS's code is not released, so it
+was not run on claude-sonnet-5. The within-model comparison is the two rows above.
+
+Where the points come from, on the round-5 traces: all 39 due items that need a channel
+query (24 clock, 15 hidden channels) are hit in every run; the remaining errors (4 misses and
+1–3 false alarms per run) are judge decisions on ambiguous vignettes ("You rinse a dish" taken as dinner, "your package is
+visible behind the counter" not taken as reaching it, a follow-up text read one step late).
+The one update miss per run is the same item in all six runs (Friday's dry-cleaning override,
+whose new cue arrives in the same sentence as dinner).
+
+Cost: `muninn_store` 167 model calls and 129–133 k estimated input tokens per week, 8.5–9.4
+min wall-clock (direct `claude -p`, three runs in parallel); the baselines' surviving prompt
+logs show 1.19 M (single, 126 calls) and 1.49 M (ledger, 80 calls) estimated input tokens —
+one run each, and the file was shared by three concurrent writers, so indicative only. The
+store keeps each call short: the model sees the store, not the growing conversation.
+
+**Data.** `results/pmbench/round4/` and `results/pmbench/round5/`: action logs, score
+reports, the scaffold's per-step traces (board, ops, replies, decisions) and final store dumps.
+The three baseline runs of each arm were launched in the same second and PM-Bench's runner
+names the log by that second, so their action logs overwrote one file; each run's console
+output was kept and `pmbench/reconstruct_from_stdout.py` rebuilt the three logs from it. On the
+run whose original log survived the rebuilt entries are identical (80/80, both arms); the
+collided originals are kept under `original-collided/`. The launcher now staggers launches.
+
+**Decision rule, applied.** Pre-registered: claim only if mean set-F1 ≥ 82.9 % and above both
+baselines by more than the round-2 spread (±4). Round 5: 96.3 % vs 79.8 % and 77.9 %. Met.
+Round 5 is not below round 4, so the round-5 rule ships as the scaffold. Caveats that stay
+attached to the claim: the 82.9 % line is another model; three runs per arm; the scaffold is an
+in-loop agent for PM-Bench, not the harness delivery path of F3 — what transfers to F3 is the
+mechanism (lifecycle in code, cue firing by the store, the model only forms and decides).
+
 ## Verdict
 
 - §1 cues vs lexical: not distinguishable → dir/symbol cue delivery ships off by default.
 - §2 compaction survival: 100/100 → event reinjection ships on by default.
-- §3 PM-Bench: below the line, and equal to the paper's ledger → not claimed.
+- §3 PM-Bench rounds 1–3: below the line, and equal to the paper's ledger → not claimed (bridge later found contaminated, scaffold peeked at hidden fields).
+- §3 PM-Bench rounds 4–5: Muninn as the intention store, isolated bridge — 96.3 % set F1 (3 runs) vs 79.8 % / 77.9 % for the paper's two scaffolds on the same model, above the 82.9 % PIS line (another model) → claimed, with the caveats in §3 rounds 4–5.
 
 As the plan states for this outcome, F3 in the MVP is reinjection on compaction and at
 session start, plus lexical recall; the rest of F3 stays measurable and switchable.
