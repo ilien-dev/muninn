@@ -152,3 +152,11 @@ Same design, decision rule, model, runs and arms. Changes, all fixed before runn
   two cells used the delivered number and said so; one wrote the delivered 11.9 ms as
   "unverified" because git log did not corroborate it; one cited the episode as its
   only source and wrote it.
+
+## Run 2 result (2026-09-13): PASS
+
+90 cells, $27.63. Non-inferable: off 2/25, literal 19/25, control 4/24.
+literal − off = +0.680 [+0.560, +0.800]; control − off = +0.087 [−0.035, +0.208].
+63 cells first errored on the account's session limit (no model call) and were re-run
+with `--rerun-errors` after the limit was lifted; one control cell remains `error`
+(model error) and is excluded. Full report: GATE2.md; raw data: results/run2/.

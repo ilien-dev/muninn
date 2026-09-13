@@ -20,9 +20,15 @@ symbol graph (Rust, TypeScript/TSX, JavaScript/JSX, Python, Go), a routed
 
 ## Status
 
-Phase 0 (foundations) and Phase 1 (F2 compiler) complete. Gate 1 passed on a clean
-held-out set: precision 0.905, recall 0.864 (`crates/muninn-bench/corpora/claude-md/GATE1.md`).
-Phase 2 (throwaway store + four-arm experiment) is next.
+Phases 0–2 complete.
+- Gate 1 (F2 compiler) passed on a clean held-out set: precision 0.905, recall 0.864
+  (`crates/muninn-bench/corpora/claude-md/GATE1.md`; corpus now 330 files).
+- Gate 2 (literal episode delivery by hook) passed: on non-inferable tasks, no memory
+  2/25, literal 19/25, length-matched irrelevant control 4/24; literal − off = +0.68
+  [+0.56, +0.80], control − off = +0.09 [−0.04, +0.21]; 90 cells, sonnet, $27.63
+  (`crates/muninn-bench/experiment/GATE2.md`, pre-registration and both runs in
+  `experiment/`). Run 1 failed with an invalid instrument and is reported in full.
+Phase 3 (real engine) is next.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 
 ## Install (development)
