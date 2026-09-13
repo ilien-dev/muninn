@@ -219,6 +219,9 @@ fn seed_store_arm(
             r.to_str().unwrap(),
         ]))?;
     }
+    // no Markdown mirror in a cell: the agent must get memory through the hooks only
+    let _ = std::fs::remove_dir_all(dir.join(".muninn/records"));
+    let _ = std::fs::remove_file(dir.join(".muninn/index.md"));
     let db = rusqlite::Connection::open(dir.join(".muninn/muninn.db"))?;
     if arm == "unfiltered" {
         // invalidation off: every seeded record is active and indexed
@@ -258,7 +261,13 @@ fn measure_store(dir: &Path) -> (i64, i64, Option<f64>) {
     let Ok(db) = rusqlite::Connection::open(dir.join(".muninn/muninn.db")) else {
         return (0, 0, None);
     };
-    let tokens: i64 = db.query_row("SELECT coalesce(sum(tokens),0) FROM fire_ledger WHERE reason LIKE 'literal%' OR reason LIKE 'control%'", [], |r| r.get(0)).unwrap_or(0);
+    let tokens: i64 = db
+        .query_row(
+            "SELECT coalesce(sum(tokens),0) FROM fire_ledger WHERE tokens > 0",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
     let recs: i64 = db
         .query_row(
             "SELECT count(*) FROM fire_ledger WHERE record_id IS NOT NULL",
@@ -274,7 +283,7 @@ fn measure_store(dir: &Path) -> (i64, i64, Option<f64>) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
                 if v["reason"]
                     .as_str()
-                    .map(|r| r.starts_with("literal") || r.starts_with("control"))
+                    .map(|r| !r.starts_with("off") && !r.starts_with("silence"))
                     .unwrap_or(false)
                 {
                     extra_tokens += v["tokens"].as_i64().unwrap_or(0);
@@ -339,30 +348,65 @@ fn run_cell(
         error: None,
     };
     let dir = work.join(format!("cell-r{run}-{}-{arm}", task.id));
+    // the store lives outside the checkout: an agent that reads its own working tree
+    // must not find the database (retired flags included) around the hooks
+    let store = work.join(format!("store-r{run}-{}-{arm}", task.id));
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&store);
     let res: Result<()> = (|| {
-        // a stale registration (worktree dir removed, metadata left) makes `add` fail
-        let _ = Command::new("git")
+        // a single-commit repository from `git archive`: no branch, tag, reflog or
+        // later commit of the real repository is reachable from inside the cell
+        std::fs::create_dir_all(&dir)?;
+        let archive = Command::new("git")
             .current_dir(repo)
-            .args(["worktree", "prune"])
-            .output();
-        run_ok(Command::new("git").current_dir(repo).args([
-            "worktree",
-            "add",
-            "--detach",
-            dir.to_str().unwrap(),
-            &cfg.base_ref,
-        ]))?;
+            .args(["archive", "--format=tar", &cfg.base_ref])
+            .output()
+            .context("git archive")?;
+        anyhow::ensure!(
+            archive.status.success(),
+            "git archive {} failed",
+            cfg.base_ref
+        );
+        let mut tar = Command::new("tar")
+            .current_dir(&dir)
+            .args(["-x"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .context("tar")?;
+        std::io::Write::write_all(tar.stdin.as_mut().unwrap(), &archive.stdout)?;
+        drop(tar.stdin.take());
+        anyhow::ensure!(tar.wait()?.success(), "tar failed");
+        for a in [
+            vec!["init", "-q"],
+            vec!["add", "-A"],
+            vec![
+                "-c",
+                "user.email=cell@muninn",
+                "-c",
+                "user.name=cell",
+                "commit",
+                "-q",
+                "-m",
+                "base",
+            ],
+        ] {
+            run_ok(Command::new("git").current_dir(&dir).args(&a))?;
+        }
+        std::fs::create_dir_all(store.join(".git"))?;
         let seed_records = cfg.seed_records.as_deref().map(expand);
-        cell.stored_episodes = seed_store_arm(
-            muninn,
-            &dir,
-            seeds,
-            arm != "off",
-            seed_records.as_deref(),
-            arm,
-        )?;
-        let settings = dir.join(".muninn/claude-settings.json");
+        cell.stored_episodes =
+            seed_store_arm(muninn, &store, seeds, false, seed_records.as_deref(), arm)?;
+        // the boot block goes into the checkout (every arm with Muninn), from the
+        // plugin template of the repository under test
+        if arm != "off" {
+            let tpl = repo.join("plugin/templates/CLAUDE.muninn.md");
+            if let Ok(t) = std::fs::read_to_string(&tpl) {
+                for f in ["CLAUDE.md", "AGENTS.md"] {
+                    let _ = std::fs::write(dir.join(f), &t);
+                }
+            }
+        }
+        let settings = store.join("claude-settings.json");
         std::fs::write(
             &settings,
             serde_json::to_string_pretty(&settings_json(muninn))?,
@@ -396,8 +440,9 @@ fn run_cell(
                 .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *)"]);
             c
         };
-        cmd.env("MUNINN_ARM", arm)
-            .env("MUNINN_ROOT", &dir)
+        cmd.env("MUNINN_NO_PROJECT", "1")
+            .env("MUNINN_ARM", arm)
+            .env("MUNINN_ROOT", &store)
             .env_remove("CLAUDECODE")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -495,7 +540,7 @@ fn run_cell(
         }
         // make sure the write path ran even if the harness skipped SessionEnd
         let _ = Command::new(muninn)
-            .env("MUNINN_ROOT", &dir)
+            .env("MUNINN_ROOT", &store)
             .current_dir(&dir)
             .args(["hook", "SessionEnd"])
             .stdin(Stdio::piped())
@@ -538,11 +583,11 @@ fn run_cell(
                 &d.stdout,
             );
         }
-        let (tok, recs, p95) = measure_store(&dir);
+        let (tok, recs, p95) = measure_store(&store);
         cell.delivered_tokens = tok;
         cell.delivered_records = recs;
         cell.hook_p95_ms = p95;
-        cell.served_invalid = rusqlite::Connection::open(dir.join(".muninn/muninn.db"))
+        cell.served_invalid = rusqlite::Connection::open(store.join(".muninn/muninn.db"))
             .and_then(|db| {
                 db.query_row(
                     "SELECT count(*) FROM fire_ledger f JOIN record r ON r.id = f.record_id WHERE r.invalid = 1",
@@ -571,11 +616,8 @@ fn run_cell(
         cell.error = Some(format!("{e:#}"));
         cell.status = "error".into();
     }
-    let _ = Command::new("git")
-        .current_dir(repo)
-        .args(["worktree", "remove", "--force", dir.to_str().unwrap()])
-        .output();
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&store);
     cell.duration_ms = t0.elapsed().as_millis();
     cell
 }
