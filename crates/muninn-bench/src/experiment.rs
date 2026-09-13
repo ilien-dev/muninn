@@ -437,10 +437,15 @@ fn run_cell(
             let mut c = Command::new("claude");
             c.current_dir(&dir)
                 .args(["-p", &prompt, "--model", &cfg.model, "--output-format", "json", "--max-turns", &cfg.max_turns.to_string(), "--permission-mode", "acceptEdits", "--settings", settings.to_str().unwrap()])
-                .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *)"]);
+                .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *),Bash(muninn why *),Bash(muninn status *),Bash(muninn why:*),Bash(muninn status:*)"]);
             c
         };
-        cmd.env("MUNINN_NO_PROJECT", "1")
+        // `muninn why` / `muninn status` are part of the product the boot block
+        // describes: the binary's directory goes on PATH for the agent's own shell
+        let path = std::env::var("PATH").unwrap_or_default();
+        let bin_dir = muninn.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+        cmd.env("PATH", format!("{bin_dir}:{path}"))
+            .env("MUNINN_NO_PROJECT", "1")
             .env("MUNINN_ARM", arm)
             .env("MUNINN_ROOT", &store)
             .env_remove("CLAUDECODE")

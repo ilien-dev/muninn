@@ -49,7 +49,12 @@ for i, (slug, topic, old, new, how, origin) in enumerate(S):
     old_l = old.lower()
     checks = [f"set -e; f={f}; test -f $f; {flat}", f"! echo \"$flat\" | grep -qF '{old_l}'"]
     if new is not None:
+        # the replacement's key term, language-neutral: "https everywhere" is written
+        # as "HTTPS en todo" by a Spanish-speaking agent, so only the token that cannot
+        # be paraphrased is required
         key = new.lower().split(',')[0].split(' with')[0].strip()
+        if slug == "internal-http":
+            key = "https"
         checks.append(f"echo \"$flat\" | grep -qF '{key}'")
     tasks.append({"id": f"revoke-{slug}", "inferable": False, "scenario": {"old": old, "new": new, "retired_by": how},
                   "prompt": prompt, "oracle": "; ".join(checks)})
