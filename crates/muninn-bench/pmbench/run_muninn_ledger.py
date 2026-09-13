@@ -143,6 +143,7 @@ def _muninn_due(step: dict[str, Any], day_index: int, step_minutes: int, pending
         lines.append(text.strip())
     else:
         lines.append("DUE NOW: nothing fired at this step.")
+    lines.append(_format_ledger(pending))
     return "\n".join(lines)
 # ---------------------------------------------------------------------------------
 
@@ -657,9 +658,7 @@ def run_todo_ledger(
                 if time_visible_by_default:
                     print(f"Time: {step['time']} | Stopwatch: {step_minutes - day_start_minutes} min")
 
-                # the fired intentions go next to the step itself (recency); the plain
-                # ledger stays where the todo scaffold keeps it
-                step_prompt = _muninn_due(step, _day_index, step_minutes, ledger) + "\n\n" + step_prompt
+                ledger_message["content"] = _muninn_due(step, _day_index, step_minutes, ledger)
                 step_message = {"role": "user", "content": step_prompt}
                 messages.append(step_message)
 
@@ -668,7 +667,7 @@ def run_todo_ledger(
                 invalid_attempts = 0
                 ledger_reset_used = False
                 while True:
-                    ledger_message["content"] = _format_ledger(ledger)
+                    ledger_message["content"] = _muninn_due(step, _day_index, step_minutes, ledger)
                     pinned_messages = {
                         id(system_message),
                         id(daily_header_message),
