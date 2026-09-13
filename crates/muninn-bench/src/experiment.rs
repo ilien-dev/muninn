@@ -254,7 +254,7 @@ fn run_cell(
         )?;
         let mut cmd = Command::new("claude");
         cmd.current_dir(&dir)
-            .args(["-p", &task.prompt, "--model", &cfg.model, "--output-format", "json", "--max-turns", &cfg.max_turns.to_string(), "--permission-mode", "acceptEdits", "--settings", settings.to_str().unwrap()])
+            .args(["-p", &format!("{}\n\nWork only inside the current working directory (this repository checkout); write files by paths relative to it and never outside it.", task.prompt), "--model", &cfg.model, "--output-format", "json", "--max-turns", &cfg.max_turns.to_string(), "--permission-mode", "acceptEdits", "--settings", settings.to_str().unwrap()])
             .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *)"])
             .env("MUNINN_ARM", arm)
             .env("MUNINN_ROOT", &dir)
@@ -338,7 +338,7 @@ fn run_cell(
         // keep the diff for audit before the worktree goes away (new files included)
         let _ = Command::new("git")
             .current_dir(&dir)
-            .args(["add", "-A", "--", ".", ":!.muninn", ":!CLAUDE.md", ":!.claude", ":!.gitignore"])
+            .args(["add", "-A", "--", ".", ":(exclude).muninn", ":(exclude)CLAUDE.md", ":(exclude)AGENTS.md", ":(exclude).claude", ":(exclude).gitignore"])
             .output();
         if let Ok(d) = Command::new("git")
             .current_dir(&dir)
