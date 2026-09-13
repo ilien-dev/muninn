@@ -66,6 +66,9 @@ enum Cmd {
         runs: Option<usize>,
         #[arg(long)]
         model: Option<String>,
+        /// Cells to run concurrently (each has its own worktree and store)
+        #[arg(long, default_value_t = 1)]
+        jobs: usize,
         #[arg(long)]
         muninn: Option<PathBuf>,
     },
@@ -628,6 +631,7 @@ fn main() -> Result<()> {
             pilot,
             runs,
             model,
+            jobs,
             muninn,
         } => {
             let bin = muninn.unwrap_or_else(|| {
@@ -636,7 +640,7 @@ fn main() -> Result<()> {
                 p
             });
             anyhow::ensure!(bin.exists(), "muninn binary not found at {}", bin.display());
-            experiment::run(&config, &out, &bin, dry_run, pilot, runs, model)
+            experiment::run(&config, &out, &bin, dry_run, pilot, runs, model, jobs)
         }
         Cmd::Rules {
             dir,

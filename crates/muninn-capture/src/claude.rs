@@ -54,6 +54,28 @@ fn tool_target(name: &str, input: &Value) -> String {
 }
 
 /// Parse from `start_offset` (a previous watermark) to the end of the file.
+/// User steering that Claude Code delivers inside a tool_result rather than as a
+/// prompt: a rejected tool use (`... the user said:\n<text>`), answers to
+/// AskUserQuestion (`Your questions have been answered: ...`), and a plan approval.
+fn user_feedback(body: &str) -> Option<String> {
+    const REJECT: &str = "The user doesn't want to proceed";
+    const MARK: &str = "the user said:";
+    const ANSWERED: &str = "Your questions have been answered:";
+    const APPROVED: &str = "User has approved your plan";
+    if body.starts_with(REJECT) {
+        let i = body.find(MARK)?;
+        let text = body[i + MARK.len()..].trim();
+        return (!text.is_empty()).then(|| text.to_string());
+    }
+    if body.starts_with(ANSWERED) {
+        return Some(truncate_chars(body.trim(), 1_500).to_string());
+    }
+    if body.starts_with(APPROVED) {
+        return Some("User approved the plan.".to_string());
+    }
+    None
+}
+
 pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
     let mut f = std::fs::File::open(path)?;
     if start_offset > 0 {
@@ -153,6 +175,30 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                     if let Some(t) = current.as_mut() {
                         t.end_offset = offset;
                     }
+                    // A rejected tool use (plan rejection, denied edit) carries the
+                    // user's steering text inside the tool_result; it is a user turn.
+                    let feedback: Vec<String> = blocks
+                        .iter()
+                        .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_result"))
+                        .filter_map(|r| r.get("content").map(text_of))
+                        .filter_map(|body| user_feedback(&body))
+                        .collect();
+                    if feedback.is_empty() {
+                        continue;
+                    }
+                    let prompt = clean_text(&feedback.join("\n"));
+                    if let Some(mut t) = current.take() {
+                        t.end_offset = t.end_offset.max(session.end_offset);
+                        session.turns.push(t);
+                    }
+                    let index = session.turns.len();
+                    current = Some(Turn {
+                        index,
+                        timestamp: ts,
+                        user_prompt: prompt,
+                        end_offset: offset,
+                        ..Default::default()
+                    });
                     continue;
                 }
             }
@@ -228,4 +274,23 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
     }
     session.end_offset = offset;
     Ok(session)
+}
+
+#[cfg(test)]
+mod feedback_tests {
+    use super::user_feedback;
+
+    #[test]
+    fn user_feedback_extracts_steering_text() {
+        let body = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\nLos sidecar de embeddings deben ser parte del MVP.";
+        assert_eq!(
+            user_feedback(body).as_deref(),
+            Some("Los sidecar de embeddings deben ser parte del MVP.")
+        );
+        assert_eq!(
+            user_feedback("The user doesn't want to proceed with this tool use."),
+            None
+        );
+        assert_eq!(user_feedback("ok"), None);
+    }
 }

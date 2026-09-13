@@ -152,7 +152,9 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                                 })
                                 .unwrap_or_default();
                             // Codex embeds the exit code in the output text: "Exit code: N"
-                            let exit = exit_re().captures(&out).and_then(|c| c[1].parse::<i64>().ok());
+                            let exit = exit_re()
+                                .captures(&out)
+                                .and_then(|c| c[1].parse::<i64>().ok());
                             if let Some(tc) = t.tools.get_mut(ci) {
                                 tc.exit_code = exit;
                                 tc.is_error = exit.is_some_and(|e| e != 0);
