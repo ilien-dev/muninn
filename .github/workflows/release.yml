@@ -1,0 +1,63 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+  id-token: write   # Sigstore keyless signing
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-latest,  target: aarch64-unknown-linux-gnu, cross: true }
+          - { os: macos-latest,   target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
+      - if: matrix.cross
+        run: cargo install cross --locked
+      - if: matrix.cross
+        run: cross build --release -p muninn-cli --target ${{ matrix.target }}
+      - if: "!matrix.cross"
+        run: cargo build --release -p muninn-cli --target ${{ matrix.target }}
+      - name: name the artefact
+        shell: bash
+        run: |
+          mkdir -p dist
+          src=$(ls target/${{ matrix.target }}/release/muninn* | grep -v '\.d$' | head -1)
+          ext=""; case "$src" in *.exe) ext=".exe";; esac
+          cp "$src" "dist/muninn-${{ matrix.target }}$ext"
+          test "$(wc -c < "dist/muninn-${{ matrix.target }}$ext")" -le 20971520
+      - uses: actions/upload-artifact@v4
+        with: { name: "dist-${{ matrix.target }}", path: dist/* }
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: checksums
+        run: cd dist && sha256sum muninn-* > checksums.txt && cat checksums.txt
+      - uses: sigstore/cosign-installer@v3
+      - name: sign (keyless, Sigstore)
+        run: |
+          cd dist
+          for f in muninn-* checksums.txt; do
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+      - name: model checksums (the sidecar's model files, as pinned in muninn-embed)
+        run: |
+          cat > dist/models.txt <<'M'
+          potion-base-8M  config.json        2a6ac0e9aaa356a68a5688070db78fc3a464fefe85d2f06a1905ce3718687553
+          potion-base-8M  tokenizer.json     e67e803f624fb4d67dea1c730d06e1067e1b14d830e2c2202569e3ef0f70bb50
+          potion-base-8M  model.safetensors  f65d0f325faadc1e121c319e2faa41170d3fa07d8c89abd48ca5358d9a223de2
+          M
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
