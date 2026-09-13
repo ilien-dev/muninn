@@ -69,7 +69,7 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     let mut n = 0;
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     {
         let mut ins = tx.prepare("INSERT INTO fire_ledger(session_id, compaction_epoch, record_id, fired_at, tokens, reason) VALUES (?1,?2,?3,?4,?5,?6)")?;
         for l in text.lines() {

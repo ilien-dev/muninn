@@ -18,6 +18,7 @@ pub struct MaintainStats {
     pub embedded: usize,
     pub anchors_retired: usize,
     pub symbols_indexed: usize,
+    pub cues_derived: usize,
     pub ms: u128,
 }
 
@@ -58,7 +59,7 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
     };
     let mut commits = 0usize;
     let mut reverts = 0usize;
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     for block in log.split('\x1e').filter(|b| !b.trim().is_empty()) {
         let mut lines = block.lines();
         let Some(head) = lines.next() else { continue };
@@ -163,7 +164,8 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         }
         return 0;
     };
-    let db = match Db::open(&paths.db_path(), Mode::ReadWrite) {
+    // not a hook: it may wait for a concurrent writer instead of dropping work
+    let db = match Db::open_with_busy(&paths.db_path(), Mode::ReadWrite, 5_000) {
         Ok(db) => db,
         Err(e) => {
             output::err(&format!("muninn maintain: {e}"));
@@ -216,8 +218,11 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             Err(e) => output::err(&format!("muninn maintain: project: {e}")),
         }
     }
+    if let Ok(n) = muninn_core::cue::derive_missing(&db) {
+        st.cues_derived = n;
+    }
     // symbol graph: only files whose content hash changed are re-parsed
-    match muninn_symbols::rebuild(&db, &paths.root, false) {
+    match muninn_symbols::rebuild(&db, &paths.source_root(), false) {
         Ok(s) => st.symbols_indexed = s.files_indexed,
         Err(e) => output::err(&format!("muninn maintain: symbols: {e}")),
     }

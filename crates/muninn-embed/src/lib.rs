@@ -186,7 +186,7 @@ pub fn embed_pending(db: &Db, emb: &Embedder, rebuild: bool) -> Result<EmbedStat
     let vecs = emb.encode(&texts);
     st.encode_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let now = now_ms();
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     {
         let mut ins = tx.prepare(
             "INSERT OR REPLACE INTO record_vec(record_id, dim, vec, model_id, created_at) VALUES(?1, ?2, ?3, ?4, ?5)",

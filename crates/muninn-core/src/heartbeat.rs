@@ -178,7 +178,7 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
     let text = crate::sanitize::read_regular_bounded(&folding, 64 << 20)
         .map_err(|e| Error::io(&folding, e))?;
     let mut n = 0usize;
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     {
         let mut ins = tx.prepare(
             "INSERT INTO heartbeat(hook, session_id, started_at, ok, error, ms) VALUES (?1,?2,?3,?4,?5,?6)",

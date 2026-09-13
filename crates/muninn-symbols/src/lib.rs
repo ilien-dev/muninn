@@ -347,7 +347,7 @@ pub fn index_file(
     }
     let src = String::from_utf8_lossy(&bytes);
     let fs = extract(rel, &src)?;
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     tx.execute("DELETE FROM symbol WHERE path = ?1", [rel])?;
     tx.execute("DELETE FROM symbol_ref WHERE path = ?1", [rel])?;
     {

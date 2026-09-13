@@ -47,6 +47,14 @@ impl ProjectPaths {
         Self::from_root(cwd)
     }
 
+    /// Where the code is. Normally the project root; `MUNINN_SOURCE_ROOT` overrides it
+    /// when the store lives outside the checkout (experiment cells).
+    pub fn source_root(&self) -> PathBuf {
+        std::env::var_os("MUNINN_SOURCE_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.root.clone())
+    }
+
     pub fn db_path(&self) -> PathBuf {
         self.muninn_dir.join("muninn.db")
     }

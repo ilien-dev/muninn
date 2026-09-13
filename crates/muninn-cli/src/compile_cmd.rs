@@ -115,7 +115,7 @@ pub fn compile(paths: &ProjectPaths, db: &Db, force: bool) -> Result<CompileOutc
     std::fs::create_dir_all(paths.compiled_dir())?;
 
     let now = now_ms();
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     tx.execute("DELETE FROM rule", [])?;
     let mut without: Vec<&CompiledRule> = Vec::new();
     {

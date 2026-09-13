@@ -27,7 +27,22 @@ const BUSY_BACKOFF_MS: [u64; 6] = [1, 2, 5, 10, 25, 50];
 
 impl Db {
     /// Open an existing database. `ReadOnly` fails if the file does not exist.
+    /// Writers wait up to 700 ms for another writer (a hook must stay under its own
+    /// timeout); `open_with_busy` lets the detached write path wait longer.
     pub fn open(path: &Path, mode: Mode) -> Result<Db> {
+        Self::open_with_busy(path, mode, 700)
+    }
+
+    /// A write transaction that takes the lock up front (BEGIN IMMEDIATE), so a
+    /// concurrent writer produces a wait, never an immediate SQLITE_BUSY on upgrade.
+    pub fn write_tx(&self) -> Result<rusqlite::Transaction<'_>> {
+        Ok(rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?)
+    }
+
+    pub fn open_with_busy(path: &Path, mode: Mode, busy_ms: u64) -> Result<Db> {
         let flags = match mode {
             Mode::ReadOnly => OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             Mode::ReadWrite => {
@@ -37,14 +52,21 @@ impl Db {
             }
         };
         let conn = Connection::open_with_flags(path, flags)?;
-        conn.busy_handler(Some(|attempt: i32| {
-            let i = attempt as usize;
-            if i >= BUSY_BACKOFF_MS.len() {
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(BUSY_BACKOFF_MS[i]));
-            true
-        }))?;
+        match mode {
+            // a read hook never spins past its own timeout: ~93 ms in total, then it
+            // gives up and stays silent
+            Mode::ReadOnly => conn.busy_handler(Some(|attempt: i32| {
+                let i = attempt as usize;
+                if i >= BUSY_BACKOFF_MS.len() {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(BUSY_BACKOFF_MS[i]));
+                true
+            }))?,
+            // the write path is asynchronous and may wait for another writer (maintain
+            // re-indexing symbols, a concurrent Stop) instead of dropping an ingest
+            Mode::ReadWrite => conn.busy_timeout(Duration::from_millis(busy_ms))?,
+        }
         match mode {
             Mode::ReadOnly => {
                 conn.execute_batch("PRAGMA query_only=1; PRAGMA temp_store=MEMORY;")?;

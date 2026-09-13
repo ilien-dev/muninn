@@ -34,11 +34,11 @@ pub fn validate_anchors(paths: &ProjectPaths, db: &Db) -> Result<usize> {
         .collect();
     let mut cache: HashMap<String, Option<String>> = HashMap::new();
     let mut retired = 0usize;
-    let tx = db.conn.unchecked_transaction()?;
+    let tx = db.write_tx()?;
     for (id, path, hash) in rows {
         let now = cache
             .entry(path.clone())
-            .or_insert_with(|| file_hash(&paths.root, &path))
+            .or_insert_with(|| file_hash(&paths.source_root(), &path))
             .clone();
         if now.as_deref() != Some(hash.as_str()) {
             tx.execute(
