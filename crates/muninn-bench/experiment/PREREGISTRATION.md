@@ -140,3 +140,15 @@ Same design, decision rule, model, runs and arms. Changes, all fixed before runn
   block now defines the trust scale (1 = observed in the project's own transcript) so a
   trust-1 block is not read as "low confidence". Whether an agent then uses the number
   or insists on repository corroboration is part of what run 2 measures.
+- Pilot 4 (literal only, four fact tasks, base 0cb51ab, $0.8): 2/4 by the oracle, 4/4
+  by content — one cell wrote the numbers as "Turns produced: **30**" (the oracle wanted
+  "30 turns") and one wrote the file into the main repository by an absolute path that a
+  delivered episode carried (`~/Projects/muninn/...`), outside its worktree. Fixes before
+  run 2: the fact oracles match the number near its noun on the flattened file, the
+  runner appends one neutral sentence to every prompt in every arm ("work only inside
+  the current working directory ... never outside it"), and the two files that pilot
+  cells had written into the main repository (docs/perf-history.md, a GATE1.md
+  section) were removed — they were never in `base_ref`. Model output in this pilot:
+  two cells used the delivered number and said so; one wrote the delivered 11.9 ms as
+  "unverified" because git log did not corroborate it; one cited the episode as its
+  only source and wrote it.

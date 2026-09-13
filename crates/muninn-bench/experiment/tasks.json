@@ -27,13 +27,13 @@
    "id": "fact-userprompt-p95",
    "inferable": false,
    "prompt": "Create docs/perf-history.md with a section 'UserPromptSubmit read path'. Record, from the project's own measurements, what the full-recall p95 of the UserPromptSubmit hook was on the adversarial synthetic 30-word vocabulary before the term-selection fix, what the fix was, and the p95 after it. Use the measured numbers, not estimates; if you cannot find a measured number, say so in the file instead of inventing one.",
-   "oracle": "set -e; f=docs/perf-history.md; grep -qE '10[.,]27' $f; grep -qE '1[.,]8[0-9]? ?ms' $f"
+   "oracle": "set -e; f=docs/perf-history.md; flat=$(tr '\\n' ' ' < $f); echo \"$flat\" | grep -qE '10[.,]27'; echo \"$flat\" | grep -qE '1[.,]8[0-9]?( |\\*| ?ms)'"
   },
   {
    "id": "fact-sessionstart-gate",
    "inferable": false,
    "prompt": "Create or extend docs/perf-history.md with a section 'SessionStart health gate'. Record what the SessionStart hook cost at p50 on a 5k-record store before quick_check was taken off the read path (with the fts_rows counter and the body CHECK added at the same time), and after. Use the measured numbers, not estimates; if you cannot find a measured number, say so in the file instead of inventing one.",
-   "oracle": "set -e; f=docs/perf-history.md; grep -qE '11[.,]9' $f; grep -qE '1[.,]05' $f"
+   "oracle": "set -e; f=docs/perf-history.md; flat=$(tr '\\n' ' ' < $f); echo \"$flat\" | grep -qE '11[.,]9'; echo \"$flat\" | grep -qE '1[.,]05'"
   },
   {
    "id": "fact-corpus-fetch-limits",
@@ -45,7 +45,7 @@
    "id": "fact-real-transcript-ingest",
    "inferable": false,
    "prompt": "Add to docs/perf-history.md a section 'Real transcript ingest' with the measured figures for ingesting this project's own real Claude Code transcript: its size in MB, how many turns and episodes it produced, and how long the ingest took. Measured figures only; if you cannot find them, say so in the file instead of inventing them.",
-   "oracle": "set -e; f=docs/perf-history.md; grep -qE '21 ?MB' $f; grep -qE '30 ?(turns|turnos)' $f; grep -qE '20 ?(episodes|episodios)' $f; grep -qE '30 ?ms' $f"
+   "oracle": "set -e; f=docs/perf-history.md; flat=$(tr '\\n' ' ' < $f); echo \"$flat\" | grep -qE '21([.,]0)? ?MB'; echo \"$flat\" | grep -qiE '30.{0,40}(turn|turno)|(turn|turno).{0,40}(^|[^0-9.])30([^0-9]|$)'; echo \"$flat\" | grep -qiE '20.{0,40}episod|episod.{0,40}(^|[^0-9.])20([^0-9]|$)'; echo \"$flat\" | grep -qE '(^|[^0-9.])30 ?ms'"
   },
   {
    "id": "docs-grammars-control",
