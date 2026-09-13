@@ -866,6 +866,8 @@ name = "muninn-why"
 version = "0.1.0"
 dependencies = [
  "muninn-core",
+ "muninn-embed",
+ "rusqlite",
  "serde",
  "serde_json",
 ]

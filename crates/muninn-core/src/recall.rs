@@ -354,7 +354,18 @@ pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
 /// The whole read path for one prompt.
 pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery> {
     let terms = select_terms(db, prompt, 8)?;
-    let hits = recall(db, &terms, 8, exclude)?;
+    let mut hits = recall(db, &terms, 8, exclude)?;
+    // F1: an unresolved conflict is served as two marked records, never ranked away
+    for h in hits.iter_mut() {
+        if h.kind != "episode" {
+            if let Ok(c) = crate::filter::conflicts_of(db, h.id) {
+                if !c.is_empty() {
+                    let ids: Vec<String> = c.iter().map(|i| format!("#{i}")).collect();
+                    h.kind = format!("{}:conflict with {}", h.kind, ids.join(","));
+                }
+            }
+        }
+    }
     Ok(render(&hits, BUDGET_TURN_TOKENS, &terms))
 }
 

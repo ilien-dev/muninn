@@ -132,15 +132,26 @@ pub fn ingest_transcript_with(
             }
         }
         // 2. typed candidates: corrections, invariants, commit-linked decisions, dead ends
+        let mut ins_anchor = tx.prepare(
+            "INSERT OR IGNORE INTO record(kind, subject, relation, object, body, origin, trust, anchor_path, anchor_hash, session_id, transcript_ref, dedup_hash, created_at) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        )?;
         for c in extract(&session, &sid) {
             let hash = dedup(c.kind, &c.subject, &c.relation, &c.object, &c.body);
+            // the anchor's content hash at capture time; the validator compares later [K11]
+            let anchor_hash = match (&c.anchor_path, paths) {
+                (Some(ap), Some(p)) if c.kind != "deadend" => {
+                    muninn_core::filter::file_hash(&p.root, ap)
+                }
+                _ => None,
+            };
             let created = session
                 .turns
                 .get(c.turn_index)
                 .and_then(|t| t.timestamp.as_deref())
                 .and_then(parse_rfc3339_ms)
                 .unwrap_or(now);
-            let n = ins.execute(rusqlite::params![
+            let n = ins_anchor.execute(rusqlite::params![
                 c.kind,
                 c.subject,
                 c.relation,
@@ -149,6 +160,7 @@ pub fn ingest_transcript_with(
                 c.origin,
                 trust_of(c.origin),
                 c.anchor_path,
+                anchor_hash,
                 sid,
                 format!("{}:{}", transcript.display(), c.end_offset),
                 hash,
