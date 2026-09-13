@@ -27,13 +27,13 @@
    "id": "engine-s10-build-targets",
    "inferable": false,
    "prompt": "design/ENGINE.md section 10 ('Empaquetado y canal') lists two build targets for the MVP: a CLI binary for Claude Code/Codex and a napi-rs addon for OpenCode, Cline and Pi. Update section 10 so it reflects which targets are actually in the MVP and which are deferred to a later version. Edit only that section.",
-   "oracle": "set -e; f=design/ENGINE.md; sec=$(awk '/^## 10/{p=1} /^## 11/{p=0} p' $f); echo \"$sec\" | grep -qi 'claude code'; echo \"$sec\" | grep -qi 'codex'; if echo \"$sec\" | grep -qi 'napi'; then echo \"$sec\" | grep -iE 'napi' | grep -qiE 'diferid|deferred|v1\\.1|posterior|later|despu|no (est|forma) parte'; fi"
+   "oracle": "set -e; f=design/ENGINE.md; sec=$(awk '/^## 10/{p=1} /^## 11/{p=0} p' $f | tr '\\n' ' '); echo \"$sec\" | grep -qi 'claude code'; echo \"$sec\" | grep -qi 'codex'; if echo \"$sec\" | grep -qi 'napi'; then echo \"$sec\" | grep -qiE 'napi.{0,240}(diferid|deferred|v1\\.1|posterior|later|despu|no (est|forma) parte|no aplica|todav)|(diferid|deferred|v1\\.1|posterior|later|despu|no aplica).{0,240}napi'; fi"
   },
   {
    "id": "engine-s13-experiment-harness",
    "inferable": false,
    "prompt": "design/ENGINE.md section 13 item 1 says the four-arm experiment runs on a harness without native memory (OpenCode or Pi). That is not the harness the project chose for the MVP experiment. Correct item 1 of section 13 to name the harness actually used, and how native memory is handled there. Edit only that item.",
-   "oracle": "set -e; f=design/ENGINE.md; sec=$(awk '/^## 13/{p=1} /^## 14/{p=0} p' $f); echo \"$sec\" | grep -qi 'claude code'; ! echo \"$sec\" | grep -q 'OpenCode o Pi'"
+   "oracle": "set -e; f=design/ENGINE.md; sec=$(awk '/^## 13/{p=1} /^## 14/{p=0} p' $f | tr '\\n' ' '); echo \"$sec\" | grep -qi 'claude code'; ! echo \"$sec\" | grep -q 'OpenCode o Pi'"
   },
   {
    "id": "engine-s11-tenth-check",

@@ -69,6 +69,12 @@ enum Cmd {
         /// Cells to run concurrently (each has its own worktree and store)
         #[arg(long, default_value_t = 1)]
         jobs: usize,
+        /// Re-run only the cells recorded as `error` in <out>/results.jsonl
+        #[arg(long)]
+        rerun_errors: bool,
+        /// Re-run every oracle on the saved patches (after an oracle amendment); no model calls
+        #[arg(long)]
+        rescore: bool,
         #[arg(long)]
         muninn: Option<PathBuf>,
     },
@@ -632,6 +638,8 @@ fn main() -> Result<()> {
             runs,
             model,
             jobs,
+            rerun_errors,
+            rescore,
             muninn,
         } => {
             let bin = muninn.unwrap_or_else(|| {
@@ -640,7 +648,7 @@ fn main() -> Result<()> {
                 p
             });
             anyhow::ensure!(bin.exists(), "muninn binary not found at {}", bin.display());
-            experiment::run(&config, &out, &bin, dry_run, pilot, runs, model, jobs)
+            experiment::run(&config, &out, &bin, dry_run, pilot, runs, model, jobs, rerun_errors, rescore)
         }
         Cmd::Rules {
             dir,
