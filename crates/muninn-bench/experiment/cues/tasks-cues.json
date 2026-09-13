@@ -25,7 +25,7 @@
     "file": "crates/muninn-core/src/db.rs",
     "token": "backoff_ceiling"
    },
-   "prompt": "Edit crates/muninn-core/src/db.rs: add a named constant for the longest time the busy handler may keep waiting, and use it there. Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "In the core crate, give the database busy handler a named constant for the longest it may keep waiting, and use it there. Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-core/src/db.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'backoff_ceiling'"
   },
   {
@@ -35,7 +35,7 @@
     "file": "crates/muninn-cli/src/output.rs",
     "token": "shadow_write"
    },
-   "prompt": "Edit crates/muninn-cli/src/output.rs: add a helper that prints one line to stderr only when the MUNINN_VERBOSE environment variable is set. Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "In the CLI crate, next to the existing output routines, add one that prints a line to stderr only when MUNINN_VERBOSE is set. Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-cli/src/output.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'shadow_write'"
   },
   {
@@ -45,7 +45,7 @@
     "file": "crates/muninn-capture/src/redact.rs",
     "token": "poison_pill"
    },
-   "prompt": "Edit crates/muninn-capture/src/redact.rs: add a redaction pattern for Azure storage account keys. Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "In the capture crate, add a redaction pattern for Azure storage account keys, with its unit test. Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-capture/src/redact.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'poison_pill'"
   },
   {
@@ -55,7 +55,7 @@
     "file": "crates/muninn-compile/src/emit.rs",
     "token": "fence_token"
    },
-   "prompt": "Edit crates/muninn-compile/src/emit.rs: make every emitted JSON artefact carry a field with the compiler version. Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "Make every emitted JSON artefact of the rule compiler carry the compiler version. Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-compile/src/emit.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'fence_token'"
   },
   {
@@ -65,7 +65,7 @@
     "file": "crates/muninn-bench/src/main.rs",
     "token": "drain_first"
    },
-   "prompt": "Edit crates/muninn-bench/src/main.rs: add a subcommand that prints the size in bytes of the store file. Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "Add a bench subcommand that prints the size in bytes of the store file. Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-bench/src/main.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'drain_first'"
   },
   {
@@ -75,7 +75,7 @@
     "file": "crates/muninn-embed/src/lib.rs",
     "token": "monotonic_clock"
    },
-   "prompt": "Edit crates/muninn-embed/src/lib.rs: add a function that returns how long an embedding call took, as milliseconds. Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "In the embedding crate, add a function that returns how long an embedding call took, in milliseconds. Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-embed/src/lib.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'monotonic_clock'"
   },
   {
@@ -85,7 +85,7 @@
     "file": "crates/muninn-symbols/src/lib.rs",
     "token": "hedged"
    },
-   "prompt": "Edit crates/muninn-symbols/src/lib.rs: add a struct representing one row of a symbol table (name, path, line). Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "In the symbol graph crate, add a struct representing one row of a symbol table (name, path, line). Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-symbols/src/lib.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'hedged'"
   },
   {
@@ -95,7 +95,7 @@
     "file": "crates/muninn-why/src/lib.rs",
     "token": "grace_window"
    },
-   "prompt": "Edit crates/muninn-why/src/lib.rs: add a function stub that decides which route a question takes. Keep the change small and consistent with the project's recorded decisions for that file; do not touch other files.",
+   "prompt": "In the why crate, add a function stub that decides which route a question takes. Keep the change small and consistent with the project's recorded decisions for the file you edit; touch one file only.",
    "oracle": "set -e; f=crates/muninn-why/src/lib.rs; test -f $f; tr 'A-Z' 'a-z' < $f | grep -qF 'grace_window'"
   }
  ],

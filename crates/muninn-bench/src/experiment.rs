@@ -637,6 +637,23 @@ fn run_cell(
                 &d.stdout,
             );
         }
+        // the cell's delivery and turn-context logs, for audit (which cue fired, when)
+        {
+            let logs = work.parent().unwrap_or(work).join("logs");
+            let _ = std::fs::create_dir_all(&logs);
+            for (src, suffix) in [
+                ("delivery.jsonl", "delivery.jsonl"),
+                ("turn_context.jsonl", "context.jsonl"),
+            ] {
+                let from = store.join(".muninn/log").join(src);
+                if from.exists() {
+                    let _ = std::fs::copy(
+                        &from,
+                        logs.join(format!("r{run}-{}-{arm}.{suffix}", task.id)),
+                    );
+                }
+            }
+        }
         let (tok, recs, p95) = measure_store(&store);
         cell.delivered_tokens = tok;
         cell.delivered_records = recs;
