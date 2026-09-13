@@ -19,7 +19,7 @@ Every block carries provenance and a trust level (0–3, derived from origin, ne
 `muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and ends with `sufficient` or `insufficient`. Quote records, do not paraphrase them into certainty.
 
 ## Diagnosing
-`muninn status` → `MUNINN 9/9 GREEN` or one RED with its fix. `muninn doctor` lists all nine checks.
+`muninn status` → `MUNINN 10/10 GREEN` or one RED with its fix. `muninn doctor` lists all nine checks.
 
 ## Never
 Edit `.muninn/` by hand. Paste blocks into files. Treat trust 0 as fact.

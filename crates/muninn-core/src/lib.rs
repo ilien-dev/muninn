@@ -8,6 +8,7 @@ pub mod error;
 pub mod health;
 pub mod heartbeat;
 pub mod paths;
+pub mod project;
 pub mod recall;
 pub mod sanitize;
 pub mod tokens;

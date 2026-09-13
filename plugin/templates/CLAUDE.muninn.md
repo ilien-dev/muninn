@@ -13,7 +13,7 @@ This project uses Muninn, a local memory engine. The harness's native memory is 
 
 **When to ask Muninn.** Run `muninn why "<question>"` (or `muninn why <id>`) before changing a recorded decision, when the same failure appears a second time, or when the user asks why something is the way it is. The answer is literal records with lineage and a sufficiency marker; if it says `insufficient`, say so rather than filling the gap.
 
-**First diagnostic.** `muninn status` prints the health line (`MUNINN 9/9 GREEN` or a RED with its fix). If a hook seems silent, run it before anything else.
+**First diagnostic.** `muninn status` prints the health line (`MUNINN 10/10 GREEN` or a RED with its fix). If a hook seems silent, run it before anything else.
 
 **Do not:** read or edit `.muninn/` by hand; ask for "all memory"; paste memory blocks back into files; treat a `trust 0` block as fact.
 <!-- muninn:end -->

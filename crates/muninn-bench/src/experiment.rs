@@ -284,7 +284,10 @@ fn run_cell(
         let logs = work.parent().unwrap_or(work).join("logs");
         let _ = std::fs::create_dir_all(&logs);
         let _ = std::fs::write(logs.join(format!("r{run}-{}-{arm}.json", task.id)), &stdout);
-        let _ = std::fs::write(logs.join(format!("r{run}-{}-{arm}.stderr", task.id)), &out.stderr);
+        let _ = std::fs::write(
+            logs.join(format!("r{run}-{}-{arm}.stderr", task.id)),
+            &out.stderr,
+        );
         match status {
             None => {
                 cell.error = Some("timeout".into());
@@ -338,7 +341,17 @@ fn run_cell(
         // keep the diff for audit before the worktree goes away (new files included)
         let _ = Command::new("git")
             .current_dir(&dir)
-            .args(["add", "-A", "--", ".", ":(exclude).muninn", ":(exclude)CLAUDE.md", ":(exclude)AGENTS.md", ":(exclude).claude", ":(exclude).gitignore"])
+            .args([
+                "add",
+                "-A",
+                "--",
+                ".",
+                ":(exclude).muninn",
+                ":(exclude)CLAUDE.md",
+                ":(exclude)AGENTS.md",
+                ":(exclude).claude",
+                ":(exclude).gitignore",
+            ])
             .output();
         if let Ok(d) = Command::new("git")
             .current_dir(&dir)
