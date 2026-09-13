@@ -67,6 +67,26 @@ exactly zero, so by the rule it ships as an **opt-in** (`muninn config expand on
 `MUNINN_EXPAND=1`) and the experiments keep it on in the arms that name it. Cues on
 top of expansion repeat the first grid's figure (+0.083); the verdict on cues stands.
 
+### Boot-block vehicle — file vs SessionStart hook (`results/boot-vehicle/`)
+
+The shipped default stopped writing the boot block into the user's CLAUDE.md /
+AGENTS.md: the SessionStart hook injects a compact summary (~425 estimated tokens,
+`plugin/templates/BOOT.hook.md`) at startup, resume, clear and after compaction, and
+the `muninn` skill carries the long form. Pre-registered as a non-inferiority test
+(`PREREGISTRATION.md`), 14 tasks (Gate 2's six plus the eight cue tasks), 3 runs,
+84 cells, claude-sonnet-5, 0 errors.
+
+| arm | pass | tokens delivered (mean) | turns (mean) | cost/cell |
+|---|---|---|---|---|
+| literal (long block in CLAUDE.md, as in every gate) | 30/42 | 782 | 10.3 | $0.233 |
+| literal-hookboot (no file; compact summary by hook) | 35/42 | 776 | 10.9 | $0.239 |
+
+`literal-hookboot − literal`: **+0.119 [95 % CI +0.000, +0.262]** (cluster bootstrap by
+task). Not inferior; if anything better: three cue tasks moved from 1/3 to 2–3/3 with
+the summary arriving as the first thing in the session instead of inside the
+instruction file. Retired records served: 0. The hook vehicle stays the default;
+`muninn init --boot-file` remains for users who want the block in the file.
+
 ## §2 Compaction survival (decay probe): 100 %
 
 Ten invariants seeded, 100 forced compactions (`PostCompact` hook, epoch bump each
