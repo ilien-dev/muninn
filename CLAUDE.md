@@ -1,11 +1,9 @@
-# CLAUDE.md
+<!-- Maintainers: this file stays under 1 000 cl100k tokens; CI enforces it (muninn-cli test
+     claude_md_within_budget). To add a line, cut one. Only what applies to every task belongs
+     here; the rest lives in docs/, design/ENGINE.md or a skill, referenced by path. HTML
+     comments are stripped before the file reaches the model. -->
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Rule for this file
-Stay under 1 000 tokens (cl100k); CI enforces it (`muninn-cli` test `claude_md_within_budget`). To add a line, cut one. Only what applies to every task belongs here; the rest lives in `docs/`, `design/ENGINE.md` or a skill and is referenced by path, never copied.
-
-## What Muninn is
+# Muninn
 A local, deterministic memory engine for coding agents: one Rust binary, SQLite + FTS5, no server, no model or LLM in the hook read path (single-digit ms). Three functions, each behind a hard evidence gate: F1 filter (retired facts are never served), F2 rule compiler (CLAUDE.md rules → permission rules and deny hooks), F3 delivery (cue-anchored memory under a 700-token budget). Ships as a Claude Code plugin (`plugin/`) and a Codex hooks file (`codex/`).
 
 The design is fixed by `research/CONCLUSION.md` and `research/00-evidence-log.md`; decisions cite evidence ids such as `[K2]`. `design/ENGINE.md` is the spec, `docs/scope.md` lists what is deliberately not done. Neither is re-litigated without a new measurement.
