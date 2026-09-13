@@ -114,6 +114,13 @@ impl Embedder {
     pub fn encode_one(&self, text: &str) -> Vec<f32> {
         self.encode(&[text.to_string()]).pop().unwrap_or_default()
     }
+
+    /// Same as `encode`, plus how long the call took, in milliseconds.
+    pub fn encode_timed(&self, texts: &[String]) -> (Vec<Vec<f32>>, f64) {
+        let t0 = Instant::now();
+        let vecs = self.encode(texts);
+        (vecs, t0.elapsed().as_secs_f64() * 1000.0)
+    }
 }
 
 fn to_blob(v: &[f32]) -> Vec<u8> {
@@ -384,4 +391,3 @@ mod tests {
         assert!(n.is_none(), "{n:?}");
     }
 }
-

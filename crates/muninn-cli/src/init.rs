@@ -10,7 +10,12 @@ use std::path::Path;
 pub const BOOT_BLOCK: &str = include_str!("../../../plugin/templates/CLAUDE.muninn.md");
 const BEGIN: &str = "<!-- muninn:begin -->";
 const END: &str = "<!-- muninn:end -->";
-const GITIGNORE_LINES: [&str; 4] = [".muninn/muninn.db*", ".muninn/log/", ".muninn/compact/", ".muninn/init.json"];
+const GITIGNORE_LINES: [&str; 4] = [
+    ".muninn/muninn.db*",
+    ".muninn/log/",
+    ".muninn/compact/",
+    ".muninn/init.json",
+];
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct InitState {

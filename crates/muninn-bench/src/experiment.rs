@@ -265,6 +265,8 @@ fn settings_json(muninn: &Path) -> serde_json::Value {
         "hooks": {
             "SessionStart": h("SessionStart", 5),
             "UserPromptSubmit": h("UserPromptSubmit", 5),
+            // confinement (MUNINN_CONFINE_ROOT): an edit outside the checkout is denied
+            "PreToolUse": [{ "matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{ "type": "command", "command": bin, "args": ["hook", "PreToolUse"], "timeout": 5 }] }],
             "PostToolUse": [{ "matcher": "Bash|Edit|Write|MultiEdit|Read", "hooks": [{ "type": "command", "command": bin, "args": ["hook", "PostToolUse"], "timeout": 5 }] }],
             "Stop": h("Stop", 30),
             "SessionEnd": h("SessionEnd", 5)
