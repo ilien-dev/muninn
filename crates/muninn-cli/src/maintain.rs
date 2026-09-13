@@ -134,9 +134,33 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
     Ok((commits, reverts))
 }
 
+/// One writer at a time: a second `maintain` finds the lock held and exits at once.
+fn lock(paths: &ProjectPaths) -> Option<std::fs::File> {
+    let p = paths.log_dir().join("maintain.lock");
+    let f = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&p)
+        .ok()?;
+    match f.try_lock() {
+        Ok(()) => Some(f),
+        Err(_) => None,
+    }
+}
+
 pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
     let t0 = std::time::Instant::now();
     let mut st = MaintainStats::default();
+    if !paths.is_initialised() {
+        return 0;
+    }
+    let Some(_guard) = lock(paths) else {
+        if json {
+            output::json(&serde_json::json!({"skipped": "another maintain is running"}));
+        }
+        return 0;
+    };
     let db = match Db::open(&paths.db_path(), Mode::ReadWrite) {
         Ok(db) => db,
         Err(e) => {
@@ -204,6 +228,24 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         ));
     }
     0
+}
+
+/// Spawn only if the last spawn is older than `min_age_s` (stamp file in the log dir,
+/// the one place a read hook may write).
+pub fn spawn_detached_throttled(paths: &ProjectPaths, min_age_s: u64) {
+    let stamp = paths.log_dir().join("maintain.stamp");
+    if let Ok(md) = std::fs::metadata(&stamp) {
+        if let Ok(age) = md
+            .modified()
+            .and_then(|m| m.elapsed().map_err(std::io::Error::other))
+        {
+            if age.as_secs() < min_age_s {
+                return;
+            }
+        }
+    }
+    let _ = std::fs::write(&stamp, now_ms().to_string());
+    spawn_detached(paths);
 }
 
 /// Start `muninn maintain` as a detached process (no inherited stdio, own process

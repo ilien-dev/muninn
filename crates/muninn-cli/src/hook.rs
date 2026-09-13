@@ -115,8 +115,9 @@ fn session_start(
         Err(e) => health::run(paths, None, Some(e), false),
     };
     // The write path (resume, git capture, projection, sidecar) runs detached; this
-    // hook stays read-only and returns at once.
-    crate::maintain::spawn_detached(paths);
+    // hook stays read-only and returns at once. At most one spawn per two minutes:
+    // a burst of SessionStarts must not fan out into a burst of writers.
+    crate::maintain::spawn_detached_throttled(paths, 120);
     Ok(Some(additional_context("SessionStart", &report.summary())))
 }
 

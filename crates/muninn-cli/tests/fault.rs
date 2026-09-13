@@ -1,4 +1,4 @@
-//! Fault injection: 11 scenarios × N repetitions (MUNINN_FAULT_REPS, default 3; CI 200).
+//! Fault injection: 15 scenarios × N repetitions (MUNINN_FAULT_REPS, default 3; CI 200).
 //! Modelled on the reliability study in [Y1]. Each scenario states the property it
 //! holds: the hook exits 0 and never blocks the agent; data is never lost; a broken
 //! store shows as RED in the gate, never as silence.
@@ -193,7 +193,8 @@ fn s03_disk_full_and_readonly_store() {
             "health line must still be delivered: {}",
             r.stdout
         );
-        std::fs::remove_file(&log).unwrap();
+        // the detached write path may already have folded (and removed) the log
+        let _ = std::fs::remove_file(&log);
         let dir = p.path().join(".muninn");
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
         let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
@@ -399,7 +400,17 @@ fn s11_store_dir_deleted_midsession() {
     for _ in 0..reps() {
         let p = init_project();
         let _ = hook(p.path(), "SessionStart", serde_json::json!({}));
-        std::fs::remove_dir_all(p.path().join(".muninn")).unwrap();
+        // the detached write path may still be touching the directory: retry briefly
+        for i in 0..50 {
+            match std::fs::remove_dir_all(p.path().join(".muninn")) {
+                Ok(()) => break,
+                Err(e) if i < 49 => {
+                    let _ = e;
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => panic!("remove .muninn: {e}"),
+            }
+        }
         for ev in ["UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"] {
             let r = hook(p.path(), ev, serde_json::json!({ "prompt": "implement x" }));
             assert_clean_exit(&r, &format!("deleted store {ev}"));
@@ -412,6 +423,170 @@ fn s11_store_dir_deleted_midsession() {
         assert!(
             !p.path().join(".muninn").exists(),
             "hooks must not recreate the store"
+        );
+    }
+}
+
+// ---- Phase 3: the real write path ------------------------------------------------
+
+fn transcript_lines(n_turns: usize, prompt_len: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    for i in 0..n_turns {
+        let prompt = format!("turn {i} {}", "word ".repeat(prompt_len / 5));
+        out.extend_from_slice(
+            serde_json::json!({"type":"user","sessionId":"f","timestamp":"2026-09-12T14:03:11.084Z","message":{"role":"user","content":prompt}})
+                .to_string()
+                .as_bytes(),
+        );
+        out.push(b'\n');
+        out.extend_from_slice(
+            serde_json::json!({"type":"assistant","sessionId":"f","message":{"role":"assistant","content":[{"type":"text","text":format!("done {i}")}]}})
+                .to_string()
+                .as_bytes(),
+        );
+        out.push(b'\n');
+    }
+    out
+}
+
+fn records(root: &Path, sql: &str) -> i64 {
+    let conn = rusqlite::Connection::open(db_path(root)).unwrap();
+    conn.query_row(sql, [], |r| r.get(0)).unwrap()
+}
+
+// 12. The model on disk does not match the published checksums: the sidecar stays
+//     cold, nothing else changes, and no hook slows down.
+#[test]
+fn s12_model_checksum_mismatch() {
+    for _ in 0..reps() {
+        let p = init_project();
+        let model = p.path().join("badmodel");
+        std::fs::create_dir_all(&model).unwrap();
+        std::fs::write(model.join("config.json"), "{}").unwrap();
+        std::fs::write(model.join("tokenizer.json"), "{}").unwrap();
+        std::fs::write(model.join("model.safetensors"), vec![0u8; 4096]).unwrap();
+        let t = p.path().join("t.jsonl");
+        std::fs::write(&t, transcript_lines(3, 100)).unwrap();
+        let r = hook_with(
+            p.path(),
+            "SessionEnd",
+            &payload(p.path(), serde_json::json!({ "transcript_path": t })),
+            &[("MUNINN_MODEL_DIR", model.to_str().unwrap())],
+            Stdio::piped(),
+        );
+        assert_clean_exit(&r, "bad model");
+        assert!(records(p.path(), "SELECT count(*) FROM record") >= 3);
+        assert_eq!(records(p.path(), "SELECT count(*) FROM record_vec"), 0);
+        let d = doctor(p.path());
+        let s = d["summary"].as_str().unwrap_or("");
+        assert!(!s.starts_with("MUNINN RED"), "{s}");
+    }
+}
+
+// 13. No git on PATH and no repository history: capture is skipped, nothing fails.
+#[test]
+fn s13_git_unavailable() {
+    for _ in 0..reps() {
+        let p = init_project();
+        let t = p.path().join("t.jsonl");
+        std::fs::write(&t, transcript_lines(2, 80)).unwrap();
+        let r = hook_with(
+            p.path(),
+            "SessionEnd",
+            &payload(p.path(), serde_json::json!({ "transcript_path": t })),
+            &[("PATH", "/nonexistent")],
+            Stdio::piped(),
+        );
+        assert_clean_exit(&r, "no git");
+        let out = Command::new(BIN)
+            .args(["--cwd", p.path().to_str().unwrap(), "maintain"])
+            .env("PATH", "/nonexistent")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(records(p.path(), "SELECT count(*) FROM record") >= 2);
+    }
+}
+
+// 14. `maintain` and `Stop` ingest the same transcript at the same time: every
+//     process exits clean and no record is lost or duplicated.
+#[test]
+fn s14_maintain_and_stop_concurrent() {
+    for _ in 0..reps() {
+        let p = init_project();
+        let t = p.path().join("t.jsonl");
+        std::fs::write(&t, transcript_lines(20, 300)).unwrap();
+        // one clean ingest tells us the expected count
+        let expect = {
+            let q = init_project();
+            let r = hook(
+                q.path(),
+                "Stop",
+                serde_json::json!({ "transcript_path": t }),
+            );
+            assert_clean_exit(&r, "reference ingest");
+            records(q.path(), "SELECT count(*) FROM record")
+        };
+        let root = p.path().to_path_buf();
+        let tt = t.clone();
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let root = root.clone();
+                let tt = tt.clone();
+                std::thread::spawn(move || {
+                    if i % 2 == 0 {
+                        let input = serde_json::json!({ "session_id": format!("c{i}"), "cwd": root, "transcript_path": tt }).to_string();
+                        hook_with(&root, "Stop", &input, &[], Stdio::piped())
+                    } else {
+                        let t0 = Instant::now();
+                        let out = Command::new(BIN)
+                            .args(["--cwd", root.to_str().unwrap(), "maintain"])
+                            .output()
+                            .unwrap();
+                        Run {
+                            status: out.status.code(),
+                            stdout: String::from_utf8_lossy(&out.stdout).into(),
+                            stderr: String::from_utf8_lossy(&out.stderr).into(),
+                            elapsed: t0.elapsed(),
+                        }
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            let r = h.join().unwrap();
+            assert_clean_exit(&r, "maintain/Stop concurrent");
+        }
+        assert_eq!(records(p.path(), "SELECT count(*) FROM record"), expect);
+        let s = summary(p.path());
+        assert!(!s.starts_with("MUNINN RED"), "{s}");
+    }
+}
+
+// 15. One 200 KB turn: stored whole as chunks, every body under the cap, fast.
+#[test]
+fn s15_huge_single_turn() {
+    for _ in 0..reps() {
+        let p = init_project();
+        let t = p.path().join("t.jsonl");
+        std::fs::write(&t, transcript_lines(1, 200_000)).unwrap();
+        let r = hook(
+            p.path(),
+            "SessionEnd",
+            serde_json::json!({ "transcript_path": t }),
+        );
+        assert_clean_exit(&r, "huge turn");
+        assert!(records(p.path(), "SELECT count(*) FROM record WHERE kind='episode'") >= 12);
+        assert_eq!(
+            records(
+                p.path(),
+                "SELECT count(*) FROM record WHERE length(body) > 2000"
+            ),
+            0
         );
     }
 }

@@ -175,7 +175,8 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
     if !folding.exists() {
         std::fs::rename(&path, &folding).map_err(|e| Error::io(&path, e))?;
     }
-    let text = std::fs::read_to_string(&folding).map_err(|e| Error::io(&folding, e))?;
+    let text = crate::sanitize::read_regular_bounded(&folding, 64 << 20)
+        .map_err(|e| Error::io(&folding, e))?;
     let mut n = 0usize;
     let tx = db.conn.unchecked_transaction()?;
     {
