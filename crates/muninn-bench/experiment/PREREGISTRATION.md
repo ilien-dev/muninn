@@ -60,3 +60,14 @@ public, so it cannot be run here; the numbers are a reference, not a comparison.
 ## What is reported regardless of outcome
 
 `results.jsonl` (every cell), `summary.md`, cost per cell, and the exclusion ledger.
+
+## Amendments (recorded before the full run; the decision rule is unchanged)
+
+- 2026-09-12, after the pilot (haiku 1×1×2 and sonnet 1×1×2 on
+  `engine-s12-why-responder`, no full-run cell executed): the s12 oracle's second
+  condition matched the pristine file through an unrelated fixture line in section 6
+  (`v1/sync … muninn why`) and missed a correct edit that wrapped `muninn why` and `v1`
+  across a line break. The oracle now scopes all three conditions to section 12 (text
+  flattened to one line) and requires `v1` not to be followed by `/`, `.` or an
+  alphanumeric. Verified: exit 1 on the pristine file, exit 0 on the pilot `off` edit
+  with the sidecar row also fixed. Pilot cells are not part of the reported runs.

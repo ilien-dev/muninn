@@ -326,10 +326,17 @@ fn run_cell(
                 c.wait()
             });
         // keep the diff for audit before the worktree goes away
-        if let Ok(d) = Command::new("git").current_dir(&dir).args(["diff"]).output() {
+        if let Ok(d) = Command::new("git")
+            .current_dir(&dir)
+            .args(["diff"])
+            .output()
+        {
             let diffs = work.parent().unwrap_or(work).join("diffs");
             let _ = std::fs::create_dir_all(&diffs);
-            let _ = std::fs::write(diffs.join(format!("r{run}-{}-{arm}.patch", task.id)), &d.stdout);
+            let _ = std::fs::write(
+                diffs.join(format!("r{run}-{}-{arm}.patch", task.id)),
+                &d.stdout,
+            );
         }
         let (tok, recs, p95) = measure_store(&dir);
         cell.delivered_tokens = tok;
@@ -537,6 +544,7 @@ pub fn summary(cells: &[Cell], cfg: &Config) -> String {
     s
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     config: &Path,
     out_dir: &Path,
@@ -545,6 +553,7 @@ pub fn run(
     pilot: bool,
     runs_override: Option<usize>,
     model_override: Option<String>,
+    jobs: usize,
 ) -> Result<()> {
     let text =
         std::fs::read_to_string(config).with_context(|| format!("reading {}", config.display()))?;
@@ -631,43 +640,61 @@ pub fn run(
     };
 
     let results_path = out_dir.join("results.jsonl");
-    let mut results = std::fs::OpenOptions::new()
+    let results = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&results_path)?;
-    let mut cells: Vec<Cell> = Vec::new();
-    for (order, (run, tid, arm)) in plan.iter().enumerate() {
-        let task = cfg.tasks.iter().find(|t| &t.id == tid).unwrap();
-        print!("[{:>3}/{}] run {run} {tid} {arm} … ", order + 1, plan.len());
-        std::io::stdout().flush().ok();
-        let cell = run_cell(
-            &cfg,
-            muninn,
-            &repo,
-            &seeds,
-            control_db.as_deref(),
-            task,
-            arm,
-            *run,
-            order,
-            &work,
-        );
-        println!(
-            "{} ({:.0}s, {} tok, ${:.3}){}",
-            cell.status,
-            cell.duration_ms as f64 / 1000.0,
-            cell.delivered_tokens,
-            cell.cost_usd.unwrap_or(0.0),
-            cell.error
-                .as_ref()
-                .map(|e| format!(" — {e}"))
-                .unwrap_or_default()
-        );
-        writeln!(results, "{}", serde_json::to_string(&cell)?)?;
-        cells.push(cell);
-        let s = summary(&cells, &cfg);
-        std::fs::write(out_dir.join("summary.md"), &s)?;
-    }
+    // Cells are independent (own worktree, own store); `jobs` of them run at once.
+    // Results are appended in completion order; `order` keeps the planned position.
+    let state = std::sync::Mutex::new((results, Vec::<Cell>::new()));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let jobs = jobs.max(1).min(plan.len().max(1));
+    std::thread::scope(|scope| {
+        for _ in 0..jobs {
+            scope.spawn(|| loop {
+                let order = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some((run, tid, arm)) = plan.get(order) else {
+                    break;
+                };
+                let task = cfg.tasks.iter().find(|t| &t.id == tid).unwrap();
+                println!("[{:>3}/{}] run {run} {tid} {arm} …", order + 1, plan.len());
+                let cell = run_cell(
+                    &cfg,
+                    muninn,
+                    &repo,
+                    &seeds,
+                    control_db.as_deref(),
+                    task,
+                    arm,
+                    *run,
+                    order,
+                    &work,
+                );
+                println!(
+                    "[{:>3}/{}] run {run} {tid} {arm} → {} ({:.0}s, {} tok, ${:.3}){}",
+                    order + 1,
+                    plan.len(),
+                    cell.status,
+                    cell.duration_ms as f64 / 1000.0,
+                    cell.delivered_tokens,
+                    cell.cost_usd.unwrap_or(0.0),
+                    cell.error
+                        .as_ref()
+                        .map(|e| format!(" — {e}"))
+                        .unwrap_or_default()
+                );
+                let mut g = state.lock().unwrap();
+                let (results, cells) = &mut *g;
+                if let Ok(line) = serde_json::to_string(&cell) {
+                    let _ = writeln!(results, "{line}");
+                }
+                cells.push(cell);
+                let s = summary(cells, &cfg);
+                let _ = std::fs::write(out_dir.join("summary.md"), &s);
+            });
+        }
+    });
+    let cells = state.into_inner().unwrap().1;
     println!("\n{}", summary(&cells, &cfg));
     Ok(())
 }
