@@ -28,6 +28,14 @@ set of 100 hand-labelled rule candidates. Gate: precision ≥ 0.90, recall of
    - `holdout2.txt` / `labels2.jsonl` (20 files, seed 11): fetched after the last
      pattern change, never inspected before labelling. **This is the gate measurement.**
 
+## First hold-out
+
+Precision before tuning on `holdout.txt`/`labels.jsonl` (24 files, seed 7) is recorded
+only as 0.837 (recall 0.932). The raw correct/total counts behind that figure are not
+recorded anywhere in this repo — not in this file's history, not in a log — and the
+pre-tuning classifier state can't be re-run to recover them, so correct/total is not
+given here.
+
 ## Numbers (holdout 2)
 
 | | count |

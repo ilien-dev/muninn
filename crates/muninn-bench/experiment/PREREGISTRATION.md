@@ -122,3 +122,12 @@ Same design, decision rule, model, runs and arms. Changes, all fixed before runn
   agent that thought of grepping `~/.claude/projects` could find the numbers without
   memory. Run 1 showed no cell doing so; run 2 cells are checked for it in their patches
   and command logs.
+- Pilot for run 2 (1 run, off + literal, 14 cells, $4.0): `off` failed all five fact
+  tasks and passed s12 (the fair oracle makes s12 partly inferable: 3/5 in run 1); the
+  `off` cell for `fact-gate1-first-holdout` found the same figure as a ratio (0.837) in
+  GATE1.md, so that fact is in the repository and the task is dropped. Two defects of the
+  runner found and fixed before run 2: cells had no boot block (`--no-boot-block`), so
+  the agent had no instruction on what a `[muninn:episode]` block is — arms with Muninn
+  (literal, control) now get it, `off` does not, as the plan states; and the saved patch
+  omitted new files, so `--rescore` could not have scored the fact tasks — patches now
+  include untracked files, and each cell's model output is saved under `logs/`.
