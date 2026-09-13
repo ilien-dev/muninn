@@ -222,3 +222,30 @@ fixes): off 1/3, unfiltered 1/3, literal 3/3, retired-served 0.
 
 sonnet: literal − unfiltered +0.222 [+0.111, +0.333], retired served 0, unsafe 0 %.
 haiku: +0.185 [+0.074, +0.296], retired served 0, unsafe 0 %. Report: GATE3.md.
+
+## Gate 4, condition 1 — cue delivery vs lexical-only (pre-registered 2026-09-13, before any grid cell)
+
+Question: when a recorded decision is anchored to a file and the agent touches that
+file, does cue-anchored delivery (dir / symbol / event cues fired by the turn context)
+change the outcome beyond what lexical recall of the prompt already gives, and is the
+effect content rather than length?
+
+Design: `cues/scenarios.py` → eight decisions anchored to eight files (one per crate
+directory) of the repository at `base_ref`, each naming a token absent from the
+repository that the change to that file must carry; one task per file naming the file
+and the change, never the token, sharing as few words as possible with the record.
+Cells as in Gate 3 (single-commit archive, store outside, symbol graph of the checkout
+indexed into the store, no mirror). Arms: `off`; `lexical` (Muninn with cues switched
+off: `MUNINN_NO_CUES`); `literal` (cues + lexical, the shipped engine); `control`
+(length-matched irrelevant content). 3 runs, claude-sonnet-5. Metrics: pass (token in
+the edited file); cue fires per cell from the delivery log (`cue:` reasons); tokens.
+
+Decision rule (plan, Gate 4 §1): literal − lexical > 0 with a 95 % bootstrap CI
+excluding 0, and control − off with a CI including 0 (or a point estimate below half
+the literal effect). If cues do not beat lexical-only, F3 reduces to reinjection on
+compaction (decay probe below), as the plan states.
+
+Measured before this registration, no model involved: decay probe — ten invariants,
+100 forced compactions (PostCompact hook with epoch bump), 100/100 compactions delivered
+all ten (1 000/1 000 facts), hook 1.4 ms median / 2.5 ms max. The published
+without-harness figure is 106/108 losses [K1]; it is cited, not re-measured.

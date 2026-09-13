@@ -198,6 +198,21 @@ fn seed_store_arm(
     records: Option<&Path>,
     arm: &str,
 ) -> Result<i64> {
+    seed_store_full(muninn, dir, seeds, boot, records, arm, None)
+}
+
+/// `source`: the checkout whose symbol graph goes into the store before the seeded
+/// records are imported, so their symbol cues come from the graph, not the fallback.
+#[allow(clippy::too_many_arguments)]
+fn seed_store_full(
+    muninn: &Path,
+    dir: &Path,
+    seeds: &[PathBuf],
+    boot: bool,
+    records: Option<&Path>,
+    arm: &str,
+    source: Option<&Path>,
+) -> Result<i64> {
     let mut args = vec!["--cwd", dir.to_str().unwrap(), "init", "--keep-native"];
     if !boot {
         args.push("--no-boot-block");
@@ -210,6 +225,14 @@ fn seed_store_arm(
             "ingest",
             s.to_str().unwrap(),
         ]))?;
+    }
+    if let Some(src) = source {
+        run_ok(
+            Command::new(muninn)
+                .env("MUNINN_ROOT", dir)
+                .env("MUNINN_SOURCE_ROOT", src)
+                .args(["--cwd", dir.to_str().unwrap(), "symbols"]),
+        )?;
     }
     if let Some(r) = records {
         run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
@@ -350,7 +373,11 @@ fn run_cell(
     let dir = work.join(format!("cell-r{run}-{}-{arm}", task.id));
     // the store lives outside the checkout: an agent that reads its own working tree
     // must not find the database (retired flags included) around the hooks
-    let store = work.join(format!("store-r{run}-{}-{arm}", task.id));
+    let store = work
+        .parent()
+        .unwrap_or(work)
+        .join("stores")
+        .join(format!("store-r{run}-{}-{arm}", task.id));
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&store);
     let res: Result<()> = (|| {
@@ -394,16 +421,16 @@ fn run_cell(
         }
         std::fs::create_dir_all(store.join(".git"))?;
         let seed_records = cfg.seed_records.as_deref().map(expand);
-        cell.stored_episodes =
-            seed_store_arm(muninn, &store, seeds, false, seed_records.as_deref(), arm)?;
-        // the symbol graph of the checkout, into the store (symbol cues need it), then
-        // the cues of the seeded records
-        let _ = run_ok(
-            Command::new(muninn)
-                .env("MUNINN_ROOT", &store)
-                .env("MUNINN_SOURCE_ROOT", &dir)
-                .args(["--cwd", store.to_str().unwrap(), "symbols"]),
-        );
+        cell.stored_episodes = seed_store_full(
+            muninn,
+            &store,
+            seeds,
+            false,
+            seed_records.as_deref(),
+            arm,
+            Some(&dir),
+        )?;
+        // the write path once, so the store starts warm (anchors, cues, sidecar)
         let _ = run_ok(
             Command::new(muninn)
                 .env("MUNINN_ROOT", &store)
