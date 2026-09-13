@@ -478,7 +478,7 @@ def run_todo_ledger(
     ledger: list[dict[str, Any]] = []
     state_query_counts_by_day: dict[str, dict[str, int]] = {}
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{_os.getpid()}"
     run_prefix = f"muninn-ledger-{timestamp}-{_sanitize_model_label(model)}"
     default_log_name = f"{run_prefix}/{run_prefix}.jsonl"
     resolved_log_path = _resolve_output_path(
