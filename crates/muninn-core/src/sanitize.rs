@@ -53,6 +53,21 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> &str {
     }
 }
 
+/// Read a file as text only if it is a regular file, and at most `max_bytes` of it.
+/// A device, FIFO or symlink to one (`/dev/full` in the fault suite) never blocks a
+/// hook; an oversized log is folded in pieces by successive runs.
+pub fn read_regular_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> {
+    use std::io::Read;
+    let f = std::fs::File::open(path)?;
+    let md = f.metadata()?;
+    if !md.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    let mut buf = Vec::with_capacity(md.len().min(max_bytes) as usize);
+    f.take(max_bytes).read_to_end(&mut buf)?;
+    Ok(from_bytes_lossy(&buf))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,19 +94,4 @@ mod tests {
     fn truncate_on_boundary() {
         assert_eq!(truncate_chars("héllo", 2), "hé");
     }
-}
-
-/// Read a file as text only if it is a regular file, and at most `max_bytes` of it.
-/// A device, FIFO or symlink to one (`/dev/full` in the fault suite) never blocks a
-/// hook; an oversized log is folded in pieces by successive runs.
-pub fn read_regular_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> {
-    use std::io::Read;
-    let f = std::fs::File::open(path)?;
-    let md = f.metadata()?;
-    if !md.is_file() {
-        return Err(std::io::Error::other("not a regular file"));
-    }
-    let mut buf = Vec::with_capacity(md.len().min(max_bytes) as usize);
-    f.take(max_bytes).read_to_end(&mut buf)?;
-    Ok(from_bytes_lossy(&buf))
 }
