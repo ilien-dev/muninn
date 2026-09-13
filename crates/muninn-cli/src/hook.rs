@@ -141,6 +141,21 @@ fn session_start(
 /// Experiment arms are selected by `MUNINN_ARM`: `literal` (default), `off`
 /// (no delivery), `control` (length-matched irrelevant episodes from the store at
 /// `MUNINN_CONTROL_DB`). Everything else about the hook is identical across arms.
+/// Dir/symbol cue delivery (prompt time and tool time) is opt-in: the Gate 4 grid did
+/// not distinguish its gain from lexical recall (+0.083 [−0.083, +0.250]), so the shipped
+/// default is lexical recall plus event reinjection (session start, compaction), which
+/// the decay probe measured at 100/100. `MUNINN_CUES=1|0` overrides `.muninn/config.json`.
+fn cues_enabled(paths: &ProjectPaths) -> bool {
+    if let Ok(v) = std::env::var("MUNINN_CUES") {
+        return v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on");
+    }
+    std::fs::read_to_string(paths.muninn_dir.join("config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("cues").and_then(|c| c.as_bool()))
+        .unwrap_or(false)
+}
+
 fn arm() -> String {
     std::env::var("MUNINN_ARM").unwrap_or_else(|_| "literal".into())
 }
@@ -261,7 +276,7 @@ fn deliver_fused(
     // symbols the prompt itself names
     ctx.symbols.extend(cue::lexical_symbols(prompt, 6));
     // the lexical-only arm of the cue experiment switches the trigger conditions off
-    let cue_hits = if std::env::var_os("MUNINN_NO_CUES").is_some() {
+    let cue_hits = if std::env::var_os("MUNINN_NO_CUES").is_some() || !cues_enabled(paths) {
         vec![]
     } else {
         cue::evaluate(db, &ctx, exclude)?
@@ -461,7 +476,11 @@ fn cue_delivery(
     when: &str,
 ) -> Option<String> {
     use muninn_core::cue;
-    if std::env::var_os("MUNINN_NO_CUES").is_some() || arm() == "off" || arm() == "control" {
+    if std::env::var_os("MUNINN_NO_CUES").is_some()
+        || arm() == "off"
+        || arm() == "control"
+        || !cues_enabled(paths)
+    {
         return None;
     }
     let exclude = crate::delivery::delivered_ids(paths, session);

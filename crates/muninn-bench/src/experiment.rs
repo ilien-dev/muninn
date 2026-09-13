@@ -503,6 +503,10 @@ fn run_cell(
         }
         if arm == "lexical" {
             cmd.env("MUNINN_NO_CUES", "1");
+        } else {
+            // experiments measure the full mechanism; the shipped default keeps
+            // dir/symbol cues off (GATE4.md)
+            cmd.env("MUNINN_CUES", "1");
         }
         {
             use std::os::unix::process::CommandExt;
