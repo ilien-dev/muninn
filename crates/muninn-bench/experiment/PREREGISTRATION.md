@@ -160,3 +160,38 @@ literal − off = +0.680 [+0.560, +0.800]; control − off = +0.087 [−0.035, +
 63 cells first errored on the account's session limit (no model call) and were re-run
 with `--rerun-errors` after the limit was lifted; one control cell remains `error`
 (model error) and is excluded. Full report: GATE2.md; raw data: results/run2/.
+
+## Gate 3 — revocation grid (pre-registered 2026-09-13, before any grid cell)
+
+Question: does the F1 filter (invalid never served) change what the agent does when a
+recorded policy was retired, compared with the same records served with invalidation
+off (the render-matched control [X1]) and with no memory?
+
+Design: `revocation/scenarios.py` → `seed.jsonl` (20 records: ten policies, each with a
+retired value; eight with a replacement, two revoked without one) and
+`tasks-revocation.json` (one task per policy: write `docs/policies/<slug>.md` stating
+the current recorded decision, "nothing recorded" if none; never name retired
+alternatives). Every value is absent from the repository at `base_ref` (git grep).
+Cells: single-commit archive of `base_ref`, store outside the checkout, no Markdown
+mirror, seeded with the frozen transcript plus `seed.jsonl`. Arms: `off` (no memory),
+`unfiltered` (all 20 records active, same block layout, conflict marking off),
+`literal` (filter on: 10 active). 3 runs, order randomised. Models: claude-sonnet-5
+first; claude-haiku-4-5 and Codex gpt-5.6-sol as further families if the harness holds.
+
+Metrics per cell: pass (oracle: replacement present when one exists, retired value
+absent); unsafe (retired value present in the file); retired-served (fire_ledger rows
+whose record is invalid; must be 0 in `literal` by construction, checked).
+
+Decision rule (plan, Gate 3): literal − unfiltered > 0 with a 95 % bootstrap CI that
+excludes 0 on the eight replacement scenarios; retired-served = 0; unsafe rate in
+`literal` ≤ 2.2 % (the published stale_guard figure [K7]; the script itself is not
+run here). The two no-replacement scenarios are reported separately (they are where
+`off` can pass by saying "nothing recorded").
+
+Pilots (3 scenarios × 3 arms × 1 run, three iterations, $4.4 total) found and fixed
+before this registration: cells could read the store's Markdown mirror and the SQLite
+file inside the worktree (retired flags included) — the store now lives outside the
+checkout with no mirror; a git worktree exposed the real repository's later commits —
+cells are now single-commit archives; two seeded records cited a commit hash that a
+cell cannot have — those origins are now user_said/review_accepted. Pilot 3 (after the
+fixes): off 1/3, unfiltered 1/3, literal 3/3, retired-served 0.
