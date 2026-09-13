@@ -1,0 +1,13 @@
+{
+  "name": "muninn",
+  "version": "0.1.0",
+  "description": "Local deterministic memory engine: filters stale facts, compiles rules into enforceable controls, delivers cue-anchored memory under a hard token budget. Single-digit-millisecond hooks, no server, no model in the read path.",
+  "author": { "name": "Muninn contributors", "url": "https://github.com/muninn-dev/muninn" },
+  "homepage": "https://github.com/muninn-dev/muninn",
+  "repository": "https://github.com/muninn-dev/muninn",
+  "license": "AGPL-3.0-only",
+  "keywords": ["memory", "hooks", "codex", "deterministic"],
+  "hooks": "./hooks/hooks.json",
+  "skills": "./skills/",
+  "commands": "./commands/"
+}

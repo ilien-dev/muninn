@@ -1,0 +1,35 @@
+[package]
+name = "muninn-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "muninn: local deterministic memory engine for Claude Code and Codex"
+
+[[bin]]
+name = "muninn"
+path = "src/main.rs"
+
+[dependencies]
+muninn-core = { path = "../muninn-core" }
+muninn-capture = { path = "../muninn-capture" }
+muninn-compile = { path = "../muninn-compile" }
+muninn-embed = { path = "../muninn-embed" }
+muninn-symbols = { path = "../muninn-symbols" }
+muninn-why = { path = "../muninn-why" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+blake3.workspace = true
+
+[features]
+default = []
+exact-tokens = ["muninn-core/exact-tokens"]
+
+[dev-dependencies]
+tempfile = "3"
+rusqlite.workspace = true
+
+[[test]]
+name = "fault"
+path = "tests/fault.rs"

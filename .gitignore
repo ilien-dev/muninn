@@ -1,0 +1,6 @@
+/target
+/.muninn/muninn.db*
+/.muninn/log/
+/.muninn/compact/
+*.jsonl.folding
+plugin/bin/
