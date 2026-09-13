@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PM-Bench scaffold, round 4: Muninn as the prospective intention store.
+PM-Bench scaffold, rounds 4-5: Muninn as the prospective intention store.
 
 The model does not own a ledger. Intentions are typed records in a Muninn store; lifecycle
 (add / reschedule / override / cancel / done, daily re-arm, day-scoped carry, same-day expiry)
@@ -476,6 +476,8 @@ def decide_user(day: str, clock_text: str | None, view: StepView, replies: dict[
         parts.append("(nothing eligible now)")
     for it in board:
         flag = "  <-- DUE NOW BY CLOCK" if it.iid in clock_due else ""
+        if it.trigger.get("kind") == "channel":
+            flag += "  (satisfied only by a state channel reply, never by the vignette)"
         parts.append(f"- {it.iid}: {it.text} — {it.trigger_text()}{flag}")
     parts.append("\n" + view.menu_text.strip())
     return "\n".join(parts)
@@ -630,6 +632,7 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
             day_start_minutes = PM_BENCH.build_day_start_minutes(day)  # used only to answer clock queries, as the benchmark does
             last_query_step_by_channel: dict[str, int] = {}
             last_snapshot_item_by_channel: dict[str, dict[str, Any]] = {}
+            last_reply_today: dict[str, str] = {}
 
             day_start_ms = fake_ms(day_index, 0)
             store.start_day(day_name, day_start_ms)
@@ -690,12 +693,15 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
                 answered: list[str] = []
                 if store.watched_channels(day_name):
                     # a pending intention watches some channel: observe every channel, so a
-                    # channel mistyped at Form time still reaches the judge
+                    # channel mistyped at Form time still reaches the judge. Round 5: a reply is
+                    # new information only if it is not empty and differs from the channel's
+                    # previous reply today (snapshot channels answer every query with their state)
                     for ch in channels_no_clock:
                         r = query(ch)
-                        if "(no updates)" not in r:
+                        if "(no updates)" not in r and r != last_reply_today.get(ch):
                             replies[ch] = r
                             answered.append(ch)
+                        last_reply_today[ch] = r
                 if answered:
                     answered = list(channels_no_clock)
 
