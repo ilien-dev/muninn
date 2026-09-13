@@ -40,7 +40,12 @@ class H(BaseHTTPRequestHandler):
             args += ["--system-prompt", system + f"\n\nAnswer in at most {max_tokens} tokens."]
         t0 = time.time()
         try:
-            out = subprocess.run(args, capture_output=True, text=True, timeout=300, env={**__import__("os").environ, "CLAUDECODE": ""})
+            # a bare directory: no project settings, no CLAUDE.md, no plugin scope, no
+            # .muninn store, so the model under test sees only the scaffold's prompt
+            cwd = __import__("tempfile").gettempdir() + "/muninn-bridge-cwd"
+            __import__("os").makedirs(cwd, exist_ok=True)
+            out = subprocess.run(args, capture_output=True, text=True, timeout=300, cwd=cwd,
+                                 env={**__import__("os").environ, "CLAUDECODE": ""})
             v = json.loads(out.stdout) if out.stdout.strip() else {}
             text = v.get("result", "") if not v.get("is_error") else ""
             usage = v.get("usage", {}) or {}
