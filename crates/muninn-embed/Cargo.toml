@@ -3,8 +3,15 @@ name = "muninn-embed"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Embedding sidecar: static model2vec embeddings computed on the asynchronous write path, exact kNN, never in a read hook"
 
 [dependencies]
 muninn-core = { path = "../muninn-core" }
 serde.workspace = true
 serde_json.workspace = true
+rusqlite.workspace = true
+sha2 = "0.10"
+model2vec-rs = { version = "0.2.1", default-features = false, features = ["fancy-regex", "local-only"] }
+
+[dev-dependencies]
+tempfile = "3"

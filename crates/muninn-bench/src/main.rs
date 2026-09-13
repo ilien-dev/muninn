@@ -79,6 +79,17 @@ enum Cmd {
         muninn: Option<PathBuf>,
     },
     /// Performance contracts
+    /// Embedding sidecar measurements on an existing store: load, encode 200, kNN
+    /// bit-identity over 1 000 repetitions, recall@10 lexical vs hybrid (self-retrieval)
+    EmbedBench {
+        /// Project root with a populated .muninn store
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long, default_value_t = 1000)]
+        reps: usize,
+        #[arg(long)]
+        json: bool,
+    },
     Perf {
         /// Fail on any contract violation
         #[arg(long)]
@@ -671,6 +682,7 @@ fn main() -> Result<()> {
             holdout,
             json,
         } => rules_cmd(&dir, sample, n, seed, labels, list, holdout, json),
+        Cmd::EmbedBench { root, reps, json } => embed_bench(&root, reps, json),
         Cmd::Perf {
             strict,
             records,
@@ -809,4 +821,115 @@ fn tempfile_dir() -> Result<PathBuf> {
     }
     std::fs::create_dir_all(&base)?;
     Ok(base)
+}
+
+/// Sidecar sub-gate measurements (plan, Phase 3 §10). recall@10 is self-retrieval: the
+/// query is the last 200 characters of a record's body (≥ 500 chars), the target is
+/// that record; hybrid = RRF(k=60) of lexical top-10 and exact kNN top-10.
+fn embed_bench(root: &std::path::Path, reps: usize, json: bool) -> Result<()> {
+    use muninn_core::db::Mode;
+    use std::collections::HashSet;
+    let paths = muninn_core::ProjectPaths::from_root(root);
+    let db = muninn_core::Db::open(&paths.db_path(), Mode::ReadWrite)?;
+    let emb = muninn_embed::Embedder::load_default().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let st = muninn_embed::embed_pending(&db, &emb, true).map_err(|e| anyhow::anyhow!("{e}"))?;
+    // encode 200 texts of ~600 chars
+    let texts: Vec<String> = (0..200)
+        .map(|i| format!("record {i} {}", "lorem ipsum dolor sit amet ".repeat(22)))
+        .collect();
+    let t0 = Instant::now();
+    let v = emb.encode(&texts);
+    let encode200_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    anyhow::ensure!(v.len() == 200);
+    // bit identity: the same query, `reps` times, must return identical ids and scores
+    let q = emb.encode_one("why did we choose exponential backoff for the webhook retries");
+    let first =
+        muninn_embed::knn(&db, &q, 10, &emb.model_id).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let t1 = Instant::now();
+    let mut identical = 0usize;
+    for _ in 0..reps {
+        let r =
+            muninn_embed::knn(&db, &q, 10, &emb.model_id).map_err(|e| anyhow::anyhow!("{e}"))?;
+        if r == first {
+            identical += 1;
+        }
+    }
+    let knn_ms = t1.elapsed().as_secs_f64() * 1000.0 / reps.max(1) as f64;
+    // recall@10 self-retrieval
+    let mut stmt = db.conn.prepare(
+        "SELECT id, body FROM record WHERE invalid=0 AND length(body) >= 500 ORDER BY id",
+    )?;
+    let rows: Vec<(i64, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    let (mut lex_hit, mut vec_hit, mut hyb_hit) = (0usize, 0usize, 0usize);
+    let none: HashSet<i64> = HashSet::new();
+    for (id, body) in &rows {
+        let tail: String = body
+            .chars()
+            .rev()
+            .take(200)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let terms = muninn_core::recall::select_terms(&db, &tail, 8).unwrap_or_default();
+        let lex: Vec<i64> = muninn_core::recall::recall(&db, &terms, 10, &none)
+            .unwrap_or_default()
+            .iter()
+            .map(|h| h.id)
+            .collect();
+        let qv = emb.encode_one(&tail);
+        let knn: Vec<i64> = muninn_embed::knn(&db, &qv, 10, &emb.model_id)
+            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .iter()
+            .map(|n| n.id)
+            .collect();
+        // RRF k=60
+        let mut score: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+        for (rank, i) in lex.iter().enumerate() {
+            *score.entry(*i).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
+        }
+        for (rank, i) in knn.iter().enumerate() {
+            *score.entry(*i).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
+        }
+        let mut fused: Vec<(i64, f64)> = score.into_iter().collect();
+        fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        let hyb: Vec<i64> = fused.iter().take(10).map(|x| x.0).collect();
+        if lex.contains(id) {
+            lex_hit += 1;
+        }
+        if knn.contains(id) {
+            vec_hit += 1;
+        }
+        if hyb.contains(id) {
+            hyb_hit += 1;
+        }
+    }
+    let n = rows.len().max(1) as f64;
+    let out = serde_json::json!({
+        "model": emb.model_id, "records_embedded": st.embedded, "load_ms": emb.load_ms,
+        "encode_records_ms": st.encode_ms, "encode_200_ms": encode200_ms,
+        "knn_reps": reps, "knn_identical": identical, "knn_ms_per_query": knn_ms,
+        "recall_queries": rows.len(),
+        "recall_at_10": {"lexical": lex_hit as f64 / n, "vector": vec_hit as f64 / n, "hybrid_rrf": hyb_hit as f64 / n},
+    });
+    if json {
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else {
+        println!(
+            "embed bench on {}: {} records, model {}",
+            root.display(),
+            st.embedded,
+            emb.model_id
+        );
+        println!(
+            "  load {:.1} ms · encode {} records {:.1} ms · encode 200 texts {:.1} ms",
+            emb.load_ms, st.embedded, st.encode_ms, encode200_ms
+        );
+        println!("  kNN: {identical}/{reps} identical · {knn_ms:.3} ms/query");
+        println!("  recall@10 (self-retrieval, {} queries): lexical {:.3} · vector {:.3} · hybrid RRF {:.3}", rows.len(), lex_hit as f64 / n, vec_hit as f64 / n, hyb_hit as f64 / n);
+    }
+    Ok(())
 }
