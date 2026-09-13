@@ -288,15 +288,14 @@ pub fn run(
             let a = db
                 .count("SELECT count(*) FROM record WHERE invalid=0")
                 .unwrap_or(-1);
-            let f = if live {
-                db.count("SELECT count(*) FROM record_fts").unwrap_or(-2)
-            } else {
-                db.meta_get("fts_rows")
-                    .ok()
-                    .flatten()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(-2)
-            };
+            // `count(*)` on an external-content FTS5 table reads the content table, invalid
+            // rows included, so it is not the index; the trigger-maintained counter is
+            let f = db
+                .meta_get("fts_rows")
+                .ok()
+                .flatten()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(-2);
             if a == f {
                 check(
                     4,

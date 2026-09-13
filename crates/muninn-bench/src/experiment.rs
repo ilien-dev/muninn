@@ -504,6 +504,8 @@ fn run_cell(
         }
         if arm == "lexical" {
             cmd.env("MUNINN_NO_CUES", "1");
+        } else if arm == "lexical-plain" {
+            cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_NO_EXPAND", "1");
         } else {
             // experiments measure the full mechanism; the shipped default keeps
             // dir/symbol cues off (GATE4.md)

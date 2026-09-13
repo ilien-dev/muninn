@@ -468,7 +468,7 @@ fn priority(kind: &str) -> u8 {
 /// Load active records by id as hits (score = 0), for rendering.
 pub fn hits_for(db: &Db, ids: &[i64]) -> Result<Vec<Hit>> {
     let mut out = Vec::new();
-    let mut st = db.conn.prepare_cached("SELECT id, kind, subject, object, body, origin, trust, created_at, session_id FROM record WHERE id = ?1 AND invalid = 0")?;
+    let mut st = db.conn.prepare_cached("SELECT id, kind, subject, object, body, origin, trust, created_at, session_id, transcript_ref FROM record WHERE id = ?1 AND invalid = 0")?;
     for id in ids {
         if let Ok(h) = st.query_row([id], |r| {
             Ok(Hit {
@@ -482,6 +482,7 @@ pub fn hits_for(db: &Db, ids: &[i64]) -> Result<Vec<Hit>> {
                 created_at: r.get(7)?,
                 session_id: r.get(8)?,
                 score: 0.0,
+                transcript_ref: r.get(9)?,
             })
         }) {
             out.push(h);
@@ -548,8 +549,13 @@ pub fn merge(
     let mut reasons = Vec::new();
     let mut gated = Vec::new();
     let block_chars = (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120);
+    let mut turns_seen: HashSet<String> = HashSet::new();
     for id in order {
         let h = by_id[&id];
+        if !turns_seen.insert(crate::recall::turn_key(&h.subject)) {
+            gated.push(id);
+            continue;
+        }
         let short: String = h.session_id.chars().take(8).collect();
         let body = best_passage(&h.body, terms, block_chars);
         let frame = if h.trust < 1 {
@@ -558,14 +564,15 @@ pub fn merge(
             ""
         };
         let block = format!(
-            "[muninn:{}] #{} · {} · origin: {} · trust {}{}\n{}\n",
+            "[muninn:{}] #{} · {} · origin: {} · trust {}{}\n{}\n{}",
             h.kind,
             h.id,
             short,
             h.origin,
             h.trust,
             frame,
-            body.trim_end()
+            body.trim_end(),
+            crate::recall::evidence_line(&h.transcript_ref)
         );
         let t = estimate(&block);
         if tokens + t > budget {

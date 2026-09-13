@@ -19,6 +19,7 @@ pub struct MaintainStats {
     pub anchors_retired: usize,
     pub symbols_indexed: usize,
     pub cues_derived: usize,
+    pub variants_retired: usize,
     pub ms: u128,
 }
 
@@ -229,7 +230,10 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
     // the sidecar catches up here, never in a read hook; no model → stays cold
     if let Ok(emb) = muninn_embed::Embedder::load_default() {
         match muninn_embed::embed_pending(&db, &emb, false) {
-            Ok(s) => st.embedded = s.embedded,
+            Ok(s) => {
+                st.embedded = s.embedded;
+                st.variants_retired = s.variants_retired;
+            }
             Err(e) => output::err(&format!("muninn maintain: embed: {e}")),
         }
     }
@@ -239,8 +243,8 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         output::json(&st);
     } else {
         output::out(&format!(
-            "maintain: {} ingested, {} commit(s), {} revert(s), {} anchor(s) retired, {} file(s) projected, {} embedded, {} symbol file(s) indexed, {} ms",
-            st.ingested, st.commits, st.reverts, st.anchors_retired, st.projected, st.embedded, st.symbols_indexed, st.ms
+            "maintain: {} ingested, {} commit(s), {} revert(s), {} anchor(s) retired, {} file(s) projected, {} embedded ({} variant(s) retired), {} symbol file(s) indexed, {} ms",
+            st.ingested, st.commits, st.reverts, st.anchors_retired, st.projected, st.embedded, st.variants_retired, st.symbols_indexed, st.ms
         ));
     }
     0
