@@ -184,6 +184,8 @@ steps, 81 due items), 3 runs per arm:
 | todo_ledger (PM-Bench's own) | 78.3 · 80.0 · 81.1 | **79.8 (1.4)** | 9.5 % | 33.3 % | 63.9 % | 39.3 % | 2.5 % |
 | muninn_store, round 4 | 96.2 · 96.2 · 92.4 | **94.9 (2.2)** | 0.0 % | 11.1 % | 100 % | 96.6 % | 2.9 % |
 | muninn_store, round 5 | 96.2 · 95.7 · 96.9 | **96.3 (0.6)** | 0.0 % | 11.1 % | 100 % | 100 % | 1.7 % |
+| muninn_store, round 6 (negative) | 95.0 · 95.7 · 95.6 | 95.4 (0.4) | 0.0 % | 11.1 % | 100 % | 94.9 % | 3.4 % |
+| muninn_store, round 7 (ships) | 95.7 · 97.5 · 96.9 | **96.7 (0.9)** | 0.0 % | 14.8 % | 100 % | 97.4 % | 2.1 % |
 
 Lines from the literature: 65.1 % (the paper's best scaffold, a GPT-5.4 agent `[V1]`) and
 82.9 % (PIS on DeepSeek-Chat `[V2]`). Both are other models; PIS's code is not released, so it
@@ -210,9 +212,26 @@ output was kept and `pmbench/reconstruct_from_stdout.py` rebuilt the three logs 
 run whose original log survived the rebuilt entries are identical (80/80, both arms); the
 collided originals are kept under `original-collided/`. The launcher now staggers launches.
 
+**Rounds 6 and 7 — the residual judge and Form errors.** Round 6 tried seven prompt rules at
+once plus querying channels at every step: the two targeted classes disappeared in every run
+(Monday's follow-up text matched; "You rinse a dish" no longer taken as dinner) but typing "a
+message that reaches the person" as an event made the judge fire the dry-cleaning and receipt
+intentions on Friday's rack vignette, and on Tuesday step 8 the model returned a handle that was
+not on the menu; 95.4 %, below round 5, reverted. Round 7 kept the four rules that held (a
+scene is not an instruction; the cue is the event without its purpose; the cue must be
+explicitly present; intentions sharing a cue are due together): 96.7 %, not below round 5 and
+within the run-to-run spread of it, so it ships on the strength of the traces, not the mean.
+What remains in every round-7 run: Thursday's "your package is visible behind the counter"
+(the benchmark counts "reach the counter" as due; the judge does not), and Friday's dry
+cleaning, whose override says "wait for the confirmation email": typed as an email-channel cue
+it fires one step early on the receipt's confirmation email in the channel, while the benchmark
+delivers the dry-cleaning cue in the next vignette. Both are ambiguities of the week; forcing
+either trades false alarms elsewhere. Data: `results/pmbench/round6/`, `results/pmbench/round7/`.
+
 **Decision rule, applied.** Pre-registered: claim only if mean set-F1 ≥ 82.9 % and above both
 baselines by more than the round-2 spread (±4). Round 5: 96.3 % vs 79.8 % and 77.9 %. Met.
-Round 5 is not below round 4, so the round-5 rule ships as the scaffold. Caveats that stay
+Round 5 is not below round 4, so the round-5 rule ships; round 7 (96.7 %) is the shipped
+prompt set, round 6 (95.4 %) was reverted. Caveats that stay
 attached to the claim: the 82.9 % line is another model; three runs per arm; the scaffold is an
 in-loop agent for PM-Bench, not the harness delivery path of F3 — what transfers to F3 is the
 mechanism (lifecycle in code, cue firing by the store, the model only forms and decides).
