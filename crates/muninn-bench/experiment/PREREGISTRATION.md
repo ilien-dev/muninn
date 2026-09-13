@@ -406,3 +406,29 @@ Round 4 baselines (isolated bridge, 3 runs each): single_baseline 79.7 · 76.7 �
 runs of each arm collided on one log file (same launch second); their action logs were rebuilt
 from each run's console output and validated against the surviving original (identical). Report
 and caveats: `GATE4.md` §3 rounds 4–5; data: `results/pmbench/round4/`, `results/pmbench/round5/`.
+
+## Gate 4 §3, round 6 — prompt rules for the residual judge and Form errors (recorded 2026-09-13 08:05, before any round-6 cell runs)
+
+**Residual errors in the round-5 traces, by cause.** (a) Form read a scene as an update: at
+Friday step 5 ("The dry cleaner has your order hanging on the front rack") it emitted an
+override back to the old cue, and the real cue two steps later did not fire (all 3 runs).
+(b) Form stored the cue with its purpose ("follow-up text arrives with corrected
+instructions"); the vignette said "a follow-up text comes in with the final location" and the
+judge did not match them (2 of 3 runs, one step late). (c) The judge took an associated
+activity for the cue ("You rinse a dish" → dinner; 2 of 3 runs), which consumed the day's
+antibiotic instance. (d) Two intentions sharing a cue, one fired (1 run). (e) "Your package is
+visible behind the counter" for "when you reach the counter": the benchmark counts it due, the
+judge did not; left alone on purpose (forcing it would trade false alarms).
+
+**Change under test.** Prompt rules only, plus one code line. Form: a scene is not an
+instruction; the cue is the observable event without its purpose; a message that reaches the
+person directly is an event cue, channel only when the text says it is seen by checking a
+portal/tracker/status. Decide: the cue must be explicitly present; a notice that changes an
+intention is not evidence any cue occurred; match the event, not its detail; a channel reply
+can satisfy an event-kind intention; intentions sharing a cue are due together. Code: channels
+are queried at every step, not only while a channel-kind intention is pending.
+
+**Arm and rule.** `muninn_store` round 6, 3 runs, same model and invocation. Ships only if the
+mean set-F1 is not below round 5 (96.3 %) and the traces show no new error class; the targeted
+steps (Fri s5/s11, Mon s7/s8, Thu s9/s10, Thu s2) are checked one by one. Otherwise round 5 stays
+and round 6 is a negative result.
