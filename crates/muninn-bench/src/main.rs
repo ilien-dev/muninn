@@ -6,6 +6,8 @@
 //! `--strict` when a contract is exceeded. Every number printed is measured here,
 //! on this machine, now.
 
+mod experiment;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use muninn_core::{Db, Mode};
@@ -48,6 +50,25 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Four-arm experiment (Gate 2): see experiment/PREREGISTRATION.md
+    Experiment {
+        #[arg(long, default_value = "crates/muninn-bench/experiment/tasks.json")]
+        config: PathBuf,
+        #[arg(long, default_value = "crates/muninn-bench/experiment/out")]
+        out: PathBuf,
+        /// Print the cell plan and exit
+        #[arg(long)]
+        dry_run: bool,
+        /// One run, arms off+literal, first non-inferable task — validates the pipeline and measures cost per cell
+        #[arg(long)]
+        pilot: bool,
+        #[arg(long)]
+        runs: Option<usize>,
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        muninn: Option<PathBuf>,
+    },
     /// Performance contracts
     Perf {
         /// Fail on any contract violation
@@ -71,7 +92,7 @@ enum Cmd {
 }
 
 /// Deterministic LCG so every run measures the same data.
-struct Rng(u64);
+pub struct Rng(pub u64);
 impl Rng {
     fn next(&mut self) -> u64 {
         self.0 = self
@@ -82,6 +103,22 @@ impl Rng {
     }
     fn pick<'a>(&mut self, v: &'a [&'a str]) -> &'a str {
         v[(self.next() as usize) % v.len()]
+    }
+}
+
+/// A Zipf-distributed synthetic vocabulary: 30 frequent domain words plus 2 000
+/// rare identifiers, so posting lists look like real code discussion, not like a
+/// corpus where every record contains every term.
+fn word(rng: &mut Rng) -> String {
+    let r = rng.next() % 100;
+    if r < 55 {
+        WORDS[(rng.next() as usize) % WORDS.len()].to_string()
+    } else {
+        format!(
+            "{}{}",
+            WORDS[(rng.next() as usize) % WORDS.len()],
+            (rng.next() % 2000)
+        )
     }
 }
 
@@ -168,7 +205,7 @@ fn populate(root: &Path, records: usize, cues: usize) -> Result<()> {
                 rng.pick(WORDS)
             );
             let body: String = (0..40)
-                .map(|_| rng.pick(WORDS))
+                .map(|_| word(&mut rng))
                 .collect::<Vec<_>>()
                 .join(" ");
             st.execute(rusqlite::params![
@@ -347,7 +384,7 @@ fn ingest_200(root: &Path) -> Result<f64> {
         )?;
         for i in 0..200 {
             let body: String = (0..60)
-                .map(|_| rng.pick(WORDS))
+                .map(|_| word(&mut rng))
                 .collect::<Vec<_>>()
                 .join(" ");
             st.execute(rusqlite::params![
@@ -370,6 +407,7 @@ struct Contract {
     unit: &'static str,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rules_cmd(
     dir: &Path,
     sample: Option<PathBuf>,
@@ -583,6 +621,23 @@ fn rules_cmd(
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
+        Cmd::Experiment {
+            config,
+            out,
+            dry_run,
+            pilot,
+            runs,
+            model,
+            muninn,
+        } => {
+            let bin = muninn.unwrap_or_else(|| {
+                let mut p = std::env::current_exe().unwrap();
+                p.set_file_name("muninn");
+                p
+            });
+            anyhow::ensure!(bin.exists(), "muninn binary not found at {}", bin.display());
+            experiment::run(&config, &out, &bin, dry_run, pilot, runs, model)
+        }
         Cmd::Rules {
             dir,
             sample,

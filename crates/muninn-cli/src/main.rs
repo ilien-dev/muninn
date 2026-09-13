@@ -1,6 +1,7 @@
 //! `muninn` — one binary for the CLI and every hook entry point.
 
 mod compile_cmd;
+mod delivery;
 mod hook;
 mod init;
 mod output;
@@ -58,6 +59,10 @@ enum Cmd {
     Doctor,
     /// Hook entry point: reads the harness JSON on stdin
     Hook { event: String },
+    /// Ingest a transcript file now (what Stop/SessionEnd do automatically)
+    Ingest { transcript: PathBuf },
+    /// Show what the read path would deliver for a prompt
+    Recall { prompt: Vec<String> },
     /// Export records as JSONL (Phase 3)
     Export,
     /// Import records from JSONL or Markdown (Phase 3)
@@ -211,6 +216,64 @@ fn main() {
             }
         }
         Cmd::Hook { event } => hook::run(&event, cli.cwd),
+        Cmd::Ingest { transcript } => match Db::open(&paths.db_path(), Mode::ReadWrite)
+            .map_err(anyhow::Error::from)
+            .and_then(|db| {
+                muninn_capture::ingest::ingest_transcript(&db, &transcript, "manual")
+                    .map_err(anyhow::Error::from)
+            }) {
+            Ok(st) => {
+                if cli.json {
+                    output::json(&st)
+                } else {
+                    output::out(&format!(
+                        "ingested {} episode(s) ({} duplicates) from {} turn(s), offset {}→{}",
+                        st.inserted, st.duplicates, st.turns, st.from_offset, st.to_offset
+                    ))
+                };
+                0
+            }
+            Err(e) => {
+                output::err(&format!("muninn ingest: {e:#}"));
+                1
+            }
+        },
+        Cmd::Recall { prompt } => {
+            let p = prompt.join(" ");
+            match Db::open(&paths.db_path(), Mode::ReadOnly) {
+                Ok(db) => {
+                    let t0 = std::time::Instant::now();
+                    let terms = muninn_core::recall::select_terms(&db, &p, 8).unwrap_or_default();
+                    let d = muninn_core::recall::deliver(&db, &p, &Default::default());
+                    match d {
+                        Ok(d) => {
+                            if cli.json {
+                                output::json(
+                                    &serde_json::json!({ "terms": terms, "ids": d.ids, "tokens": d.tokens, "text": d.text, "ms": t0.elapsed().as_secs_f64() * 1000.0 }),
+                                )
+                            } else {
+                                output::out(&format!(
+                                    "terms: {}  · {} tokens · {:.2} ms",
+                                    terms.join(" "),
+                                    d.tokens,
+                                    t0.elapsed().as_secs_f64() * 1000.0
+                                ));
+                                output::out(&d.text)
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            output::err(&format!("muninn recall: {e}"));
+                            1
+                        }
+                    }
+                }
+                Err(e) => {
+                    output::err(&format!("muninn recall: {e}"));
+                    1
+                }
+            }
+        }
         Cmd::Export => not_yet("export", "Phase 3"),
         Cmd::Import => not_yet("import", "Phase 3"),
         Cmd::Why { .. } => not_yet("why", "Phase 4"),
