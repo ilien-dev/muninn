@@ -31,6 +31,9 @@ import json
 import os
 import re
 import subprocess
+import hashlib
+import urllib.request
+import platform
 import sys
 import tempfile
 import time
@@ -86,20 +89,52 @@ class StepView:
 
 
 class Claude:
-    def __init__(self, model: str, prompt_log, max_tokens: int = 700):
+    """Round 4-7: `claude -p` called directly with the bridge's flags. Round 8: when
+    `base_url` is set, every call goes through the same OpenAI-compatible bridge process the
+    PM-Bench baselines use (claude_bridge.py or codex_bridge.py), so no arm has an
+    invocation path of its own."""
+
+    def __init__(self, model: str, prompt_log, max_tokens: int = 700, base_url: str | None = None):
         self.model = model
         self.prompt_log = prompt_log
         self.max_tokens = max_tokens
+        self.base_url = base_url.rstrip("/") if base_url else None
         self.cwd = os.path.join(tempfile.gettempdir(), "muninn-bridge-cwd")
         os.makedirs(self.cwd, exist_ok=True)
         self.calls = 0
         self.est_input_tokens = 0
+
+    def _via_bridge(self, messages: list[dict[str, str]]) -> str:
+        body = json.dumps({"model": self.model, "messages": messages, "max_tokens": self.max_tokens,
+                           "temperature": 0}).encode()
+        req = urllib.request.Request(self.base_url + "/chat/completions", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=320) as r:
+            v = json.loads(r.read().decode())
+        return (v.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
 
     def call_json(self, system: str, user: str, tag: str) -> dict[str, Any] | None:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         est = PM_BENCH.estimate_input_tokens(messages)
         self.est_input_tokens += est
         self.calls += 1
+        if self.base_url:
+            text = ""
+            for attempt in range(3):
+                try:
+                    text = self._via_bridge(messages)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"bridge call error ({tag}): {exc}")
+                    text = ""
+                if text.strip():
+                    break
+                time.sleep(1.5 * (attempt + 1))
+            if self.prompt_log:
+                self.prompt_log.write(f"=== {tag} ===\n")
+                self.prompt_log.write(json.dumps(messages, indent=2, ensure_ascii=False))
+                self.prompt_log.write(f"\nRESPONSE: {text}\nEST_INPUT_TOKENS: {est}\n\n")
+                self.prompt_log.flush()
+            return parse_json_object(text)
         args = [
             "claude", "-p", user, "--model", self.model, "--output-format", "json", "--max-turns", "1",
             "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
@@ -380,6 +415,101 @@ class MuninnStore:
         return board
 
 
+class PlainStore(MuninnStore):
+    """Round 8 ablation: the identical scaffold with the Muninn binary removed. Records live
+    in a Python dict; the three store operations are re-implemented with the semantics the
+    engine documents (`muninn-core/src/cue.rs::evaluate`): a record fires when every cue of
+    its group matches — `after` when the fake clock has passed its key, `keyword` when the
+    key is among this step's answered channels; hits ordered by record id. Nothing else in
+    the scaffold changes, so muninn_store − plain_store measures the store implementation and
+    nothing else."""
+
+    def __init__(self, out_dir: str, day_names: list[str]):
+        self.root = tempfile.mkdtemp(prefix="pmbench-plain-", dir=out_dir)
+        self.day_names = day_names
+        self.intentions: dict[str, Intention] = {}
+        self.by_record: dict[int, str] = {}
+        self.next_id = 1
+        self.events: list[dict[str, Any]] = []
+        self._records: dict[int, list[dict[str, Any]]] = {}   # active record id -> cues
+        self._next_record = 1
+        self._log = open(os.path.join(self.root, "plain-store.jsonl"), "w", encoding="utf-8", buffering=1)
+
+    def _run(self, args: list[str], now_ms: int | None = None):  # never called
+        raise RuntimeError("PlainStore does not run the muninn binary")
+
+    def _import(self, it: Intention, day: str, created_ms: int) -> None:
+        rid = self._next_record
+        self._next_record += 1
+        self._records[rid] = self._cues_for(it, day)
+        it.record_id = rid
+        self.by_record[rid] = it.iid
+        self._log.write(json.dumps({"op": "import", "id": rid, "iid": it.iid, "cues": self._records[rid]}) + "\n")
+
+    def _revoke(self, it: Intention, reason: str) -> None:
+        if it.record_id is not None:
+            self._records.pop(it.record_id, None)
+            self.by_record.pop(it.record_id, None)
+            self._log.write(json.dumps({"op": "revoke", "id": it.record_id, "reason": reason}) + "\n")
+            it.record_id = None
+
+    def board(self, day: str, clock_minutes: int | None, answered_channels: list[str]) -> list[Intention]:
+        d = self.day_index(day)
+        now_ms = fake_ms(d, clock_minutes if clock_minutes is not None else 0)
+        keys = {channel_key(c) for c in answered_channels}
+        fired: list[int] = []
+        for rid in sorted(self._records):
+            cues = self._records[rid]
+            ok = all(
+                (c["kind"] == "after" and now_ms >= int(c["key"])) or
+                (c["kind"] == "keyword" and c["key"] in keys)
+                for c in cues
+            )
+            if ok:
+                fired.append(rid)
+        board = []
+        for rid in fired:
+            iid = self.by_record.get(rid)
+            it = self.intentions.get(iid) if iid else None
+            if it and it.status == "pending" and day not in it.done_days:
+                board.append(it)
+        return board
+
+
+def sha256_file(path: str) -> str:
+    try:
+        return hashlib.sha256(open(path, "rb").read()).hexdigest()
+    except OSError:
+        return ""
+
+
+def write_manifest(path: str, *, model: str, store: str, base_url: str | None, scenario_path: str, out_log: str) -> None:
+    """Round 8: everything a reader needs to check that the run used what the
+    pre-registration froze."""
+    muninn_bin = subprocess.run(["bash", "-lc", f"command -v {MUNINN_BIN}"], capture_output=True, text=True).stdout.strip()
+    ver = subprocess.run([MUNINN_BIN, "--version"], capture_output=True, text=True).stdout.strip() if store == "muninn" else ""
+    canary = None
+    if base_url:
+        try:
+            with urllib.request.urlopen(base_url.rstrip("/").removesuffix("/v1") + "/canary", timeout=320) as r:
+                canary = json.loads(r.read().decode())
+        except Exception as exc:  # noqa: BLE001
+            canary = {"error": str(exc)}
+    sim = PROJECT_ROOT / "sim"
+    m = {
+        "model": model, "store": store, "base_url": base_url, "host": platform.node(), "python": platform.python_version(),
+        "scaffold_sha256": sha256_file(__file__), "scenario": scenario_path, "scenario_sha256": sha256_file(scenario_path),
+        "pm_bench_py_sha256": sha256_file(str(sim / "pm_bench.py")), "pmbench_commit": subprocess.run(["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
+        "muninn_bin": muninn_bin, "muninn_bin_sha256": sha256_file(muninn_bin) if muninn_bin else "", "muninn_version": ver,
+        # muninn-nonet wraps the real binary in a network namespace; record the binary itself too
+        "muninn_real_bin": os.environ.get("MUNINN_REAL_BIN"), "muninn_real_bin_sha256": sha256_file(os.environ.get("MUNINN_REAL_BIN", "")),
+        "muninn_commit": subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[3]), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
+        "bridge_canary": canary, "log": out_log,
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(m, fh, indent=1)
+
+
 # ---------------------------------------------------------------------------------
 # Prompts
 # ---------------------------------------------------------------------------------
@@ -590,12 +720,13 @@ def apply_ops(store: MuninnStore, payload: dict[str, Any] | None, day: str, step
 # ---------------------------------------------------------------------------------
 
 
-def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None, max_days: int | None = None) -> str:
+def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None, max_days: int | None = None,
+        store_kind: str = "muninn", base_url: str | None = None, scenario_path: str = "") -> str:
     started = PM_BENCH.now_utc_iso()
     t0 = time.perf_counter()
     os.makedirs(out_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
-    run_prefix = f"muninn-store-{timestamp}-{PM_BENCH.sanitize_model_label(model)}"
+    run_prefix = f"{store_kind}-store-{timestamp}-{PM_BENCH.sanitize_model_label(model)}"
     resolved_log = PM_BENCH.resolve_output_path(log_path, out_dir=out_dir, default_filename=f"{run_prefix}/{run_prefix}.jsonl", required_suffix=".jsonl")
     prompt_log = open(str(Path(resolved_log).with_suffix(".prompt.txt")), "w", encoding="utf-8", buffering=1)
     trace_log = open(str(Path(resolved_log).with_suffix(".trace.jsonl")), "w", encoding="utf-8", buffering=1)
@@ -606,8 +737,10 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
     channels_no_clock = [c for c in allowed_channels if c != "clock"]
     day_names = [d["name"] for d in scenario["days"]]
 
-    claude = Claude(model, prompt_log)
-    store = MuninnStore(out_dir, day_names)
+    claude = Claude(model, prompt_log, base_url=base_url)
+    store = PlainStore(out_dir, day_names) if store_kind == "plain" else MuninnStore(out_dir, day_names)
+    write_manifest(str(Path(resolved_log).with_suffix(".manifest.json")), model=model, store=store_kind, base_url=base_url,
+                   scenario_path=scenario_path, out_log=str(resolved_log))
     entries: list[dict[str, Any]] = []
     guard_events = 0
     due_items_acted = 0
@@ -791,8 +924,8 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
         prompt_log.close()
         trace_log.close()
 
-    metadata = PM_BENCH.make_run_metadata(mode="run-muninn-store-agent", started_at_utc=started, finished_at_utc=PM_BENCH.now_utc_iso(),
-                                          duration_seconds=time.perf_counter() - t0, entry_count=len(entries), model=model, backend="claude-p")
+    metadata = PM_BENCH.make_run_metadata(mode=f"run-{store_kind}-store-agent", started_at_utc=started, finished_at_utc=PM_BENCH.now_utc_iso(),
+                                          duration_seconds=time.perf_counter() - t0, entry_count=len(entries), model=model, backend=("bridge:" + base_url) if base_url else "claude-p")
     metadata["model_calls"] = claude.calls
     metadata["est_input_tokens"] = claude.est_input_tokens
     metadata["guard_events"] = guard_events
@@ -813,9 +946,13 @@ def main() -> None:
     ap.add_argument("--log", default=None)
     ap.add_argument("--score", action="store_true")
     ap.add_argument("--max-days", type=int, default=None, help="smoke test: stop after N days (the log is then not scoreable)")
+    ap.add_argument("--store", choices=["muninn", "plain"], default="muninn",
+                    help="round 8: muninn (the engine) or plain (same scaffold, in-process dict, no muninn binary)")
+    ap.add_argument("--base-url", default=None,
+                    help="round 8: OpenAI-compatible bridge (e.g. http://127.0.0.1:30002/v1); default calls claude -p directly")
     a = ap.parse_args()
     scenario = PM_BENCH.load_scenario(a.scenario)
-    log = run(scenario, a.model, a.out_dir, a.log, a.max_days)
+    log = run(scenario, a.model, a.out_dir, a.log, a.max_days, store_kind=a.store, base_url=a.base_url, scenario_path=a.scenario)
     if a.score:
         subprocess.run([sys.executable, str(PROJECT_ROOT / "sim" / "pm_bench.py"), "score", "--scenario", a.scenario, "--log", log])
 
