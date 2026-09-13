@@ -42,6 +42,69 @@ fn first_line(s: &str, max: usize) -> String {
     truncate_chars(l, max).to_string()
 }
 
+/// Split `text` into chunks of at most `max` chars, cutting on blank lines, then lines,
+/// then whitespace. Literal: nothing is rewritten.
+fn chunks(text: &str, max: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text.trim();
+    while !rest.is_empty() {
+        if rest.chars().count() <= max {
+            out.push(rest.to_string());
+            break;
+        }
+        let head = truncate_chars(rest, max);
+        let cut = head
+            .rfind("\n\n")
+            .filter(|&i| i > max / 3)
+            .or_else(|| head.rfind('\n').filter(|&i| i > max / 3))
+            .or_else(|| head.rfind(' ').filter(|&i| i > max / 3))
+            .unwrap_or(head.len());
+        out.push(rest[..cut].trim().to_string());
+        rest = rest[cut..].trim();
+    }
+    out
+}
+
+/// Every episode a turn yields: the summary episode from [`from_turn`], then the
+/// rest of a long user prompt or assistant text as literal continuation chunks, so a
+/// long turn (a pasted document, a compaction summary) is stored whole and not just
+/// its head. At most `MAX_CHUNKS` continuations per turn.
+pub fn from_turn_all(session_id: &str, t: &Turn) -> Vec<Episode> {
+    const MAX_CHUNKS: usize = 12;
+    const CHUNK: usize = 1_800;
+    let Some(first) = from_turn(session_id, t) else {
+        return Vec::new();
+    };
+    let mut out = vec![first];
+    let mut k = 0usize;
+    let mut push = |label: &str, text: &str| {
+        for c in chunks(text, CHUNK) {
+            if k >= MAX_CHUNKS {
+                break;
+            }
+            k += 1;
+            let body = redact(&format!("{label} (cont. {k}): {c}\n"));
+            out.push(Episode {
+                subject: format!("session:{}#{}.{}", session_id, t.index, k),
+                object: redact(&first_line(c.as_str(), 160)),
+                body: truncate_chars(&body, MAX_BODY_CHARS).to_string(),
+                files: Vec::new(),
+                had_failure: false,
+            });
+        }
+    };
+    let up = t.user_prompt.trim();
+    if up.chars().count() > 600 && !(up.starts_with('<') && up.contains("</")) {
+        let rest: String = up.chars().skip(600).collect();
+        push("user", &rest);
+    }
+    let a = t.assistant_text.trim();
+    if a.chars().count() > 700 {
+        push("assistant", a);
+    }
+    out
+}
+
 pub fn from_turn(session_id: &str, t: &Turn) -> Option<Episode> {
     if t.user_prompt.trim().is_empty() {
         return None;
@@ -138,4 +201,34 @@ pub fn from_turn(session_id: &str, t: &Turn) -> Option<Episode> {
         files: t.files_touched.iter().map(|f| redact(f)).collect(),
         had_failure,
     })
+}
+
+#[cfg(test)]
+mod chunk_tests {
+    use super::*;
+
+    #[test]
+    fn long_turns_become_several_literal_episodes() {
+        let t = Turn {
+            user_prompt: (0..40)
+                .map(|i| format!("paragraph {i} {}", "w".repeat(90)))
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+            assistant_text: "short".into(),
+            ..Default::default()
+        };
+        let eps = from_turn_all("s", &t);
+        assert!(eps.len() > 2, "{}", eps.len());
+        assert_eq!(eps[0].subject, "session:s#0");
+        assert_eq!(eps[1].subject, "session:s#0.1");
+        assert!(eps[1].body.starts_with("user (cont. 1): "));
+        for e in &eps {
+            assert!(e.body.chars().count() <= MAX_BODY_CHARS);
+        }
+        // every paragraph survives somewhere
+        let all: String = eps.iter().map(|e| e.body.clone()).collect();
+        assert!(all.contains("paragraph 39"));
+        let c = chunks("a b c", 10);
+        assert_eq!(c, vec!["a b c"]);
+    }
 }

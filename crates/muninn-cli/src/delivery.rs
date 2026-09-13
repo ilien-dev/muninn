@@ -85,10 +85,13 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
             } else {
                 let per = v.tokens / v.ids.len().max(1);
                 for id in &v.ids {
+                    // ids of records that are not in this store (the control arm logs
+                    // the foreign store's ids negated) keep their tokens, not their id
+                    let rid = if *id > 0 { Some(*id) } else { None };
                     ins.execute(rusqlite::params![
                         v.session,
                         epoch,
-                        id,
+                        rid,
                         v.at,
                         per as i64,
                         format!("{}:{}", v.arm, v.reason)
@@ -98,7 +101,11 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
             }
         }
     }
-    tx.commit()?;
+    if let Err(e) = tx.commit() {
+        // give the lines back to the next fold instead of stranding them
+        let _ = std::fs::rename(&folding, &path);
+        return Err(e.into());
+    }
     let _ = now_ms();
     std::fs::remove_file(&folding).map_err(|e| muninn_core::Error::io(&folding, e))?;
     Ok(n)

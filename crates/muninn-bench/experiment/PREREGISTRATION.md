@@ -81,3 +81,44 @@ public, so it cannot be run here; the numbers are a reference, not a comparison.
   literal s10 edit. Three cells (r0 s10-off, s11-control, s12-literal) errored on a stale
   git worktree registration before any model call; they are re-run with
   `--rerun-errors` and counted normally.
+
+## Run 1 (2026-09-12, sonnet, 75 cells, $15.74): FAIL by the rule above, instrument invalid
+
+Result as pre-registered (after `--rescore` with the amended s10/s13 oracles): non-inferable
+pass rate off 17/20, literal 17/20, control 18/20; literal − off = 0.000 [−0.150, +0.150].
+Raw data: `results/run1/` (results.jsonl, summary.md, every cell's patch, the tasks file).
+
+Why the run does not test the hypothesis:
+1. Three of the four "non-inferable" tasks (s10, s11, s13) passed 5/5 in the `off` arm:
+   the prompts and the repository (README, plan-derived docs) carried the answer. Ceiling.
+2. The s12 oracle's third condition (no "apagado por defecto") scored the correct answer
+   as wrong: the plan itself keeps the embedding sidecar off by default pending a
+   measurement (Phase 3 sub-gate), so only the "why responder" row was stale. With
+   conditions 1–2 only, s12 was literal 5/5, off 3/5, control 3/5 — reported as post hoc,
+   not as a result.
+3. The `control` arm delivered tokens at prompt time but the fold into `fire_ledger`
+   failed on a foreign-key constraint (foreign record ids), so `delivered tokens` read 0
+   for that arm. Fixed; the arm's hook p95 (78 ms vs 0.04 ms for `off`) shows it ran.
+4. Two capture defects made the literal store nearly empty of the decisive evidence:
+   user steering that arrives inside tool results (plan rejections, AskUserQuestion
+   answers) was not captured, and long turns (compaction summaries) were cut to their
+   first 600 characters. Both fixed before run 1 (steering) and after it (chunking of
+   long turns into ≤ 1 800-char literal episodes; the delivered block is now the
+   window of the episode with the most query terms instead of its head).
+
+## Run 2 (pre-registered 2026-09-13, before any run-2 cell)
+
+Same design, decision rule, model, runs and arms. Changes, all fixed before running:
+- Seed: the project transcript frozen at the byte offset just after its last compaction
+  summary (22 559 233 bytes, sha256 223dcf4d…fa895, kept outside the repository), so no
+  turn written while designing run 2 is in the store.
+- Tasks: s12 with conditions 1–2 only; five fact tasks whose oracle is a measured number
+  that appears only in the transcript — verified by grep to be absent from the
+  repository at base_ref and from `git log`; the prompt never states the number and asks
+  the agent to say "not found" rather than invent. One inferable sanity task kept.
+- Non-inferability check: a 1-run pilot (off + literal) is run first; a fact task on
+  which `off` passes is dropped before the full run and listed here.
+- Known limitation: the transcript file is readable from the cells' home directory; an
+  agent that thought of grepping `~/.claude/projects` could find the numbers without
+  memory. Run 1 showed no cell doing so; run 2 cells are checked for it in their patches
+  and command logs.

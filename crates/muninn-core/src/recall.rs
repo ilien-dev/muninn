@@ -263,13 +263,16 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 
 /// Render hits as evidence blocks within the hard budget. Each block carries
 /// provenance and trust; nothing in a block is phrased as an instruction.
-pub fn render(hits: &[Hit], budget: usize) -> Delivery {
+pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
     let mut text = String::new();
     let mut ids = Vec::new();
     let mut used = 0usize;
     for h in hits {
         let short = h.session_id.chars().take(8).collect::<String>();
-        let body = truncate_chars(&h.body, 700);
+        // the block budget in chars (3 chars/token, minus the provenance line)
+        let block_chars = (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120);
+        let passage = best_passage(&h.body, terms, block_chars);
+        let body = passage.as_str();
         let mut block = format!(
             "[muninn:{}] {} · session {} · origin: {} · trust {}\n{}\n",
             h.kind,
@@ -308,11 +311,43 @@ pub fn render(hits: &[Hit], budget: usize) -> Delivery {
     }
 }
 
+/// The window of `body` (at most `max_chars`, cut on line boundaries where possible)
+/// that holds the most query terms. The head of the body wins ties, so a body with no
+/// term hit renders as before. Deterministic; no scoring beyond counting.
+pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
+    if body.chars().count() <= max_chars || terms.is_empty() {
+        return truncate_chars(body, max_chars).to_string();
+    }
+    let lower = body.to_lowercase();
+    let terms: Vec<String> = terms.iter().map(|t| t.to_lowercase()).collect();
+    // candidate windows start at line boundaries
+    let mut starts: Vec<usize> = vec![0];
+    for (i, c) in body.char_indices() {
+        if c == '\n' && i + 1 < body.len() {
+            starts.push(i + 1);
+        }
+    }
+    let mut best = (0usize, 0usize); // (hits, start byte)
+    for &st in &starts {
+        let window = truncate_chars(&lower[st..], max_chars);
+        let hits = terms.iter().filter(|t| window.contains(t.as_str())).count();
+        if hits > best.0 {
+            best = (hits, st);
+        }
+    }
+    let out = truncate_chars(&body[best.1..], max_chars);
+    if best.1 == 0 {
+        out.to_string()
+    } else {
+        format!("…{out}")
+    }
+}
+
 /// The whole read path for one prompt.
 pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery> {
     let terms = select_terms(db, prompt, 8)?;
     let hits = recall(db, &terms, 8, exclude)?;
-    Ok(render(&hits, BUDGET_TURN_TOKENS))
+    Ok(render(&hits, BUDGET_TURN_TOKENS, &terms))
 }
 
 #[cfg(test)]
@@ -325,5 +360,22 @@ mod tests {
         assert!(!intent_gate("/compact"));
         assert!(intent_gate("add retry backoff to the webhook handler"));
         assert_eq!(date_of(1_789_259_611_084), "2026-09-13");
+    }
+
+    #[test]
+    fn passage_prefers_the_window_with_the_terms() {
+        let body = format!(
+            "{}\nthe p95 was 10.27 ms on the synthetic vocab\n{}",
+            "x".repeat(900),
+            "y".repeat(50)
+        );
+        let p = best_passage(&body, &["p95".into(), "vocab".into()], 200);
+        assert!(p.contains("10.27"), "{p}");
+        assert!(p.starts_with('…'));
+        // no hit: the head, unchanged
+        let p = best_passage(&body, &["zzz".into()], 200);
+        assert!(p.starts_with("xxx"));
+        // short bodies are returned whole
+        assert_eq!(best_passage("short", &["p95".into()], 200), "short");
     }
 }

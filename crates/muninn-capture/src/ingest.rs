@@ -1,7 +1,7 @@
 //! Write path: transcript → episodes → records, with byte-offset watermarks so a
 //! hook that expires loses time, never data.
 
-use crate::episode::from_turn;
+use crate::episode::from_turn_all;
 use crate::parse_any;
 use muninn_core::caps::MAX_ACTIVE_RECORDS;
 use muninn_core::db::now_ms;
@@ -52,10 +52,11 @@ pub fn ingest_transcript(
             "INSERT OR IGNORE INTO record(kind, subject, relation, object, body, origin, trust, anchor_path, session_id, transcript_ref, dedup_hash, created_at) \
              VALUES('episode', ?1, 'happened', ?2, ?3, 'tool_observed', 1, ?4, ?5, ?6, ?7, ?8)",
         )?;
-        for t in &session.turns {
-            let Some(ep) = from_turn(&sid, t) else {
-                continue;
-            };
+        for (t, ep) in session
+            .turns
+            .iter()
+            .flat_map(|t| from_turn_all(&sid, t).into_iter().map(move |e| (t, e)))
+        {
             let hash = blake3::hash(
                 format!("episode|{}|happened|{}|{}", ep.subject, ep.object, ep.body).as_bytes(),
             )
