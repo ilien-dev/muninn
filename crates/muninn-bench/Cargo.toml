@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 muninn-core = { path = "../muninn-core" }
+muninn-embed = { path = "../muninn-embed" }
 muninn-compile = { path = "../muninn-compile" }
 clap.workspace = true
 serde.workspace = true

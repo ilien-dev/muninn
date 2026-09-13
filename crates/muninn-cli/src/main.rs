@@ -93,8 +93,13 @@ enum Cmd {
         #[arg(long)]
         yes: bool,
     },
-    /// Embedding sidecar maintenance (Phase 3)
-    Embed,
+    /// Embedding sidecar: embed pending records (--rebuild re-embeds everything, --status reports)
+    Embed {
+        #[arg(long)]
+        rebuild: bool,
+        #[arg(long)]
+        status: bool,
+    },
     /// Symbol graph maintenance (Phase 5)
     Symbols,
 }
@@ -348,8 +353,72 @@ fn main() {
                 1
             }
         },
-        Cmd::Embed => not_yet("embed", "Phase 3"),
+        Cmd::Embed { rebuild, status } => embed_cmd(&paths, rebuild, status, cli.json),
         Cmd::Symbols => not_yet("symbols", "Phase 5"),
     };
     std::process::exit(code);
+}
+
+fn embed_cmd(paths: &ProjectPaths, rebuild: bool, status: bool, json: bool) -> i32 {
+    let db = match Db::open(
+        &paths.db_path(),
+        if status {
+            Mode::ReadOnly
+        } else {
+            Mode::ReadWrite
+        },
+    ) {
+        Ok(db) => db,
+        Err(e) => {
+            output::err(&format!("muninn embed: {e}"));
+            return 1;
+        }
+    };
+    if status {
+        let active = db
+            .count("SELECT count(*) FROM record WHERE invalid=0")
+            .unwrap_or(0);
+        let vecs = db
+            .count("SELECT count(*) FROM record_vec v JOIN record r ON r.id=v.record_id WHERE r.invalid=0")
+            .unwrap_or(0);
+        let model = db.meta_get("embed_model").ok().flatten();
+        let dir = muninn_embed::model_dir();
+        if json {
+            output::json(
+                &serde_json::json!({"active": active, "embedded": vecs, "model": model, "model_dir": dir}),
+            );
+        } else {
+            output::out(&format!(
+                "embed: {vecs}/{active} active records embedded · model {} · dir {}",
+                model.as_deref().unwrap_or("none"),
+                dir.map(|d| d.display().to_string())
+                    .unwrap_or_else(|| "not found".into())
+            ));
+        }
+        return 0;
+    }
+    let emb = match muninn_embed::Embedder::load_default() {
+        Ok(e) => e,
+        Err(e) => {
+            output::err(&format!("muninn embed: {e}"));
+            return 2;
+        }
+    };
+    match muninn_embed::embed_pending(&db, &emb, rebuild) {
+        Ok(st) => {
+            if json {
+                output::json(&st);
+            } else {
+                output::out(&format!(
+                    "embedded {} of {} pending · model {} · load {:.1} ms · encode {:.1} ms",
+                    st.embedded, st.pending_before, st.model_id, st.load_ms, st.encode_ms
+                ));
+            }
+            0
+        }
+        Err(e) => {
+            output::err(&format!("muninn embed: {e}"));
+            1
+        }
+    }
 }

@@ -240,6 +240,12 @@ fn write_path(
     if let Err(e) = crate::maintain::capture_git(paths, &db) {
         output::err(&format!("muninn: git capture: {e}"));
     }
+    // embeddings for the new records, on this asynchronous path only
+    if let Ok(emb) = muninn_embed::Embedder::load_default() {
+        if let Err(e) = muninn_embed::embed_pending(&db, &emb, false) {
+            output::err(&format!("muninn: embed: {e}"));
+        }
+    }
     // Integrity is verified here, off the read path, at most once an hour.
     db.record_quick_check(3_600_000)?;
     // Rules are recompiled here when their source files changed; never applied.

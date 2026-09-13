@@ -186,14 +186,21 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             Err(e) => output::err(&format!("muninn maintain: project: {e}")),
         }
     }
+    // the sidecar catches up here, never in a read hook; no model → stays cold
+    if let Ok(emb) = muninn_embed::Embedder::load_default() {
+        match muninn_embed::embed_pending(&db, &emb, false) {
+            Ok(s) => st.embedded = s.embedded,
+            Err(e) => output::err(&format!("muninn maintain: embed: {e}")),
+        }
+    }
     let _ = db.record_quick_check(3_600_000);
     st.ms = t0.elapsed().as_millis();
     if json {
         output::json(&st);
     } else {
         output::out(&format!(
-            "maintain: {} ingested, {} commit(s), {} revert(s), {} file(s) projected, {} ms",
-            st.ingested, st.commits, st.reverts, st.projected, st.ms
+            "maintain: {} ingested, {} commit(s), {} revert(s), {} file(s) projected, {} embedded, {} ms",
+            st.ingested, st.commits, st.reverts, st.projected, st.embedded, st.ms
         ));
     }
     0

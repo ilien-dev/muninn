@@ -62,6 +62,17 @@ END;
 -- Term statistics for IDF-based term selection in the read path [H6].
 CREATE VIRTUAL TABLE IF NOT EXISTS record_vocab USING fts5vocab('record_fts', 'col');
 
+-- Embedding sidecar (plan, Phase 3 §10): one vector per active record, per model.
+-- Filled on the asynchronous write path only; read hooks never touch it.
+CREATE TABLE IF NOT EXISTS record_vec (
+    record_id  INTEGER NOT NULL REFERENCES record(id),
+    dim        INTEGER NOT NULL,
+    vec        BLOB    NOT NULL,
+    model_id   TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (record_id, model_id)
+);
+
 -- 2.2 cue: permanent trigger conditions (F3).
 CREATE TABLE IF NOT EXISTS cue (
     record_id   INTEGER NOT NULL REFERENCES record(id),
