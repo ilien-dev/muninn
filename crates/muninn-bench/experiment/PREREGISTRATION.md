@@ -195,3 +195,9 @@ checkout with no mirror; a git worktree exposed the real repository's later comm
 cells are now single-commit archives; two seeded records cited a commit hash that a
 cell cannot have — those origins are now user_said/review_accepted. Pilot 3 (after the
 fixes): off 1/3, unfiltered 1/3, literal 3/3, retired-served 0.
+- Codex as a third family: parked. With codex-cli 0.154.0, hooks passed as `-c
+  hooks.*` overrides never fired in `codex exec` (bisected with echo / touch / a script:
+  no side effect, no injected context), and a project `.codex/hooks.json` made the
+  run hang until the timeout (a trust prompt with no TTY is the likely cause). The
+  runner keeps the `codex` harness for when this is resolved; Gate 3 is measured on
+  Claude Code with two model families (sonnet, haiku) and reported as such.
