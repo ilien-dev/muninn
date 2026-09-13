@@ -127,6 +127,33 @@ pub fn derive(
     Ok(n)
 }
 
+/// Store explicit cues for a record (from an import that carries them).
+pub fn set_explicit(db: &Db, record_id: i64, cues: &[(String, String, i64)]) -> Result<usize> {
+    db.conn
+        .execute("DELETE FROM cue WHERE record_id = ?1", [record_id])?;
+    let mut ins = db
+        .conn
+        .prepare("INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, ?2, ?3, ?4)")?;
+    let mut n = 0;
+    for (k, key, g) in cues {
+        if ![
+            "dir", "symbol", "event", "after", "cooldown", "keyword", "glob",
+        ]
+        .contains(&k.as_str())
+        {
+            continue;
+        }
+        let key = if k == "keyword" {
+            key.to_lowercase()
+        } else {
+            key.clone()
+        };
+        ins.execute(rusqlite::params![record_id, k, key, g])?;
+        n += 1;
+    }
+    Ok(n)
+}
+
 /// Derive cues for every active typed record that has none yet (imported records,
 /// records from before the cue table was filled). Lexical fallback for symbols.
 pub fn derive_missing(db: &Db) -> Result<usize> {
@@ -165,6 +192,9 @@ pub struct TurnContext {
     pub files: Vec<String>,
     pub symbols: Vec<String>,
     pub event: String,
+    /// Explicit trigger words (`keyword` cues), e.g. a benchmark step's cue list.
+    #[serde(default)]
+    pub keywords: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -333,6 +363,40 @@ pub fn evaluate(db: &Db, ctx: &TurnContext, exclude: &HashSet<i64>) -> Result<Ve
             matched.entry(r).or_default().push(format!("symbol:{s}"));
         }
     }
+    if !ctx.keywords.is_empty() {
+        let mut st_kw = db
+            .conn
+            .prepare_cached("SELECT record_id, grp FROM cue WHERE kind = 'keyword' AND key = ?1")?;
+        for k in &ctx.keywords {
+            let key = k.to_lowercase();
+            let rows = st_kw.query_map([key.as_str()], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })?;
+            for r in rows.flatten() {
+                matched.entry(r).or_default().push(format!("keyword:{key}"));
+            }
+        }
+    }
+    // time cues: due once the (possibly simulated) clock passes them
+    {
+        let now = now_ms();
+        let mut st_af = db
+            .conn
+            .prepare_cached("SELECT record_id, grp, key FROM cue WHERE kind = 'after' AND CAST(key AS INTEGER) <= ?1")?;
+        let rows = st_af.query_map([now], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for (rid, grp, key) in rows.flatten() {
+            matched
+                .entry((rid, grp))
+                .or_default()
+                .push(format!("after:{key}"));
+        }
+    }
     if !ctx.event.is_empty() {
         let mut st_ev = db
             .conn
@@ -365,7 +429,9 @@ pub fn evaluate(db: &Db, ctx: &TurnContext, exclude: &HashSet<i64>) -> Result<Ve
             .flatten()
             .collect();
         let all = cues.iter().all(|(k, key)| match k.as_str() {
-            "dir" | "symbol" | "event" => reasons.iter().any(|r| r == &format!("{k}:{key}")),
+            "dir" | "symbol" | "event" | "keyword" => {
+                reasons.iter().any(|r| r == &format!("{k}:{key}"))
+            }
             "after" => key.parse::<i64>().map(|t| now >= t).unwrap_or(true),
             _ => true,
         });
@@ -616,6 +682,7 @@ mod tests {
                 files: vec!["src/auth/x.rs".into()],
                 symbols: vec![],
                 event: "prompt".into(),
+                keywords: Vec::new(),
             },
             &HashSet::new(),
         )
@@ -628,6 +695,7 @@ mod tests {
                 files: vec!["src/auth/deep/x.rs".into()],
                 symbols: vec![],
                 event: "pre_edit".into(),
+                keywords: Vec::new(),
             },
             &HashSet::new(),
         )
@@ -644,6 +712,7 @@ mod tests {
                 files: vec![],
                 symbols: vec!["verify_token".into()],
                 event: String::new(),
+                keywords: Vec::new(),
             },
             &HashSet::new(),
         )
@@ -679,6 +748,7 @@ mod tests {
                 files: vec!["src/x/y.rs".into()],
                 symbols: vec![],
                 event: "prompt".into(),
+                keywords: Vec::new(),
             },
             &HashSet::new(),
         )

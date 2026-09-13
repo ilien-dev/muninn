@@ -89,6 +89,22 @@ enum Cmd {
         #[arg(long, default_value_t = 1500)]
         budget: usize,
     },
+    /// Evaluate the trigger conditions for a context and print the delivery (F3, invoked form)
+    Cues {
+        #[arg(long)]
+        session: Option<String>,
+        #[arg(long, default_value = "prompt")]
+        event: String,
+        #[arg(long = "file")]
+        files: Vec<String>,
+        #[arg(long = "symbol")]
+        symbols: Vec<String>,
+        #[arg(long = "keyword")]
+        keywords: Vec<String>,
+        /// Ignore the ledger (deliver even if already delivered this session)
+        #[arg(long)]
+        ungated: bool,
+    },
     /// Retire a record by hand (retained, never served)
     Revoke {
         id: i64,
@@ -389,6 +405,75 @@ fn main() {
                         output::err(&format!("muninn why: {e}"));
                         1
                     }
+                }
+            }
+        }
+        Cmd::Cues {
+            session,
+            event,
+            files,
+            symbols,
+            keywords,
+            ungated,
+        } => {
+            use muninn_core::cue;
+            let session = session.unwrap_or_else(|| "cli".into());
+            match Db::open(&paths.db_path(), Mode::ReadOnly) {
+                Ok(db) => {
+                    let exclude = if ungated {
+                        Default::default()
+                    } else {
+                        delivery::delivered_ids(&paths, &session)
+                    };
+                    let ctx = cue::TurnContext {
+                        files,
+                        symbols,
+                        event,
+                        keywords,
+                    };
+                    match cue::evaluate(&db, &ctx, &exclude) {
+                        Ok(hits) => {
+                            let ids: Vec<i64> = hits.iter().map(|h| h.record_id).collect();
+                            let recs = cue::hits_for(&db, &ids).unwrap_or_default();
+                            let m = cue::merge(
+                                &hits,
+                                &recs,
+                                &[],
+                                &[],
+                                muninn_core::caps::BUDGET_TURN_TOKENS,
+                                &[],
+                            );
+                            if !m.ids.is_empty() {
+                                delivery::append(
+                                    &paths,
+                                    &delivery::Line {
+                                        at: muninn_core::db::now_ms(),
+                                        session: session.clone(),
+                                        arm: "literal".into(),
+                                        ids: m.ids.clone(),
+                                        tokens: m.tokens,
+                                        reason: "cue:cli".into(),
+                                    },
+                                );
+                            }
+                            if cli.json {
+                                output::json(
+                                    &serde_json::json!({"text": m.text, "ids": m.ids, "tokens": m.tokens, "reasons": m.reasons, "gated": m.gated}),
+                                );
+                            } else {
+                                output::out(&m.text);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            output::err(&format!("muninn cues: {e}"));
+                            1
+                        }
+                    }
+                }
+                Err(e) => {
+                    output::err(&format!("muninn cues: {e}"));
+                    1
                 }
             }
         }

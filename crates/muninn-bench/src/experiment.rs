@@ -656,7 +656,9 @@ fn run_cell(
         }
         // the folded ledger too: every fire and silence with its reason
         if let Ok(db) = rusqlite::Connection::open(store.join(".muninn/muninn.db")) {
-            if let Ok(mut st) = db.prepare("SELECT fired_at, record_id, tokens, reason FROM fire_ledger ORDER BY id") {
+            if let Ok(mut st) = db
+                .prepare("SELECT fired_at, record_id, tokens, reason FROM fire_ledger ORDER BY id")
+            {
                 let rows: Vec<serde_json::Value> = st
                     .query_map([], |r| {
                         Ok(serde_json::json!({"at": r.get::<_, i64>(0)?, "id": r.get::<_, Option<i64>>(1)?, "tokens": r.get::<_, i64>(2)?, "reason": r.get::<_, String>(3)?}))
@@ -666,7 +668,9 @@ fn run_cell(
                 let logs = work.parent().unwrap_or(work).join("logs");
                 let _ = std::fs::write(
                     logs.join(format!("r{run}-{}-{arm}.ledger.jsonl", task.id)),
-                    rows.iter().map(|v| v.to_string() + "\n").collect::<String>(),
+                    rows.iter()
+                        .map(|v| v.to_string() + "\n")
+                        .collect::<String>(),
                 );
             }
         }
