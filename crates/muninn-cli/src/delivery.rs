@@ -36,7 +36,7 @@ pub fn append(paths: &ProjectPaths, line: &Line) {
 /// Ids delivered in this session (so the same record is not repeated).
 pub fn delivered_ids(paths: &ProjectPaths, session: &str) -> std::collections::HashSet<i64> {
     let mut out = std::collections::HashSet::new();
-    if let Ok(s) = std::fs::read_to_string(log_path(paths)) {
+    if let Ok(s) = muninn_core::sanitize::read_regular_bounded(&log_path(paths), 64 << 20) {
         for l in s.lines() {
             if let Ok(v) = serde_json::from_str::<Line>(l) {
                 if v.session == session {
@@ -58,8 +58,8 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
     if !folding.exists() {
         std::fs::rename(&path, &folding).map_err(|e| muninn_core::Error::io(&path, e))?;
     }
-    let text =
-        std::fs::read_to_string(&folding).map_err(|e| muninn_core::Error::io(&folding, e))?;
+    let text = muninn_core::sanitize::read_regular_bounded(&folding, 64 << 20)
+        .map_err(|e| muninn_core::Error::io(&folding, e))?;
     let epoch: i64 = db
         .meta_get("compaction_epoch")?
         .and_then(|s| s.parse().ok())
