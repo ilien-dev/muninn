@@ -28,7 +28,13 @@ Phases 0–2 complete.
   [+0.56, +0.80], control − off = +0.09 [−0.04, +0.21]; 90 cells, sonnet, $27.63
   (`crates/muninn-bench/experiment/GATE2.md`, pre-registration and both runs in
   `experiment/`). Run 1 failed with an invalid instrument and is reported in full.
-Phase 3 (real engine) is next.
+- Phase 3 (real engine): typed capture (corrections, invariants, commit-linked
+  decisions, dead ends), supersession, caps, Markdown projection + export/import,
+  `muninn maintain` (git capture, resume), embedding sidecar (potion-base-8M,
+  checksummed, write path only, exact kNN), 10-check gate, 15 fault scenarios. The
+  literal arm re-run on the real engine: 21/25 vs 19/25 on the throwaway store
+  (`crates/muninn-bench/experiment/PHASE3.md`).
+Phase 4 (F1 filter + `muninn why`) is next.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 
 ## Install (development)

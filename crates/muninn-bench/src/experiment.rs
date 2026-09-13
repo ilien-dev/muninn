@@ -33,7 +33,81 @@ pub struct Config {
     pub seed_transcripts: Vec<String>,
     #[serde(default)]
     pub control_transcripts: Vec<String>,
+    /// `claude` (default) or `codex`: the harness that runs each cell. Hooks, arms,
+    /// oracles and the store are identical; only the agent process differs.
+    #[serde(default = "d_harness")]
+    pub harness: String,
     pub tasks: Vec<Task>,
+}
+
+fn d_harness() -> String {
+    "claude".into()
+}
+
+/// `codex exec` takes its hooks as `-c` overrides (TOML inline tables), so a cell needs
+/// no file in the worktree and no persisted hook trust.
+fn codex_hook_overrides(muninn: &Path) -> Vec<String> {
+    let bin = muninn.to_string_lossy();
+    let one = |key: &str, ev: &str, timeout: u64, is_async: bool| {
+        format!(
+            "hooks.{key}=[{{hooks=[{{type=\"command\",command=\"{bin} hook {ev}\",timeout={timeout}{}}}]}}]",
+            if is_async { ",async=true" } else { "" }
+        )
+    };
+    vec![
+        one("session_start", "SessionStart", 5, false),
+        one("user_prompt_submit", "UserPromptSubmit", 2, false),
+        one("stop", "Stop", 30, false),
+        one("session_end", "SessionEnd", 5, false),
+    ]
+}
+
+/// Reduce `codex exec --json` events to the shape the cell expects: the final agent
+/// message, a turn count (command executions + 1) and token usage; no USD figure.
+fn codex_summary(jsonl: &str) -> serde_json::Value {
+    let mut result = String::new();
+    let mut commands = 0u64;
+    let mut usage = serde_json::Value::Null;
+    let mut error: Option<String> = None;
+    for line in jsonl.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        match v["type"].as_str() {
+            Some("item.completed") => match v["item"]["type"].as_str() {
+                Some("agent_message") => {
+                    result = v["item"]["text"].as_str().unwrap_or("").to_string()
+                }
+                Some("command_execution") => commands += 1,
+                Some("error") => {
+                    let m = v["item"]["message"].as_str().unwrap_or("");
+                    if !m.contains("bypass-hook-trust") {
+                        error = Some(m.to_string());
+                    }
+                }
+                _ => {}
+            },
+            Some("turn.completed") => usage = v["usage"].clone(),
+            Some("turn.failed") | Some("error") => {
+                error = Some(
+                    v["error"]["message"]
+                        .as_str()
+                        .or(v["message"].as_str())
+                        .unwrap_or("turn failed")
+                        .to_string(),
+                )
+            }
+            _ => {}
+        }
+    }
+    serde_json::json!({
+        "result": result,
+        "num_turns": commands + 1,
+        "usage": usage,
+        "is_error": error.is_some(),
+        "error": error,
+        "harness": "codex",
+    })
 }
 fn d_turns() -> usize {
     25
@@ -252,11 +326,36 @@ fn run_cell(
             &settings,
             serde_json::to_string_pretty(&settings_json(muninn))?,
         )?;
-        let mut cmd = Command::new("claude");
-        cmd.current_dir(&dir)
-            .args(["-p", &format!("{}\n\nWork only inside the current working directory (this repository checkout); write files by paths relative to it and never outside it.", task.prompt), "--model", &cfg.model, "--output-format", "json", "--max-turns", &cfg.max_turns.to_string(), "--permission-mode", "acceptEdits", "--settings", settings.to_str().unwrap()])
-            .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *)"])
-            .env("MUNINN_ARM", arm)
+        let prompt = format!("{}\n\nWork only inside the current working directory (this repository checkout); write files by paths relative to it and never outside it.", task.prompt);
+        let mut cmd = if cfg.harness == "codex" {
+            let mut c = Command::new("codex");
+            c.current_dir(&dir).args([
+                "exec",
+                "--json",
+                "-C",
+                dir.to_str().unwrap(),
+                "-s",
+                "workspace-write",
+                "--skip-git-repo-check",
+                "--dangerously-bypass-hook-trust",
+                "-c",
+                "features.hooks=true",
+                "-m",
+                &cfg.model,
+            ]);
+            for o in codex_hook_overrides(muninn) {
+                c.args(["-c", &o]);
+            }
+            c.arg(&prompt);
+            c
+        } else {
+            let mut c = Command::new("claude");
+            c.current_dir(&dir)
+                .args(["-p", &prompt, "--model", &cfg.model, "--output-format", "json", "--max-turns", &cfg.max_turns.to_string(), "--permission-mode", "acceptEdits", "--settings", settings.to_str().unwrap()])
+                .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *)"]);
+            c
+        };
+        cmd.env("MUNINN_ARM", arm)
             .env("MUNINN_ROOT", &dir)
             .env_remove("CLAUDECODE")
             .stdin(Stdio::null())
@@ -279,7 +378,12 @@ fn run_cell(
             std::thread::sleep(Duration::from_millis(200));
         };
         let out = child.wait_with_output()?;
-        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        let raw = String::from_utf8_lossy(&out.stdout).to_string();
+        let stdout = if cfg.harness == "codex" {
+            codex_summary(&raw).to_string()
+        } else {
+            raw
+        };
         // the model's own account of the cell, for audit (what it read, what it claimed)
         let logs = work.parent().unwrap_or(work).join("logs");
         let _ = std::fs::create_dir_all(&logs);
