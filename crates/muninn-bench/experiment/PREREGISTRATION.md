@@ -270,3 +270,27 @@ default. Report: GATE4.md; raw data: results/gate4-cues/.
 PM-Bench v9 on claude-sonnet-5 through the `claude -p` bridge, set F1: single_baseline
 60.9 % (3 runs), todo_ledger 61.8 % (3), muninn_ledger v2 60.6 % (3); spread ±4 points;
 the 65.1 % line is not reached. Report: GATE4.md; data: results/pmbench/.
+
+## Gate 4 §1, second grid — symbol-graph query expansion (recorded 2026-09-13, after the grid was launched, before any result was read)
+
+**Change under test.** The read hook expands the lexical query with the definitions of
+files whose path contains a prompt word (`expand_terms`, off with `MUNINN_NO_EXPAND`).
+Recommendation 4 of the post-gate review: five of the eight cue tasks name an area of
+the code ("the embedding crate", "the router") rather than a word the record contains.
+
+**Arms.** `lexical-plain` (no cues, no expansion: the previous `lexical`),
+`lexical` (no cues, expansion on), `literal` (dir/symbol cues on, expansion on).
+Same eight tasks, same seed (sha256 223dcf4d…fa895), model claude-sonnet-5, 3 runs,
+72 cells, randomised order, single-commit archive cells confined by a PreToolUse deny
+(the first launch of this grid was stopped and discarded after 16 cells because the cell
+settings lacked that hook and one cell wrote into the real repository; nothing from it
+is counted).
+
+**Hypothesis and rule.** Expansion helps if `lexical − lexical-plain` has a 95 %
+cluster-bootstrap CI (clustered by task) that excludes zero; it is kept on by default if
+the CI excludes zero, kept as an opt-in otherwise, and removed if the point estimate is
+negative. `literal − lexical` re-tests the §1 condition with expansion in both arms.
+
+**Also recorded.** Delivered tokens, turns and cost per arm; retired records served
+(must stay 0).
+
