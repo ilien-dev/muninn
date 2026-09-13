@@ -30,10 +30,9 @@ CI runs exactly these; a change is finished when all of them pass.
 - Nothing enters the hot path without a `perf --strict` figure. Records are retired (`invalid=1`), never deleted. Trust derives from `origin`, never from wording.
 - Every number in docs is measured or cited by evidence id; estimates are labelled. Never describe the output of a command that did not run.
 - Experiments: pre-register in `experiment/PREREGISTRATION.md` before any cell runs; cells stay confined to their checkout; raw results are committed under `results/`.
-- Commit as code@ilien.dev; never push.
 
 ## This repository dogfoods Muninn
-`.muninn/` is a live store (plugin installed from the local marketplace). Never edit it by hand or commit its database and logs. `muninn status` is the first diagnostic; run `muninn why "<question>"` before overturning a recorded decision.
+With the Muninn plugin installed, `.muninn/` is a live store. Never edit it by hand or commit its database and logs. `muninn status` is the first diagnostic; run `muninn why "why did we choose X"` before overturning a recorded decision.
 
 ## Shell gotcha
 To stop a background run, `kill` the pids from `pgrep -f "[p]attern"` in a command that contains nothing else: a plain pattern matches the shell's own command line and kills the session.
