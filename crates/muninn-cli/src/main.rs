@@ -46,8 +46,12 @@ enum Cmd {
         /// Turn on dir/symbol cue delivery at prompt and tool time (off by default; see GATE4.md)
         #[arg(long)]
         cues: bool,
-        /// Do not touch CLAUDE.md / AGENTS.md
+        /// Write the long boot block into CLAUDE.md / AGENTS.md (default: the
+        /// SessionStart hook injects a compact summary and no file is touched)
         #[arg(long)]
+        boot_file: bool,
+        /// Accepted for compatibility; the default already touches no file
+        #[arg(long, hide = true)]
         no_boot_block: bool,
         /// Only measure the boot block against its budget and exit
         #[arg(long)]
@@ -173,7 +177,8 @@ fn main() {
             cues,
             refresh,
             codex,
-            no_boot_block,
+            boot_file,
+            no_boot_block: _,
             check_budget,
         } => {
             if cues {
@@ -186,16 +191,20 @@ fn main() {
                     if cli.json {
                         output::json(&serde_json::json!({
                             "chars": b.chars, "est_tokens": b.est_tokens, "exact_tokens": b.exact_tokens, "ok": b.ok,
+                            "hook_chars": b.hook_chars, "hook_tokens": b.hook_tokens, "hook_max_tokens": muninn_core::caps::BOOT_HOOK_MAX_TOKENS,
                             "max_chars": muninn_core::caps::BOOT_BLOCK_MAX_CHARS, "max_tokens": muninn_core::caps::BOOT_BLOCK_MAX_TOKENS
                         }));
                     } else {
                         output::out(&format!(
-                            "boot block: {} chars, ~{} tokens (estimate){} — {}",
+                            "boot block (file): {} chars, ~{} tokens (estimate){}; hook summary: {} chars, ~{} tokens (max {}) — {}",
                             b.chars,
                             b.est_tokens,
                             b.exact_tokens
                                 .map(|t| format!(", {t} tokens (cl100k)"))
                                 .unwrap_or_default(),
+                            b.hook_chars,
+                            b.hook_tokens,
+                            muninn_core::caps::BOOT_HOOK_MAX_TOKENS,
                             if b.ok { "within budget" } else { "OVER BUDGET" }
                         ));
                     }
@@ -211,7 +220,7 @@ fn main() {
                             keep_native,
                             refresh,
                             codex,
-                            no_boot_block,
+                            boot_file,
                         },
                         cli.json,
                     ) {

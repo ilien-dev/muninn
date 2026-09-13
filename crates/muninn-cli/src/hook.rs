@@ -117,7 +117,15 @@ fn session_start(
     // hook stays read-only and returns at once. At most one spawn per two minutes:
     // a burst of SessionStarts must not fan out into a burst of writers.
     crate::maintain::spawn_detached_throttled(paths, 120);
-    let mut text = report.summary();
+    let mut text = String::new();
+    // The boot summary: how to read blocks and when to ask. Injected here by default
+    // so the user's CLAUDE.md / AGENTS.md stay untouched (`muninn init --boot-file`
+    // puts the long block in the file instead and sets `boot = "file"`).
+    if boot_mode(paths) == "hook" {
+        text.push_str(crate::init::BOOT_HOOK.trim_end());
+        text.push_str("\n\n");
+    }
+    text.push_str(&report.summary());
     // F3 event cues: invariants and corrections resurface at every session start; after
     // a compaction they are reinjected without a gate and the ledger epoch moves on
     if let Ok(db) = &db {
@@ -145,6 +153,22 @@ fn session_start(
 /// not distinguish its gain from lexical recall (+0.083 [−0.083, +0.250]), so the shipped
 /// default is lexical recall plus event reinjection (session start, compaction), which
 /// the decay probe measured at 100/100. `MUNINN_CUES=1|0` overrides `.muninn/config.json`.
+/// Where the boot summary travels: `hook` (default; SessionStart additionalContext),
+/// `file` (written by `muninn init --boot-file`), `off`. `MUNINN_BOOT` overrides.
+fn boot_mode(paths: &ProjectPaths) -> String {
+    if let Ok(v) = std::env::var("MUNINN_BOOT") {
+        return v.to_ascii_lowercase();
+    }
+    std::fs::read_to_string(paths.muninn_dir.join("config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| {
+            v.get("boot")
+                .and_then(|c| c.as_str().map(|s| s.to_ascii_lowercase()))
+        })
+        .unwrap_or_else(|| "hook".into())
+}
+
 fn cues_enabled(paths: &ProjectPaths) -> bool {
     if let Ok(v) = std::env::var("MUNINN_CUES") {
         return v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on");

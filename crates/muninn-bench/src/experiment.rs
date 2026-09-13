@@ -213,10 +213,10 @@ fn seed_store_full(
     arm: &str,
     source: Option<&Path>,
 ) -> Result<i64> {
-    let mut args = vec!["--cwd", dir.to_str().unwrap(), "init", "--keep-native"];
-    if !boot {
-        args.push("--no-boot-block");
-    }
+    // init touches no file by default; the boot block (file or hook) is the cell's
+    // business, decided by its arm
+    let _ = boot;
+    let args = vec!["--cwd", dir.to_str().unwrap(), "init", "--keep-native"];
     run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args(&args))?;
     for s in seeds {
         run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
@@ -442,7 +442,11 @@ fn run_cell(
         );
         // the boot block goes into the checkout (every arm with Muninn), from the
         // plugin template of the repository under test
-        if arm != "off" {
+        // `<arm>-hookboot`: same arm, the compact summary injected by the SessionStart
+        // hook instead of the long block in the file (the shipped default)
+        let hookboot = arm.ends_with("-hookboot");
+        let base_arm = arm.strip_suffix("-hookboot").unwrap_or(arm);
+        if base_arm != "off" && !hookboot {
             let tpl = repo.join("plugin/templates/CLAUDE.muninn.md");
             if let Ok(t) = std::fs::read_to_string(&tpl) {
                 for f in ["CLAUDE.md", "AGENTS.md"] {
@@ -495,7 +499,17 @@ fn run_cell(
             .env("MUNINN_NO_PROJECT", "1")
             .env("MUNINN_SOURCE_ROOT", &dir)
             .env("MUNINN_CONFINE_ROOT", &dir)
-            .env("MUNINN_ARM", arm)
+            .env("MUNINN_ARM", base_arm)
+            .env(
+                "MUNINN_BOOT",
+                if base_arm == "off" {
+                    "off"
+                } else if hookboot {
+                    "hook"
+                } else {
+                    "file"
+                },
+            )
             .env("MUNINN_ROOT", &store)
             .env_remove("CLAUDECODE")
             .stdin(Stdio::null())
@@ -506,9 +520,9 @@ fn run_cell(
         }
         // query expansion is an opt-in in the shipped default (GATE4.md §1, second
         // grid); the arms that carry it say so explicitly
-        if arm == "lexical" {
+        if base_arm == "lexical" {
             cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_EXPAND", "1");
-        } else if arm == "lexical-plain" {
+        } else if base_arm == "lexical-plain" {
             cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_EXPAND", "0");
         } else {
             cmd.env("MUNINN_EXPAND", "1");
