@@ -46,11 +46,17 @@ False positives: a Claude.ai system-prompt fragment about markdown file creation
 (`git.commit`, emitted as `ask`). False negatives: "never deploy manually",
 "do not add npm dependencies without documenting them", "don't add dependencies".
 
-## Corpus-level figures (115 files, 2 641 candidates)
+## Corpus-level figures
 
-93.4 % interpretive only; 91 permission-rule candidates and 84 hook candidates. The
-published corpus figure is 95.6 % interpretive [K5]; the difference is within what the
-different candidate extraction explains, not evidence of anything.
+| corpus state | files | candidates | interpretive only | permission candidates | hook candidates |
+|---|---|---|---|---|---|
+| at the gate measurement (2026-09-12) | 115 | 2 641 | 93.4 % | 91 | 84 |
+| complete corpus (2026-09-13) | 330 | 7 116 | 92.9 % | 271 | 235 |
+
+The published corpus figure is 95.6 % interpretive [K5]; the difference is within what
+the different candidate extraction explains, not evidence of anything. The full-corpus
+row is the same frozen classifier over the whole manifest (322 of 323 entries fetched;
+one 404); the hold-out measurement above is unchanged by it.
 
 ## Caveats
 
