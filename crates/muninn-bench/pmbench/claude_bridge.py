@@ -63,7 +63,10 @@ class H(BaseHTTPRequestHandler):
             return self._json({"ok": True, "model": MODEL, "bridge": "claude_bridge.py"})
         if self.path.startswith("/canary"):
             try:
-                text, usage, turns = complete(MODEL, "", CANARY, 200)
+                # through the same path as a chat request: with a system prompt, which in
+                # `claude -p` replaces the harness's own prompt (without one, the canary
+                # describes Claude Code's default system prompt, which no arm ever sees)
+                text, usage, turns = complete(MODEL, "You answer questions.", CANARY, 300)
             except Exception as e:  # noqa: BLE001
                 text, usage, turns = f"error: {e}", {}, None
             return self._json({"model": MODEL, "answer": text, "input_tokens": usage.get("input_tokens"),

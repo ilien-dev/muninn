@@ -564,3 +564,15 @@ per `muninn_store` run on claude-sonnet-5 with direct invocation; the baselines'
 showed 1.19–1.49 M input tokens per run. Round 8 on one model is therefore of the order of 24
 store runs × 130 k + 24 baseline runs × 1.3 M ≈ 35 M input tokens; the Codex family is expected
 to be slower per call and its count of tool calls is unknown until the canary runs.
+
+**Amendment, before any round-8 cell (2026-09-13).** The first canary of the new bridge was
+run without a system prompt and answered with a description of Claude Code's default system
+prompt (identity, tool rules, care section, the account e-mail, the date, the working
+directory), no file, skill, memory or CLAUDE.md. Every chat request passes `--system-prompt`,
+which in `claude -p` replaces that default, so the canary is now sent through the same path
+(a one-line neutral system prompt). The acceptance rule is restated precisely: the canary
+answer may name only the harness's own environment reminders (working directory, platform,
+date, model identity, token budget) and the account e-mail; a canary naming any file, skill,
+memory, instruction file or prior conversation invalidates every run behind that bridge. The
+held-out seeds derive from commit `f173f2dc75625b89f7b0543004ed7cf44c51b399`, the commit
+that recorded the round-8 section; this amendment does not move them.
