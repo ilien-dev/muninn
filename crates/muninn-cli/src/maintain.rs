@@ -16,6 +16,7 @@ pub struct MaintainStats {
     pub reverts: usize,
     pub projected: usize,
     pub embedded: usize,
+    pub anchors_retired: usize,
     pub ms: u128,
 }
 
@@ -187,6 +188,10 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             }
         }
     }
+    match muninn_core::filter::validate_anchors(paths, &db) {
+        Ok(n) => st.anchors_retired = n,
+        Err(e) => output::err(&format!("muninn maintain: anchors: {e}")),
+    }
     match capture_git(paths, &db) {
         Ok((c, r)) => {
             st.commits = c;
@@ -223,8 +228,8 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         output::json(&st);
     } else {
         output::out(&format!(
-            "maintain: {} ingested, {} commit(s), {} revert(s), {} file(s) projected, {} embedded, {} ms",
-            st.ingested, st.commits, st.reverts, st.projected, st.embedded, st.ms
+            "maintain: {} ingested, {} commit(s), {} revert(s), {} anchor(s) retired, {} file(s) projected, {} embedded, {} ms",
+            st.ingested, st.commits, st.reverts, st.anchors_retired, st.projected, st.embedded, st.ms
         ));
     }
     0

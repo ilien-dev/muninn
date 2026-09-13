@@ -5,6 +5,7 @@
 pub mod caps;
 pub mod db;
 pub mod error;
+pub mod filter;
 pub mod health;
 pub mod heartbeat;
 pub mod paths;

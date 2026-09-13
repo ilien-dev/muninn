@@ -76,8 +76,25 @@ enum Cmd {
     Import { path: PathBuf },
     /// Run the asynchronous write path now: fold logs, resume ingest, capture git, project Markdown
     Maintain,
-    /// Ask why: literal records with lineage (Phase 4)
-    Why { query: Vec<String> },
+    /// Ask why: literal records with provenance, lineage, conflicts and a sufficiency marker
+    Why {
+        query: Vec<String>,
+        /// Include retired records
+        #[arg(long)]
+        all: bool,
+        /// Maximum records
+        #[arg(long, default_value_t = 8)]
+        limit: usize,
+        /// Output budget in tokens (estimate)
+        #[arg(long, default_value_t = 1500)]
+        budget: usize,
+    },
+    /// Retire a record by hand (retained, never served)
+    Revoke {
+        id: i64,
+        #[arg(long, default_value = "user")]
+        reason: String,
+    },
     /// Compile CLAUDE.md/AGENTS.md rules into enforceable controls (writes .muninn/compiled/, applies nothing)
     Compile {
         /// Recompile even if sources are unchanged
@@ -338,7 +355,64 @@ fn main() {
             }
         },
         Cmd::Maintain => maintain::run(&paths, cli.json),
-        Cmd::Why { .. } => not_yet("why", "Phase 4"),
+        Cmd::Why {
+            query,
+            all,
+            limit,
+            budget,
+        } => {
+            let q = query.join(" ");
+            if q.trim().is_empty() {
+                output::err("muninn why: give a question or a record id");
+                2
+            } else {
+                match Db::open(&paths.db_path(), Mode::ReadOnly) {
+                    Ok(db) => match muninn_why::answer(&db, &q, all, limit, budget) {
+                        Ok(a) => {
+                            if cli.json {
+                                output::json(&a);
+                            } else {
+                                output::out(&muninn_why::render(&a));
+                            }
+                            if a.sufficient {
+                                0
+                            } else {
+                                3
+                            }
+                        }
+                        Err(e) => {
+                            output::err(&format!("muninn why: {e}"));
+                            1
+                        }
+                    },
+                    Err(e) => {
+                        output::err(&format!("muninn why: {e}"));
+                        1
+                    }
+                }
+            }
+        }
+        Cmd::Revoke { id, reason } => match Db::open(&paths.db_path(), Mode::ReadWrite) {
+            Ok(db) => match muninn_core::filter::revoke(&db, id, &reason) {
+                Ok(true) => {
+                    let _ = muninn_core::project::project(&paths, &db, &[id]);
+                    output::out(&format!("record #{id} retired (revoked: {reason})"));
+                    0
+                }
+                Ok(false) => {
+                    output::err(&format!("record #{id} is not active"));
+                    1
+                }
+                Err(e) => {
+                    output::err(&format!("muninn revoke: {e}"));
+                    1
+                }
+            },
+            Err(e) => {
+                output::err(&format!("muninn revoke: {e}"));
+                1
+            }
+        },
         Cmd::Compile { force } => match compile_cmd::run_compile(&paths, force, cli.json) {
             Ok(()) => 0,
             Err(e) => {
