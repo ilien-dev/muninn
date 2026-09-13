@@ -215,6 +215,17 @@ fixes): off 1/3, unfiltered 1/3, literal 3/3, retired-served 0.
     gpt-5.6-terra, `fact-userprompt-p95` literal: pass, 831 tokens delivered, hook p95
     2.56 ms (the same cell had timed out at 303 s before). A Codex grid needs its own
     pre-registration here before any cell runs.
+- Claude cell isolation, found 2026-09-13 (infrastructure). `claude -p` cells ran with
+  `--settings` but every setting source, so the user's own configuration reached the
+  agent. Probe with those flags on this machine today (claude-haiku-4-5, a CLAUDE.md
+  canary in the checkout): the user's global CLAUDE.md and output style were loaded,
+  with 10 user plugins, 6 MCP servers (153 tools) and 3 user SessionStart hooks. The
+  runner now passes `--setting-sources project,local --strict-mcp-config`: same probe,
+  checkout CLAUDE.md still read, no user CLAUDE.md, default output style, 0 plugins,
+  0 MCP servers, 30 tools, and the cell's `--settings` hooks still fire. What the user
+  configuration was when Gates 2–4 ran is not recorded; it applied to every arm alike,
+  and the Gate 3 oracle amendment below (agents answering in Spanish) is consistent with
+  it. Grids from here on run isolated.
 - Oracle amendment after the sonnet grid, applied by `--rescore` to every cell of every
   arm: `revoke-internal-http` required the English phrase "https everywhere"; the three
   filtered cells had written "HTTPS en todo / en todos lados / en todas partes" (the
@@ -643,3 +654,49 @@ resamples, as in the originals.
 calls; the Codex Gate 3 grid starts now (other provider); the sonnet grids above start when
 round 8's sonnet jobs have exited, three cells at a time, so no grid competes for the
 account's rate limit with another.
+
+## Instrument failure in the Codex Gate 3 grid, and the fix (recorded 2026-09-13, before the re-run)
+
+**What the first Codex grid showed** (`results/gate3-codex-v1-leaky/`, 90 cells, kept):
+`literal` 27/27, `unfiltered` 0/27 with 18 cells writing the retired value, and **`off`
+18/27 with zero tokens delivered**. A no-memory agent cannot know that the current codec is
+zstd. The cell's turn-context log for `r0-revoke-compression-off` shows what it read before
+writing "zstd": `.codex/hooks.json`, `codex/hooks.json`, `plugin/skills/muninn/SKILL.md`,
+`crates/muninn-core/src/paths.rs` (symbols `ProjectPaths`, `db_path`) — it located the store
+from the engine's own source, and `MUNINN_ROOT` was in its environment. Codex's sandbox
+restricts writes, not reads, and the cell directory sat inside this repository's tree, next
+to `GATE3.md` and the other cells' stores. The grid is invalid as a measurement of memory
+delivered by hooks and is reported only as this paragraph.
+
+**Were the Claude grids affected?** Their cells sat in the same place. Claude cells had no
+`sqlite3`, `echo`, `env` or `python` in their allowed tools; `cat *` and `grep *` were
+allowed, so a read of a store file was possible in principle. No turn-context logs exist for
+the Gate 3 Claude grids (the log came later); the `off` arm's 2/54 passes on replacement
+scenarios (both guesses in the model's own words) are consistent with no such read. The
+boot-vehicle and expansion grids do have the logs: 1 of 84 and 4 of 68 cells mention a path
+outside the cell — those five are listed and inspected in `GATE3.md` at the re-run. This
+cannot be excluded retroactively; it is excluded by construction from here on.
+
+**Fix, in the runner and in the hook, applied to every grid from this point:**
+1. The `off` arm has no Muninn at all: no store is created, no hooks are installed, no
+   `MUNINN_*` variable is set; for Claude the settings file carries only
+   `autoMemoryEnabled: false`. Earlier grids gave `off` a seeded store and no-op hooks.
+2. Cells and stores live outside the repository tree and outside the results directory
+   (`$TMPDIR/muninn-bench/<grid>/`, `MUNINN_BENCH_WORK` overrides), so `..` leads nowhere.
+3. The PreToolUse hook, in a cell (`MUNINN_CONFINE_ROOT` set), denies and counts any shell
+   command or read that names the store, `muninn.db`, `.muninn/`, `MUNINN_ROOT` or `sqlite3`,
+   walks `../`, or takes an absolute path outside the checkout and the system directories
+   (`deny:store-access`, `deny:escape` in the cell's ledger). The denial text tells the agent
+   the checkout is the whole project and memory arrives through the hooks. The count of
+   denials per arm is reported with every grid; a grid where `literal` cells were denied
+   more than 5 % of their commands is examined for whether the denial itself drove the
+   result.
+4. A diagnostic cell (prompt asking for `echo $MUNINN_ROOT`, `ls ..`, `cat ../../GATE3.md`)
+   is run on Codex before the grid; its ledger must show the denials and its output must
+   show no store path. Recorded below when run.
+
+**Re-run.** `tasks-revocation-codex.json` unchanged; the fixed runner and hook; same decision
+rule. The public-seed grid and the five-run replications run on the fixed instrument. For
+the replications this changes nothing in the compared arms (all have Muninn); the boot and
+expansion figures they replicate came from the old instrument, which is stated when the
+replication is pooled with the original.

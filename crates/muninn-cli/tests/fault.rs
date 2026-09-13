@@ -355,18 +355,17 @@ fn s09_concurrent_writers() {
         }
         let s = summary(&root);
         assert!(!s.starts_with("MUNINN RED"), "{s}");
-        // property: no heartbeat is lost — folded into the store, or still in the log
-        // (a fold that raced another writer leaves the newest lines for the next fold)
+        // property: no heartbeat is lost — folded into the store, or past the fold
+        // watermark for the next fold (the live log is never renamed under appenders)
         let conn = rusqlite::Connection::open(db_path(&root)).unwrap();
         let n: i64 = conn
             .query_row("SELECT count(*) FROM heartbeat", [], |r| r.get(0))
             .unwrap();
-        let mut pending = 0i64;
-        for name in ["heartbeat.jsonl", "heartbeat.jsonl.folding"] {
-            if let Ok(t) = std::fs::read_to_string(root.join(".muninn/log").join(name)) {
-                pending += t.lines().filter(|l| l.contains("\"ev\":\"start\"")).count() as i64;
-            }
-        }
+        let pending =
+            muninn_core::logfold::pending(&conn, &root.join(".muninn/log/heartbeat.jsonl"))
+                .iter()
+                .filter(|l| l.contains("\"ev\":\"start\""))
+                .count() as i64;
         assert!(
             n + pending >= 4,
             "heartbeats folded {n} + pending {pending}"

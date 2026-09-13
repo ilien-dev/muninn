@@ -56,20 +56,27 @@ fn d_harness() -> String {
 /// global AGENTS.md, config, hook or `~/.agents/skills` entry reaches the model.
 /// Returns the environment the harness runs with. The copied login goes away with
 /// the store when the cell ends.
-fn codex_cell(muninn: &Path, dir: &Path, store: &Path) -> Result<Vec<(String, PathBuf)>> {
-    // the shipped generator, run in a scratch project of its own (its own `.git`, so
-    // the init cannot resolve upwards into the cell's store)
-    let gen = store.join("codex-init");
-    std::fs::create_dir_all(gen.join(".git"))?;
-    run_ok(Command::new(muninn).env_remove("MUNINN_ROOT").args([
-        "init",
-        "--codex",
-        "--keep-native",
-        "--cwd",
-        gen.to_str().unwrap(),
-    ]))?;
-    std::fs::create_dir_all(dir.join(".codex"))?;
-    std::fs::copy(gen.join(".codex/hooks.json"), dir.join(".codex/hooks.json"))?;
+fn codex_cell(
+    muninn: &Path,
+    dir: &Path,
+    store: &Path,
+    hooks: bool,
+) -> Result<Vec<(String, PathBuf)>> {
+    if hooks {
+        // the shipped generator, run in a scratch project of its own (its own `.git`, so
+        // the init cannot resolve upwards into the cell's store)
+        let gen = store.join("codex-init");
+        std::fs::create_dir_all(gen.join(".git"))?;
+        run_ok(Command::new(muninn).env_remove("MUNINN_ROOT").args([
+            "init",
+            "--codex",
+            "--keep-native",
+            "--cwd",
+            gen.to_str().unwrap(),
+        ]))?;
+        std::fs::create_dir_all(dir.join(".codex"))?;
+        std::fs::copy(gen.join(".codex/hooks.json"), dir.join(".codex/hooks.json"))?;
+    }
 
     let real_home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
     let real_codex = std::env::var_os("CODEX_HOME")
@@ -330,12 +337,13 @@ fn measure_store(dir: &Path) -> (i64, i64, Option<f64>) {
             |r| r.get(0),
         )
         .unwrap_or(0);
-    // delivery.jsonl may not have been folded if Stop did not fire; count it too
+    // lines of delivery.jsonl past the fold watermark (Stop may not have fired); the
+    // folded ones are already in fire_ledger
     let mut extra_tokens = 0i64;
     let mut extra_recs = 0i64;
-    if let Ok(s) = std::fs::read_to_string(dir.join(".muninn/log/delivery.jsonl")) {
-        for l in s.lines() {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
+    {
+        for l in muninn_core::logfold::pending(&db, &dir.join(".muninn/log/delivery.jsonl")) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&l) {
                 if v["reason"]
                     .as_str()
                     .map(|r| !r.starts_with("off") && !r.starts_with("silence"))
@@ -355,9 +363,9 @@ fn measure_store(dir: &Path) -> (i64, i64, Option<f64>) {
             ms.extend(rows.filter_map(|r| r.ok()));
         }
     }
-    if let Ok(s) = std::fs::read_to_string(dir.join(".muninn/log/heartbeat.jsonl")) {
-        for l in s.lines() {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
+    {
+        for l in muninn_core::logfold::pending(&db, &dir.join(".muninn/log/heartbeat.jsonl")) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&l) {
                 if v["ev"] == "finish" && v["hook"] == "UserPromptSubmit" {
                     if let Some(m) = v["ms"].as_f64() {
                         ms.push(m);
@@ -381,6 +389,7 @@ fn run_cell(
     run: usize,
     order: usize,
     work: &Path,
+    out_root: &Path,
 ) -> Cell {
     let t0 = Instant::now();
     let mut cell = Cell {
@@ -451,25 +460,30 @@ fn run_cell(
         ] {
             run_ok(Command::new("git").current_dir(&dir).args(&a))?;
         }
+        // the `off` arm has no Muninn at all: no store, no hooks, no MUNINN variables
+        // (Gate 3 on Codex: a no-memory cell located and read a store it should not have)
+        let no_muninn = arm.strip_suffix("-hookboot").unwrap_or(arm) == "off";
         std::fs::create_dir_all(store.join(".git"))?;
         let seed_records = cfg.seed_records.as_deref().map(expand);
-        cell.stored_episodes = seed_store_full(
-            muninn,
-            &store,
-            seeds,
-            false,
-            seed_records.as_deref(),
-            arm,
-            Some(&dir),
-        )?;
-        // the write path once, so the store starts warm (anchors, cues, sidecar)
-        let _ = run_ok(
-            Command::new(muninn)
-                .env("MUNINN_ROOT", &store)
-                .env("MUNINN_SOURCE_ROOT", &dir)
-                .env("MUNINN_NO_PROJECT", "1")
-                .args(["--cwd", store.to_str().unwrap(), "maintain"]),
-        );
+        if !no_muninn {
+            cell.stored_episodes = seed_store_full(
+                muninn,
+                &store,
+                seeds,
+                false,
+                seed_records.as_deref(),
+                arm,
+                Some(&dir),
+            )?;
+            // the write path once, so the store starts warm (anchors, cues, sidecar)
+            let _ = run_ok(
+                Command::new(muninn)
+                    .env("MUNINN_ROOT", &store)
+                    .env("MUNINN_SOURCE_ROOT", &dir)
+                    .env("MUNINN_NO_PROJECT", "1")
+                    .args(["--cwd", store.to_str().unwrap(), "maintain"]),
+            );
+        }
         // the boot block goes into the checkout (every arm with Muninn), from the
         // plugin template of the repository under test
         // `<arm>-hookboot`: same arm, the compact summary injected by the SessionStart
@@ -487,7 +501,11 @@ fn run_cell(
         let settings = store.join("claude-settings.json");
         std::fs::write(
             &settings,
-            serde_json::to_string_pretty(&settings_json(muninn))?,
+            serde_json::to_string_pretty(&if no_muninn {
+                serde_json::json!({ "autoMemoryEnabled": false })
+            } else {
+                settings_json(muninn)
+            })?,
         )?;
         let prompt = format!("{}\n\nWork only inside the current working directory (this repository checkout); write files by paths relative to it and never outside it.", task.prompt);
         let mut cmd = if cfg.harness == "codex" {
@@ -505,13 +523,16 @@ fn run_cell(
                 &cfg.model,
                 &prompt,
             ]);
-            for (k, v) in codex_cell(muninn, &dir, &store)? {
+            for (k, v) in codex_cell(muninn, &dir, &store, !no_muninn)? {
                 c.env(k, v);
             }
             c
         } else {
             let mut c = Command::new("claude");
+            // only the checkout's own settings and CLAUDE.md, plus the cell's `--settings`:
+            // the user's CLAUDE.md, plugins, MCP servers and hooks stay out of the cell
             c.current_dir(&dir)
+                .args(["--setting-sources", "project,local", "--strict-mcp-config"])
                 .args(["-p", &prompt, "--model", &cfg.model, "--output-format", "json", "--max-turns", &cfg.max_turns.to_string(), "--permission-mode", "acceptEdits", "--settings", settings.to_str().unwrap()])
                 .args(["--allowedTools", "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git status *),Bash(cat *),Bash(grep *),Bash(awk *),Bash(sed -n *),Bash(head *),Bash(tail *),Bash(wc *),Bash(ls *),Bash(muninn why *),Bash(muninn status *),Bash(muninn why:*),Bash(muninn status:*)"]);
             c
@@ -523,23 +544,22 @@ fn run_cell(
             .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
-        cmd.env("PATH", format!("{bin_dir}:{path}"))
-            .env("MUNINN_NO_PROJECT", "1")
-            .env("MUNINN_SOURCE_ROOT", &dir)
-            .env("MUNINN_CONFINE_ROOT", &dir)
-            .env("MUNINN_ARM", base_arm)
-            .env(
-                "MUNINN_BOOT",
-                if base_arm == "off" {
-                    "off"
-                } else if hookboot {
-                    "hook"
-                } else {
-                    "file"
-                },
-            )
-            .env("MUNINN_ROOT", &store)
-            .env_remove("CLAUDECODE")
+        if no_muninn {
+            cmd.env_remove("MUNINN_ROOT")
+                .env_remove("MUNINN_ARM")
+                .env_remove("MUNINN_BOOT")
+                .env_remove("MUNINN_CONFINE_ROOT")
+                .env_remove("MUNINN_SOURCE_ROOT");
+        } else {
+            cmd.env("PATH", format!("{bin_dir}:{path}"))
+                .env("MUNINN_NO_PROJECT", "1")
+                .env("MUNINN_SOURCE_ROOT", &dir)
+                .env("MUNINN_CONFINE_ROOT", &dir)
+                .env("MUNINN_ARM", base_arm)
+                .env("MUNINN_BOOT", if hookboot { "hook" } else { "file" })
+                .env("MUNINN_ROOT", &store);
+        }
+        cmd.env_remove("CLAUDECODE")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -607,7 +627,7 @@ fn run_cell(
             raw
         };
         // the model's own account of the cell, for audit (what it read, what it claimed)
-        let logs = work.parent().unwrap_or(work).join("logs");
+        let logs = out_root.join("logs");
         let _ = std::fs::create_dir_all(&logs);
         let _ = std::fs::write(logs.join(format!("r{run}-{}-{arm}.json", task.id)), &stdout);
         let _ = std::fs::write(
@@ -685,7 +705,7 @@ fn run_cell(
             .args(["diff", "--cached", "--no-color"])
             .output()
         {
-            let diffs = work.parent().unwrap_or(work).join("diffs");
+            let diffs = out_root.join("diffs");
             let _ = std::fs::create_dir_all(&diffs);
             let _ = std::fs::write(
                 diffs.join(format!("r{run}-{}-{arm}.patch", task.id)),
@@ -694,7 +714,7 @@ fn run_cell(
         }
         // the cell's delivery and turn-context logs, for audit (which cue fired, when)
         {
-            let logs = work.parent().unwrap_or(work).join("logs");
+            let logs = out_root.join("logs");
             let _ = std::fs::create_dir_all(&logs);
             for (src, suffix) in [
                 ("delivery.jsonl", "delivery.jsonl"),
@@ -720,7 +740,7 @@ fn run_cell(
                     })
                     .map(|it| it.filter_map(|x| x.ok()).collect())
                     .unwrap_or_default();
-                let logs = work.parent().unwrap_or(work).join("logs");
+                let logs = out_root.join("logs");
                 let _ = std::fs::write(
                     logs.join(format!("r{run}-{}-{arm}.ledger.jsonl", task.id)),
                     rows.iter()
@@ -995,7 +1015,18 @@ pub fn run(
     );
     std::fs::create_dir_all(out_dir)?;
     let out_dir = &std::fs::canonicalize(out_dir)?;
-    let work = out_dir.join("work");
+    // cells and stores live outside the repository tree and outside `out`: a cell that
+    // walks `..` finds no other cell, no store and no report with the answers
+    // (MUNINN_BENCH_WORK overrides the root; default: the system temp dir)
+    let work_root = std::env::var_os("MUNINN_BENCH_WORK")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("muninn-bench"));
+    let grid = out_dir
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "grid".into());
+    let work = work_root.join(&grid).join("work");
+    println!("cells under {}", work.display());
     std::fs::create_dir_all(&work)?;
 
     // plan
@@ -1196,6 +1227,7 @@ pub fn run(
                     *run,
                     order,
                     &work,
+                    out_dir,
                 );
                 println!(
                     "[{:>3}/{}] run {run} {tid} {arm} → {} ({:.0}s, {} tok, ${:.3}){}",

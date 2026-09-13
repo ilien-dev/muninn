@@ -87,6 +87,57 @@ pub struct Verdict {
     pub rule_id: String,
 }
 
+/// The cell's world is its checkout. A shell command or a read that names the store
+/// (`MUNINN_ROOT`, `muninn.db`, `.muninn/`, `sqlite3`), walks `..`, or takes an absolute
+/// path outside the checkout and outside the system directories is denied.
+fn store_access(input: &HookInput, root: &str) -> Option<Verdict> {
+    let tool = input.tool_name.as_deref().unwrap_or("");
+    let ti = input.tool_input.clone().unwrap_or(serde_json::Value::Null);
+    let text: String = match tool {
+        "Bash" => input_str(&ti, &["command"]).unwrap_or("").to_string(),
+        "Read" | "Grep" | "Glob" => touched_paths(&ti, &["file_path", "path", "pattern"]).join(" "),
+        _ => return None,
+    };
+    if text.is_empty() {
+        return None;
+    }
+    let store = std::env::var("MUNINN_ROOT").unwrap_or_default();
+    let rootp = std::path::Path::new(root);
+    let rootc = rootp.canonicalize().unwrap_or(rootp.to_path_buf());
+    let named = (!store.is_empty() && text.contains(&store))
+        || text.contains("muninn.db")
+        || text.contains("MUNINN_ROOT")
+        || text.contains(".muninn/")
+        || text.contains("sqlite3");
+    let escapes = text.contains("../")
+        || text
+            .split(|c: char| c.is_whitespace() || c == '\'' || c == '"' || c == '=' || c == ':')
+            .any(|tok| {
+                if !tok.starts_with('/') || tok.len() < 2 {
+                    return false;
+                }
+                let p = std::path::Path::new(tok);
+                let system = [
+                    "/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev", "/proc", "/sys",
+                    "/opt", "/run", "/nix",
+                ];
+                !(p.starts_with(&rootc)
+                    || p.starts_with(rootp)
+                    || system.iter().any(|s| p.starts_with(s)))
+            });
+    if !(named || escapes) {
+        return None;
+    }
+    Some(Verdict {
+        decision: "deny".into(),
+        reason: format!(
+            "Muninn: this checkout ({}) is the whole project; memory arrives through the hooks — use what was delivered or say nothing is recorded",
+            rootc.display()
+        ),
+        rule_id: if named { "store-access".into() } else { "escape".into() },
+    })
+}
+
 /// Evaluate. `None` = no rule matched (silence, still logged).
 pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
     // Confinement: with MUNINN_CONFINE_ROOT set (experiment cells), an edit outside that
@@ -128,6 +179,25 @@ pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
                     });
                 }
             }
+        }
+        // Instrument integrity (cells only): memory reaches the agent through the hooks
+        // and nothing else. Gate 3 on Codex found a no-memory cell reading the engine's
+        // source to locate the store and then the store itself (MUNINN_ROOT was in its
+        // environment). A command or read that names the store, the database, the
+        // variable, sqlite, or a path outside the checkout is denied and counted.
+        if let Some(v) = store_access(input, &root) {
+            crate::delivery::append(
+                paths,
+                &crate::delivery::Line {
+                    at: muninn_core::db::now_ms(),
+                    session: input.session_id.clone(),
+                    arm: std::env::var("MUNINN_ARM").unwrap_or_else(|_| "literal".into()),
+                    ids: vec![],
+                    tokens: 0,
+                    reason: format!("deny:{}", v.rule_id),
+                },
+            );
+            return Some(v);
         }
     }
     let applied = load_applied(paths)?;
@@ -246,6 +316,39 @@ mod tests {
 
     /// A relative path to a new file that climbs out of the root is denied (Codex
     /// sends relative patch paths; `root/../x` used to pass the component check).
+    #[test]
+    fn store_reads_and_escapes_are_denied_in_a_cell() {
+        let root = std::env::temp_dir().join("muninn-cell-root");
+        std::fs::create_dir_all(&root).unwrap();
+        let r = root.to_string_lossy().to_string();
+        let bash = |cmd: &str| HookInput {
+            tool_name: Some("Bash".into()),
+            tool_input: Some(serde_json::json!({ "command": cmd })),
+            ..Default::default()
+        };
+        assert_eq!(
+            store_access(&bash("sqlite3 $MUNINN_ROOT/muninn.db .tables"), &r).map(|v| v.rule_id),
+            Some("store-access".into())
+        );
+        assert_eq!(
+            store_access(&bash("cat ../../GATE3.md"), &r).map(|v| v.rule_id),
+            Some("escape".into())
+        );
+        assert_eq!(
+            store_access(&bash("grep -rn zstd /home/someone/other"), &r).map(|v| v.rule_id),
+            Some("escape".into())
+        );
+        assert!(store_access(&bash("git log --oneline"), &r).is_none());
+        assert!(store_access(&bash(&format!("ls {}/docs", r)), &r).is_none());
+        assert!(store_access(&bash("/usr/bin/grep -rn codec docs"), &r).is_none());
+        let read = HookInput {
+            tool_name: Some("Read".into()),
+            tool_input: Some(serde_json::json!({ "file_path": "/tmp/elsewhere/muninn.db" })),
+            ..Default::default()
+        };
+        assert!(store_access(&read, &r).is_some());
+    }
+
     #[test]
     fn confine_denies_a_new_file_outside_the_root() {
         let tmp = tempfile::tempdir().unwrap();

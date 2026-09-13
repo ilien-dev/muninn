@@ -1,7 +1,6 @@
 //! Read-hook delivery log: which records were delivered (or why nothing was),
 //! appended by read hooks and folded into `fire_ledger` by the write path.
 
-use muninn_core::db::now_ms;
 use muninn_core::{Db, ProjectPaths, Result};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -33,18 +32,23 @@ pub fn append(paths: &ProjectPaths, line: &Line) {
     }
 }
 
-/// Ids delivered in this session (so the same record is not repeated).
-pub fn delivered_ids(paths: &ProjectPaths, session: &str) -> std::collections::HashSet<i64> {
+/// Ids delivered in this session and not yet folded (so the same record is not
+/// repeated before the write path runs). The log keeps folded lines now; reading only
+/// past the fold watermark keeps the window the gates measured, when a fold removed
+/// the file.
+pub fn delivered_ids(
+    paths: &ProjectPaths,
+    db: &Db,
+    session: &str,
+) -> std::collections::HashSet<i64> {
     let mut out = std::collections::HashSet::new();
-    if let Ok(s) = muninn_core::sanitize::read_regular_bounded(&log_path(paths), 64 << 20) {
-        for l in s.lines() {
-            if let Ok(v) = serde_json::from_str::<Line>(l) {
-                if v.session == session {
-                    if v.reason.starts_with("epoch:") {
-                        out.clear();
-                    } else {
-                        out.extend(v.ids);
-                    }
+    for l in muninn_core::logfold::pending(&db.conn, &log_path(paths)) {
+        if let Ok(v) = serde_json::from_str::<Line>(&l) {
+            if v.session == session {
+                if v.reason.starts_with("epoch:") {
+                    out.clear();
+                } else {
+                    out.extend(v.ids);
                 }
             }
         }
@@ -54,25 +58,17 @@ pub fn delivered_ids(paths: &ProjectPaths, session: &str) -> std::collections::H
 
 /// Fold into `fire_ledger` (one row per delivered record, one per silence).
 pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
-    let path = log_path(paths);
-    if !path.exists() {
-        return Ok(0);
-    }
-    let folding = path.with_extension("jsonl.folding");
-    if !folding.exists() {
-        std::fs::rename(&path, &folding).map_err(|e| muninn_core::Error::io(&path, e))?;
-    }
-    let text = muninn_core::sanitize::read_regular_bounded(&folding, 64 << 20)
-        .map_err(|e| muninn_core::Error::io(&folding, e))?;
     let epoch: i64 = db
         .meta_get("compaction_epoch")?
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    let mut n = 0;
     let tx = db.write_tx()?;
+    // from the watermark: the live file is never renamed under concurrent appenders
+    let taken = muninn_core::logfold::take(&tx, &log_path(paths))?;
+    let mut n = 0;
     {
         let mut ins = tx.prepare("INSERT INTO fire_ledger(session_id, compaction_epoch, record_id, fired_at, tokens, reason) VALUES (?1,?2,?3,?4,?5,?6)")?;
-        for l in text.lines() {
+        for l in &taken.lines {
             let Ok(v) = serde_json::from_str::<Line>(l) else {
                 continue;
             };
@@ -105,13 +101,8 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
             }
         }
     }
-    if let Err(e) = tx.commit() {
-        // give the lines back to the next fold instead of stranding them
-        let _ = std::fs::rename(&folding, &path);
-        return Err(e.into());
-    }
-    let _ = now_ms();
-    std::fs::remove_file(&folding).map_err(|e| muninn_core::Error::io(&folding, e))?;
+    tx.commit()?;
+    taken.finish();
     Ok(n)
 }
 
