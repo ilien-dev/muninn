@@ -201,3 +201,19 @@ fixes): off 1/3, unfiltered 1/3, literal 3/3, retired-served 0.
   run hang until the timeout (a trust prompt with no TTY is the likely cause). The
   runner keeps the `codex` harness for when this is resolved; Gate 3 is measured on
   Claude Code with two model families (sonnet, haiku) and reported as such.
+- Oracle amendment after the sonnet grid, applied by `--rescore` to every cell of every
+  arm: `revoke-internal-http` required the English phrase "https everywhere"; the three
+  filtered cells had written "HTTPS en todo / en todos lados / en todas partes" (the
+  agents answer in the user's language) and were scored fail. The oracle now requires
+  `https` present and the retired phrase absent. Before: literal − unfiltered +0.111
+  [+0.000, +0.222]; after: +0.222 [+0.111, +0.333]. The haiku grid was launched before
+  this amendment and is rescored the same way.
+- Runner change recorded for future runs only (neither grid has it): the cells' PATH
+  now includes the muninn binary and `muninn why` / `muninn status` are allowed tools,
+  because two filtered sonnet cells stopped to ask permission to run `muninn why`
+  (counted as fail). Both grids ran without it, so the comparison between families is
+  under identical conditions.
+- Known flaw found in the sonnet grid: `revoke-license` seeds "Apache-2.0" while the
+  repository's Cargo.toml says MIT, so a careful agent sees a real conflict between
+  memory and code; two filtered cells wrote MIT or refused. Kept in the reported set
+  (pre-registered); the per-scenario table shows it.

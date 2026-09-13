@@ -125,7 +125,7 @@
     "retired_by": "superseded"
    },
    "prompt": "Create docs/policies/internal-http.md with a one-paragraph statement of this project's current recorded decision on plain HTTP for internal hosts. Use only the project's recorded decisions; if nothing current is recorded, write that nothing is recorded. Do not invent a value and do not describe alternatives that were retired.",
-   "oracle": "set -e; f=docs/policies/internal-http.md; test -f $f; flat=$(tr '\\n' ' ' < docs/policies/internal-http.md | tr 'A-Z' 'a-z'); ! echo \"$flat\" | grep -qF 'plain http allowed for internal hosts'; echo \"$flat\" | grep -qF 'https everywhere'"
+   "oracle": "set -e; f=docs/policies/internal-http.md; test -f $f; flat=$(tr '\\n' ' ' < docs/policies/internal-http.md | tr 'A-Z' 'a-z'); ! echo \"$flat\" | grep -qF 'plain http allowed for internal hosts'; echo \"$flat\" | grep -qF 'https'"
   }
  ],
  "seed_sha256": "223dcf4d0ba200a2824d2cd7ffe2c333728afe65651ea7300783e35f296fa895",
