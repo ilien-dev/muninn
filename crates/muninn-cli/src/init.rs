@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub const BOOT_BLOCK: &str = include_str!("../../../plugin/templates/CLAUDE.muninn.md");
+/// Compact summary injected by the SessionStart hook (`boot = "hook"`, the default).
+pub const BOOT_HOOK: &str = include_str!("../../../plugin/templates/BOOT.hook.md");
 const BEGIN: &str = "<!-- muninn:begin -->";
 const END: &str = "<!-- muninn:end -->";
 const GITIGNORE_LINES: [&str; 4] = [
@@ -31,10 +33,14 @@ pub struct InitOpts {
     pub keep_native: bool,
     pub refresh: bool,
     pub codex: bool,
-    pub no_boot_block: bool,
+    /// Write the long boot block into CLAUDE.md / AGENTS.md (opt-in; the default
+    /// injects the compact summary from the SessionStart hook and touches no file).
+    pub boot_file: bool,
 }
 
 pub struct BudgetReport {
+    pub hook_chars: usize,
+    pub hook_tokens: usize,
     pub chars: usize,
     pub est_tokens: usize,
     #[allow(dead_code)]
@@ -47,11 +53,18 @@ pub fn check_budget() -> BudgetReport {
     let est_tokens = tokens::estimate(BOOT_BLOCK);
     let exact_tokens: Option<usize> = exact_count(BOOT_BLOCK);
     let tok = exact_tokens.unwrap_or(est_tokens);
+    let hook_chars = BOOT_HOOK.chars().count();
+    let hook_tokens = exact_count(BOOT_HOOK).unwrap_or(tokens::estimate(BOOT_HOOK));
     BudgetReport {
         chars,
         est_tokens,
         exact_tokens,
-        ok: chars <= caps::BOOT_BLOCK_MAX_CHARS && tok <= caps::BOOT_BLOCK_MAX_TOKENS,
+        hook_chars,
+        hook_tokens,
+        ok: chars <= caps::BOOT_BLOCK_MAX_CHARS
+            && tok <= caps::BOOT_BLOCK_MAX_TOKENS
+            && hook_chars <= caps::BOOT_HOOK_MAX_CHARS
+            && hook_tokens <= caps::BOOT_HOOK_MAX_TOKENS,
     }
 }
 
@@ -62,6 +75,18 @@ fn exact_count(s: &str) -> Option<usize> {
 #[cfg(not(feature = "exact-tokens"))]
 fn exact_count(_s: &str) -> Option<usize> {
     None
+}
+
+fn set_config(dir: &Path, key: &str, value: serde_json::Value) -> Result<()> {
+    let p = dir.join("config.json");
+    let mut v: serde_json::Value = std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    v[key] = value;
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(&p, serde_json::to_string_pretty(&v)? + "\n")?;
+    Ok(())
 }
 
 fn state_path(paths: &ProjectPaths) -> std::path::PathBuf {
@@ -262,7 +287,15 @@ pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
         touched.push(".claude/settings.json (permissions.allow: muninn why, muninn status)".into());
     }
 
-    if !opts.no_boot_block {
+    // default: no file is touched; the SessionStart hook injects the compact summary.
+    // `--boot-file` writes the long block and records `boot = "file"` so the hook
+    // does not inject it twice.
+    if opts.boot_file {
+        set_config(
+            &paths.muninn_dir,
+            "boot",
+            serde_json::Value::String("file".into()),
+        )?;
         let budget = check_budget();
         if !budget.ok {
             bail!(

@@ -294,3 +294,23 @@ negative. `literal − lexical` re-tests the §1 condition with expansion in bot
 **Also recorded.** Delivered tokens, turns and cost per arm; retired records served
 (must stay 0).
 
+## Boot-block vehicle — file vs SessionStart hook (recorded 2026-09-13, before any cell ran)
+
+**Change under test.** The shipped default no longer writes the boot block into the
+user's CLAUDE.md / AGENTS.md; the SessionStart hook injects a compact summary (~425
+estimated tokens, `plugin/templates/BOOT.hook.md`) as additionalContext at startup,
+resume, clear and after compaction, and the `muninn` skill carries the long form on
+demand. `muninn init --boot-file` restores the file vehicle (`boot = "file"`).
+
+**Arms.** `literal` (long block in CLAUDE.md, as in every gate so far) and
+`literal-hookboot` (no file; compact summary by hook). Everything else identical:
+claude-sonnet-5, the six Gate 2 tasks plus the eight cue-grid tasks (14), same frozen
+seed (sha256 223dcf4d…fa895) and seed records, 3 runs, 84 cells, randomised order,
+confined cells, cues on in both arms.
+
+**Hypothesis and rule.** Non-inferiority: `literal-hookboot − literal` with a 95 %
+cluster-bootstrap CI (by task). The hook vehicle ships as the default if the point
+estimate is ≥ −0.05 and the lower bound is > −0.20; if the point estimate is below
+−0.05, `init` goes back to writing the file by default and the hook summary becomes the
+opt-in. Also recorded: delivered tokens, turns, cost, retired records served (must be 0).
+
