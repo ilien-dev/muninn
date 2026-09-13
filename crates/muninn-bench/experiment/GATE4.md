@@ -80,6 +80,19 @@ parser on an odd model reply and is excluded):
 | muninn_ledger v2 | 3 | 63.0 · 58.6 · 60.3 | 60.6 % |
 | muninn_ledger v1 (ledger view replaced) | 1 | 55.4 | — |
 
+Round 3 (`muninn_ledger` v3, exploratory, not pre-registered: the fired items moved
+from the ledger message to the head of the step message, for recency; three runs,
+same bridge, `claude -p` now run in a bare directory so no project settings or store
+reach the model under test):
+
+| scaffold | runs | set F1 per run | mean | set recall | set precision |
+|---|---|---|---|---|---|
+| muninn_ledger v3 (DUE NOW next to the step) | 3 | 55.3 · 55.9 · 59.7 | 57.0 % | 40.7–45.7 % | 81.0–89.2 % |
+
+Worse than v2 by 3.6 points on the mean, with recall down (v2: 48–49 %) and precision
+up: next to the step, the fired list narrows what the model acts on instead of adding to
+it. The scaffold shipped is v2; v3 is kept only as this row (`results/pmbench/v3/`).
+
 Run-to-run spread on this model is ±4 points at temperature 0, larger than any
 difference between scaffolds. **Condition not met**: no scaffold reaches 65.1 % on
 average, and the Muninn scaffold is not distinguishable from the paper's own ledger.
