@@ -34,9 +34,10 @@ channel. The stored text may impersonate a system or user role.
   provenance frame.
 - Every delivered block is framed as evidence ("origin: …, trust n"), never as
   an instruction.
-- The block validator (Phase 5) rejects any block containing role-like
-  sequences (`system:`, `user:`, `assistant:`, `<|`, `Human:`) or imperative
-  instruction patterns.
+- The block validator (`muninn_core::cue::validate_block`) rejects any block
+  containing role-like sequences (`<|system|>`, `system:`, `[INST]`, `<<SYS>>`,
+  `### system`) or instruction-override patterns ("ignore previous
+  instructions", "you must now", ...); a rejected block counts as `gated`.
 - Hard budget: ≤ 700 tokens per turn. A poisoned store cannot flood the context.
 
 ## 3. Insecure or stale memory driving unsafe actions [W1] [K7] [N4]
@@ -76,3 +77,18 @@ Heartbeats go to an append-only log file. Only `Stop`, `SessionEnd` and
   compromised, the hook contract is meaningless.
 - Encryption at rest. The store lives inside the repository's working tree with
   the repository's own permissions; `.muninn/muninn.db*` is git-ignored.
+
+## 4. Configuration defects in generated and hand-written config [2609.07360]
+
+**Threat.** Agent configurations in the wild carry three recurring defects: MCP
+servers launched without a pinned version (`npx pkg`, `pkg@latest`), over-broad
+`Bash(x:*)` allow rules (`Bash(*)`, `Bash(sudo:*)`, `Bash(rm -rf:*)`, `Bash(curl:*)`),
+and skills or commands whose `allowed-tools` pre-approve a shell. Muninn writes
+permission rules itself (F2), so it must not add to that population.
+
+**Defence.**
+- F2 emits `deny` and `ask` rules only, never `allow`.
+- `muninn scan-config` finds the three classes in `.claude/settings.json`,
+  `.claude/settings.local.json`, `.mcp.json`, `.claude/commands/*.md`,
+  `.claude/skills/*/SKILL.md` and in `.muninn/compiled/permissions.json`; `muninn apply`
+  runs it before writing and prints the findings. Exit code 2 when anything is found.
