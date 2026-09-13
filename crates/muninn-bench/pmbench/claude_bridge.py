@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""A minimal OpenAI-compatible chat endpoint over `claude -p`, so PM-Bench (which only
+speaks the OpenAI API) can be run against Claude Code's own account. One request → one
+`claude -p` call with the messages flattened into a single prompt; no tools, no memory
+of its own. Usage: claude_bridge.py --port 30002 --model claude-sonnet-5"""
+import argparse, json, subprocess, time, uuid
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+MODEL = "claude-sonnet-5"
+
+def flatten(messages):
+    sys_parts, convo = [], []
+    for m in messages:
+        role, content = m.get("role"), m.get("content")
+        if isinstance(content, list):
+            content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
+        content = content or ""
+        if role == "system":
+            sys_parts.append(content)
+        elif role == "user":
+            convo.append("USER:\n" + content)
+        elif role == "assistant":
+            convo.append("ASSISTANT:\n" + content)
+    return "\n\n".join(sys_parts), "\n\n".join(convo) + "\n\nASSISTANT:"
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(n) or b"{}")
+        model = body.get("model") or MODEL
+        if not model.startswith("claude"):
+            model = MODEL
+        system, prompt = flatten(body.get("messages", []))
+        max_tokens = int(body.get("max_tokens") or 256)
+        args = ["claude", "-p", prompt, "--model", model, "--output-format", "json", "--max-turns", "1",
+                "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
+        if system:
+            args += ["--system-prompt", system + f"\n\nAnswer in at most {max_tokens} tokens."]
+        t0 = time.time()
+        try:
+            out = subprocess.run(args, capture_output=True, text=True, timeout=300, env={**__import__("os").environ, "CLAUDECODE": ""})
+            v = json.loads(out.stdout) if out.stdout.strip() else {}
+            text = v.get("result", "") if not v.get("is_error") else ""
+            usage = v.get("usage", {}) or {}
+        except Exception as e:  # noqa: BLE001
+            text, usage = "", {}
+            print("bridge error:", e)
+        resp = {
+            "id": "chatcmpl-" + uuid.uuid4().hex[:12], "object": "chat.completion", "created": int(time.time()), "model": model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": usage.get("input_tokens", 0), "completion_tokens": usage.get("output_tokens", 0), "total_tokens": 0},
+        }
+        print(f"{time.time()-t0:5.1f}s {len(prompt):6d} chars → {len(text):4d} chars")
+        data = json.dumps(resp).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=30002)
+    ap.add_argument("--model", default=MODEL)
+    a = ap.parse_args()
+    MODEL = a.model
+    print(f"bridge on http://127.0.0.1:{a.port}/v1 → claude -p ({MODEL})")
+    HTTPServer(("127.0.0.1", a.port), H).serve_forever()

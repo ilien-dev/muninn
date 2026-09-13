@@ -389,6 +389,7 @@ fn post_tool_use(
                 files,
                 symbols: syms,
                 event: "post_tool".into(),
+                keywords: Vec::new(),
             };
             if let Some(text) = cue_delivery(paths, &db, session, &ctx, "post_tool") {
                 return Ok(Some(additional_context("PostToolUse", &text)));
@@ -434,6 +435,7 @@ fn pre_tool_use(
                 files,
                 symbols: syms,
                 event: "pre_edit".into(),
+                keywords: Vec::new(),
             };
             if let Some(text) = cue_delivery(paths, &db, session, &ctx, "pre_edit") {
                 match out.as_mut() {

@@ -267,6 +267,17 @@ pub struct Incoming {
     pub created_at: Option<serde_json::Value>,
     pub invalid: Option<bool>,
     pub invalid_reason: Option<String>,
+    /// Explicit trigger conditions: `[{"kind":"keyword","key":"breakfast","grp":0}, ...]`
+    #[serde(default)]
+    pub cues: Option<Vec<IncomingCue>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IncomingCue {
+    pub kind: String,
+    pub key: String,
+    #[serde(default)]
+    pub grp: i64,
 }
 
 fn parse_frontmatter(text: &str) -> (Incoming, String) {
@@ -344,11 +355,12 @@ pub struct ImportStats {
 
 fn insert_incoming(
     db: &Db,
-    inc: Incoming,
+    mut inc: Incoming,
     body_fallback: String,
     st: &mut ImportStats,
 ) -> Result<()> {
     st.read += 1;
+    let explicit_cues = inc.cues.take();
     let body = inc.body.unwrap_or(body_fallback);
     let body = crate::sanitize::clean_text(&body);
     let body: String = body.chars().take(crate::caps::MAX_BODY_CHARS).collect();
@@ -433,6 +445,14 @@ fn insert_incoming(
     )?;
     if n == 1 {
         st.inserted += 1;
+        if let Some(cues) = &explicit_cues {
+            let id = db.conn.last_insert_rowid();
+            let rows: Vec<(String, String, i64)> = cues
+                .iter()
+                .map(|c| (c.kind.clone(), c.key.clone(), c.grp))
+                .collect();
+            let _ = crate::cue::set_explicit(db, id, &rows);
+        }
     } else {
         st.duplicates += 1;
     }
