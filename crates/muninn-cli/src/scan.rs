@@ -26,9 +26,7 @@ fn read_json(p: &Path) -> Option<serde_json::Value> {
 /// destructive command with a free suffix.
 pub fn overbroad_bash(pattern: &str) -> Option<&'static str> {
     let p = pattern.trim();
-    let Some(inner) = p.strip_prefix("Bash(").and_then(|s| s.strip_suffix(')')) else {
-        return None;
-    };
+    let inner = p.strip_prefix("Bash(").and_then(|s| s.strip_suffix(')'))?;
     let inner = inner.trim();
     if inner.is_empty() || inner == "*" || inner == ":*" || inner == "*:*" {
         return Some("grants every shell command");
