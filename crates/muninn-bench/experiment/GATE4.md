@@ -87,13 +87,26 @@ the summary arriving as the first thing in the session instead of inside the
 instruction file. Retired records served: 0. The hook vehicle stays the default;
 `muninn init --boot-file` remains for users who want the block in the file.
 
-## §2 Compaction survival (decay probe): 100 %
+## §2 Compaction survival (decay probe): 100 % at 10 invariants; the budget holds 16
 
-Ten invariants seeded, 100 forced compactions (`PostCompact` hook, epoch bump each
-time): 100/100 compactions delivered all ten (1 000/1 000 facts), 1.4 ms median / 2.5 ms
-max per hook, no model involved. Published without-harness figure: 106/108 losses [K1];
-constraint violations 30–59 % after compaction, 0 % when the constraint survives [C2].
-Condition met by the mechanism; the without-Muninn line is cited, not re-measured.
+Reproducible in one command, no model: `python3 crates/muninn-bench/experiment/decay_probe.py
+--reps 100` (`results/decay-probe/`). Ten invariants seeded, 100 forced compactions (the
+`PreCompact` then the `PostCompact` hook, fed the harness's JSON): **100/100 compactions
+delivered all ten** (1000/1000 facts); PostCompact 1.17 ms median, 1.64 ms p95, 1.84 ms max
+per hook, process spawn included (commit `8d06b48`). Published without-harness figure:
+106/108 losses [K1]; constraint violations 30–59 % after compaction, 0 % when the constraint
+survives [C2]. The without-Muninn line is cited, not re-measured.
+
+**Where it stops.** The same probe at 20, 40 and 80 invariants delivered **16** every time
+(320/400 facts at 20; `results/decay-probe/inv20..80/`): reinjection runs under the
+700-token turn budget, which holds 16 invariants of this probe's size (~30 tokens each with
+the block header). Before this probe the rest vanished without a trace; since commit
+`6e1cadb` the PostCompact text ends with `[muninn:gated] N more invariant/correction record(s)
+exist but did not fit the 700-token turn budget; run muninn why <topic> before assuming a rule
+is absent`. The budget itself is a design decision (`design/ENGINE.md`) and is not moved by
+this finding; what changed is that the agent is told when it applies. The public sentence is
+therefore: invariants survive compaction as long as they fit the turn budget, and the hook
+says when they do not.
 
 ## §3 PM-Bench [V1]
 

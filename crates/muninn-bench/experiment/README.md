@@ -2,6 +2,8 @@
 
 Every gate in the plan is measured here with an executable oracle, pre-registered in
 `PREREGISTRATION.md` (amendments included, in order), and reported with its raw data.
+`REPRODUCE.md` gives one command per number; `prereg-stamps/` holds OpenTimestamps proofs
+of the pre-registration commits; `docs/claims.md` lists what is and is not claimed in public.
 
 | gate | question | report | raw data |
 |---|---|---|---|
@@ -12,6 +14,11 @@ Every gate in the plan is measured here with an executable oracle, pre-registere
 | 4 §1 | do cue-anchored deliveries beat lexical-only? | `GATE4.md` | `results/gate4-cues/` |
 | 4 §2 | do invariants survive compaction? | `PREREGISTRATION.md` (decay probe) | reproducible in one command, no model |
 | 4 §3 | PM-Bench | `GATE4.md` | `results/pmbench/` |
+| 4 §3, round 8 | PM-Bench on held-out weeks, store ablation, gpt-5.6-sol, one bridge (pre-registered) | `GATE4.md` (when measured) | `results/pmbench/round8-sonnet/`, `results/pmbench/round8-codex/` |
+| 3, Codex | F1 filter on Codex / gpt-5.6-sol (pre-registered; first grid invalid, see `PREREGISTRATION.md`) | `GATE3.md` (when measured) | `results/gate3-codex/`, `results/gate3-codex-v1-leaky/` |
+| 3, public seed | F1 filter with no private input (pre-registered) | `GATE3.md` (when measured) | `results/gate3-public/` |
+| 4 §1, replications | boot vehicle and query expansion at five runs (pre-registered) | `GATE4.md` (when measured) | `results/boot-vehicle-rep5/`, `results/gate4-cues-v2-rep5/` |
+| — | DreamBench-SWE [K2]: not runnable — hidden oracles and 6 of 11 fixture commits are not public; a `MemoryPolicy` port and the request to the authors are in `dreambench/` | `dreambench/STATUS.md` | — |
 
 ## Runner
 
