@@ -84,3 +84,46 @@ that basis and stated as such.
   PHASE3.md.
 - Raw data: `results/gate3-sonnet/`, `results/gate3-haiku/` (every cell, patch and
   final message); `revocation/analyze.py` reproduces every number above.
+
+## Codex / gpt-5.6-sol replication (measured 2026-09-13; pre-registered, instrument fixed first)
+
+**Result: PASS on the third family and the second harness.** Same ten scenarios, same 20 seed
+records, same frozen transcript, same oracles; `harness: codex`, `model: gpt-5.6-sol`
+(codex-cli 0.154.0), 3 runs, 90 cells, 0 errors. Raw data `results/gate3-codex/`; the first
+attempt, invalid because a no-memory cell located the store on its own, is kept as
+`results/gate3-codex-v1-leaky/` and described in `PREREGISTRATION.md`.
+
+| arm | replacement scenarios (8) pass | unsafe (retired value written) | no-replacement (2) pass | retired served | cells with a delivery |
+|---|---|---|---|---|---|
+| off (no store, no hooks, no `MUNINN_*`) | 0/27 | 0/27 | 3/3 | 0 | 0/30 |
+| unfiltered (render-matched, invalidation off) | 0/27 | 18/27 (66.7 %) | 3/3 | 0 | 30/30 · 744 tokens mean |
+| literal (F1 on) | **27/27** | **0/27** | 3/3 | 0 | 30/30 · 749 tokens mean |
+
+Decision rule (Gate 3, verbatim): (1) `literal − unfiltered` > 0 with a CI excluding 0 — the
+bootstrap CI is degenerate at +1.000 because no cell varies, so the exact test is stated
+instead: 27/27 against 0/27, Fisher one-sided p = 1/C(54,27) = 5.1 × 10⁻¹⁶; per scenario
+3/3 against 0/3 in all eight (p = 0.05 each, the smallest attainable with three runs).
+(2) retired-served 0/90 — met. (3) unsafe in `literal` 0/27 — met.
+
+**What the cells did.** `off` wrote "no current decision is recorded" in every replacement
+scenario (correct behaviour for an agent without memory; the oracle counts it as a fail
+because the task asks for the current value). `unfiltered`, shown the retired and the current
+value side by side, wrote the retired one in 18 of 27 cells (gzip, LFU, bcrypt, GPL-3.0,
+calver, msgpack) and "no unambiguous current decision" in the other 9; on this family the
+unfiltered store is strictly worse than no memory for the retired value. `literal` wrote the
+current value 27/27 times. One `unfiltered` cell answered in Spanish: the frozen transcript is a
+Spanish-language project, and the delivered episodes carry that language into the arm that
+receives them; the oracles are language-neutral since the sonnet grid.
+
+**Instrument integrity, measured.** Hook deliveries in every `literal` and `unfiltered` cell
+(30/30 each), none in `off`; PreToolUse denials (store access or escape from the checkout):
+**0** in 90 cells — no agent tried to reach the store once it was not told where it was;
+hook p95 per cell ≤ 3.1 ms. The Codex family sees Codex's own constant agent prompt, built-in
+system skills and curated plugins in every arm (`PREREGISTRATION.md`, marker canary).
+
+**Difference from the Claude families.** On Claude, `unfiltered` still passed 6/6 on five
+scenarios (the model picked the newer of two conflicting records) and `literal` lost a few cells
+to permission prompts and lexical misses; on gpt-5.6-sol the picture is binary. The F1 effect is
+therefore larger here (+1.00 against +0.22 / +0.19), and the reason is not that Muninn works
+better on Codex but that this model treats a conflict as "the older value stands" or "nothing
+stands" instead of choosing.
