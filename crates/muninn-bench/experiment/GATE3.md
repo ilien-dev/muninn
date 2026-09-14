@@ -191,3 +191,26 @@ repositories an agent given both the retired and the current policy wrote the re
 under test does not change the result. What is still not measured: the same three repositories on
 a Claude model (running), and any repository for Gate 2, whose facts live in this project's own
 transcript.
+
+## The same three external repositories on claude-sonnet-5 (measured 2026-09-14; pre-registered)
+
+**Result: PASS on all three.** Same configurations with `harness: claude`, `model:
+claude-sonnet-5`; 3 runs, 90 cells each, 0 errors, $24.20 in total, same muninn binary. Raw data
+`results/gate3-ext-{gin,vue,python}-sonnet/`.
+
+| repository | literal pass | unfiltered pass | off pass | unfiltered wrote the retired value | literal wrote it | Fisher one-sided p (literal vs unfiltered) |
+|---|---|---|---|---|---|---|
+| gin-gonic/gin (Go) | **27/27** | 1/27 | 1/27 | 6/27 | 0/27 | 2.8 × 10⁻¹⁴ |
+| vuejs/vue (TypeScript) | **27/27** | 0/27 | 1/27 | 4/27 | 0/27 | 5.1 × 10⁻¹⁶ |
+| TheAlgorithms/Python | **27/27** | 2/27 | 1/27 | 5/27 | 0/27 | 7.3 × 10⁻¹³ |
+| pooled | **81/81** | 3/81 | 3/81 | 15/81 (19 %) | 0/81 | < 10⁻⁴⁰ |
+
+Retired records served 0/270; deliveries in every Muninn cell and none in `off`; 0 PreToolUse
+denials. `literal − unfiltered` per repository: +0.963 [+0.889, +1.000], +1.000, +0.926
+[+0.852, +1.000]. Without memory the agent spent 8.5–11.3 turns searching; with the filter 5.4–5.6.
+
+**Two families side by side on code nobody here wrote.** With F1 on, 161 of 162 cells wrote the
+current decision and none wrote a retired one. Without invalidation, sonnet mostly refused to
+choose between the two records (retired value in 19 % of cells) and gpt-5.6-sol mostly picked the
+retired one (79 %); neither model passed more than 3 of 81 cells. The size of the harm without the
+filter depends on the model; the result with it does not.
