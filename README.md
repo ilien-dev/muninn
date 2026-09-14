@@ -28,6 +28,9 @@ Phases 0–2 complete.
   [+0.56, +0.80], control − off = +0.08 [−0.04, +0.20]; 90 cells, sonnet, $27.63
   (`crates/muninn-bench/experiment/GATE2.md`, pre-registration and both runs in
   `experiment/`). Run 1 failed with an invalid instrument and is reported in full.
+  Replication on Codex / gpt-5.6-sol: literal 10/25, no memory 5/25, control 4/25 — the rule is
+  met as written but the exact test gives p = 0.108; the two facts recoverable only from memory
+  10/10 vs 0/10 (p = 2.2 × 10⁻⁴).
 - Phase 3 (real engine): typed capture (corrections, invariants, commit-linked
   decisions, dead ends), supersession, caps, Markdown projection + export/import,
   `muninn maintain` (git capture, resume), embedding sidecar (potion-base-8M,
@@ -39,13 +42,21 @@ Phases 0–2 complete.
   sufficiency marker, 55 ms). Gate 3 passed on two families: filtered vs render-matched
   unfiltered +0.22 [+0.11, +0.33] (sonnet) and +0.19 [+0.07, +0.30] (haiku), retired
   records served 0/180 cells, retired value written 0 % vs 7–22 % unfiltered
-  (`crates/muninn-bench/experiment/GATE3.md`).
+  (`crates/muninn-bench/experiment/GATE3.md`). Replicated on Codex / gpt-5.6-sol (27/27 vs
+  0/27), with a public seed anyone can re-run (27/27 vs 1/27), and on three external
+  repositories chosen by a fixed rule — gin (Go), vue (TypeScript), TheAlgorithms/Python — on
+  two model families: 161/162 cells correct with the filter; without it 3/162 correct and the
+  retired value written in 79 of 162.
 - Phase 5 (F3): tree-sitter symbol graph for Rust/TS/TSX/JS/JSX/Python/Go (5 000 files
   in 6.8 s, incremental by hash), cues derived on the write path, turn context from
   PostToolUse, tool-time delivery, compaction epochs, summary verification. Gate 4:
-  compaction survival 100/100 (decay probe); dir/symbol cues vs lexical-only +0.08
+  compaction survival 100/100 at 10 invariants (the 700-token budget holds 16 and the hook says
+  how many it cut); dir/symbol cues vs lexical-only +0.08
   [−0.08, +0.25] — not distinguishable, so they ship **off by default** (`muninn config
-  cues on`); symbol-graph query expansion did not replicate (+0.13 on three runs, −0.13 [−0.28, −0.03] on five) and is withdrawn; PM-Bench: with Muninn as the typed intention store (lifecycle in code, the model only forms and decides) 96.3–96.7 % set F1 on claude-sonnet-5 (rounds 5 and 7, 3 runs each) vs 79.8 % and 77.9 % for the paper's two scaffolds on the same model through the same isolated bridge; the published lines are 65.1 % (GPT-5.4 agent) and 82.9 % (PIS, DeepSeek-Chat) (`crates/muninn-bench/experiment/GATE4.md` §3 rounds 4–5).
+  cues on`); symbol-graph query expansion did not replicate (+0.13 on three runs, −0.13 [−0.28, −0.03] on five) and is withdrawn; PM-Bench on three held-out weeks generated from a commit hash: the typed-intention mechanism 91.4 % (claude-sonnet-5) and 97.5 % (gpt-5.6-sol) set F1 against 78.7–80.6 % for the paper's two scaffolds on the same model and bridge, exact p ≤ 5/8 000; an identical scaffold on a plain dict store scores the same, and a shadow comparison found 0 differing boards in 1 458, so the result belongs to the mechanism, which Muninn implements (`crates/muninn-bench/experiment/GATE4.md` §3 rounds 8–9).
+Every public claim, its grid, its caveats and what is **not** claimed: `docs/claims.md`. One
+command per number: `crates/muninn-bench/experiment/REPRODUCE.md`. Pre-registrations are
+timestamped with OpenTimestamps (`experiment/prereg-stamps/`).
 Phase 6 (hardening, release) is in progress: signed releases, config scanner, audits.
 See `PLAN` in the repository description and `design/ENGINE.md`.
 
