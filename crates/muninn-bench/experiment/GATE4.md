@@ -443,6 +443,6 @@ to the dict arm's. Across both families the store implementation never produced 
 from the same operations in the traces checked; round 9 measures that at every step.
 
 **Both families, held-out weeks.** `muninn_store` 91.4 % (sonnet) and 97.5 % (gpt-5.6-sol) against
-the paper's two scaffolds at 78.7–80.6 % and 80.6–81.1 % on the same model, same bridge, same
+the paper's two scaffolds at 78.7–80.6 % (sonnet) and 80.4–80.6 % (gpt-5.6-sol) on the same model, same bridge, same
 weeks; exact p ≤ 5/8 000 for every baseline contrast in both families. The worst-case rule held on
 gpt-5.6-sol and failed on sonnet in one week.
