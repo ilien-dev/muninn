@@ -319,3 +319,80 @@ model call at stake.
 week; `single_baseline` 126 calls and `todo_ledger` 80 calls with 1.2–1.5 M estimated input
 tokens (their own prompt logs, one per run this time). Wall time per run through the shared
 bridge, eight runs in parallel: 5–9 min store arms, 6–14 min baselines.
+
+## §1 replications at five runs (measured 2026-09-14; pre-registered)
+
+Fresh grids, same tasks, seed, model (claude-sonnet-5) and oracles as the originals, five runs,
+randomised order, the fixed instrument. Two interruptions by the account's session limit; those
+cells were re-run as infrastructure errors. Cells in which the agent used all 25 turns are scored
+by their oracle (5 in the boot grid, 7 in the expansion grid; 9 of the 12 had already written a
+passing file). 0 remaining errors, 0 PreToolUse denials. Contrasts: cluster bootstrap by task, the
+originals' own `analyze.py` (4 000 resamples, seed 7 — the pre-registration said 10 000; the
+originals' script was used unchanged so the figures are comparable). Raw data
+`results/boot-vehicle-rep5/`, `results/gate4-cues-v2-rep5/`.
+
+### Boot vehicle — hook summary vs file block (140 cells, $27.05)
+
+| arm | pass | tokens (mean) | turns (mean) |
+|---|---|---|---|
+| literal (block in CLAUDE.md) | 52/70 | 811 | 11.9 |
+| literal-hookboot (SessionStart summary) | 52/70 | 798 | 12.9 |
+
+`literal-hookboot − literal`: replication **+0.000 [−0.114, +0.129]**; pooled with the original 84
+cells **+0.045 [−0.045, +0.152]**. Rule: non-inferiority, lower bound > −0.10. **Not met on the
+replication alone** (−0.114); met pooled. The pre-registered consequence (re-examine the default)
+was tied to a negative point estimate, which did not occur. The hook stays the default; the public
+statement is "not worse than the file block within the precision measured", with the replication's
+interval quoted, not the original's +0.119.
+
+| task | literal | hookboot | task | literal | hookboot |
+|---|---|---|---|---|---|
+| cue-artefact-fence | 5/5 | 4/5 | docs-grammars-control | 5/5 | 5/5 |
+| cue-azure-pattern | 4/5 | 4/5 | engine-s12-why-responder | 5/5 | 5/5 |
+| cue-busy-cap | 5/5 | 5/5 | fact-corpus-fetch-limits | 5/5 | 4/5 |
+| cue-router-stub | 3/5 | 5/5 | fact-real-transcript-ingest | 0/5 | 0/5 |
+| cue-row-struct | 1/5 | 4/5 | fact-sessionstart-gate | 5/5 | 5/5 |
+| cue-size-subcommand | 0/5 | 0/5 | fact-userprompt-p95 | 5/5 | 4/5 |
+| cue-stderr-helper | 5/5 | 5/5 | | | |
+| cue-timing-stub | 4/5 | 2/5 | | | |
+
+### Query expansion through the symbol graph (120 cells, $28.29) — replication negative
+
+| arm | pass | tokens (mean) | turns (mean) |
+|---|---|---|---|
+| lexical-plain (no cues, no expansion) | 15/40 | 503 | 15.8 |
+| lexical (expansion) | 10/40 | 522 | 15.1 |
+| literal (cues + expansion) | 9/40 | 784 | 14.9 |
+
+`lexical − lexical-plain`: replication **−0.125 [−0.275, −0.025]**; pooled with the original 72
+cells **−0.031 [−0.125, +0.062]**. `literal − lexical` −0.025 [−0.150, +0.075] (pooled +0.016).
+Rule: point ≤ 0 on the replication → the opt-in is removed. **Applied**: expansion is no longer
+advertised or recommended anywhere; the original +0.125 was a three-run result that did not
+replicate. The code path stays behind `MUNINN_EXPAND` until no grid that hashes the binary is
+running, then it is removed in its own commit.
+
+| task | lexical-plain | lexical | literal |
+|---|---|---|---|
+| cue-artefact-fence | 4/5 | 3/5 | 3/5 |
+| cue-azure-pattern | 3/5 | 0/5 | 0/5 |
+| cue-busy-cap | 5/5 | 5/5 | 3/5 |
+| cue-router-stub | 0/5 | 0/5 | 0/5 |
+| cue-row-struct | 0/5 | 0/5 | 0/5 |
+| cue-size-subcommand | 0/5 | 0/5 | 0/5 |
+| cue-stderr-helper | 0/5 | 0/5 | 0/5 |
+| cue-timing-stub | 3/5 | 2/5 | 3/5 |
+
+**An anomaly, checked and left as measured.** `cue-stderr-helper` passed 15/15 in the boot
+replication and 0/15 in this one, in every arm. Same binary, same seed, same task text and oracle,
+and byte-identical deliveries (session-start ids 83, 84; turn delivery ids 87, 81, 64, 475
+tokens) in both grids. The agents in this grid received the recorded naming decision and wrote
+that it "contradicted what's actually in the file, so I went with what the code itself shows";
+in the boot grid they followed it. No instrument difference was found, the arms of each grid ran
+interleaved in random order, so the within-grid contrasts are unaffected; across grids, it is the
+run-to-run behaviour of the model on a task where memory and code disagree, and it is reported as
+such.
+
+**Consequence for §1 as a whole.** Across three grids and 288 cells, nothing layered on top of
+plain lexical recall of literal records — dir/symbol cues, query expansion — has a replicated
+positive effect. F3's shipped delivery is lexical recall plus event reinjection, which is what
+the plan already defaulted to.

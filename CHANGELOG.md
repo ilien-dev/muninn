@@ -45,7 +45,8 @@ Everything below carries a measurement; the reports live under
   corrections only count a leading "no"; `muninn init` adds allow rules for
   `muninn why`/`muninn status`; query expansion through the symbol graph, +0.125
   [+0.000, +0.292] over plain lexical on the 72-cell cue grid, shipped opt-in
-  (`muninn config expand on`); PM-Bench with the fired items next to the step
+  (`muninn config expand on`) — withdrawn after the five-run replication measured
+  −0.125 [−0.275, −0.025] (`GATE4.md` §1 replications); PM-Bench with the fired items next to the step
   measured worse (57.0 % vs 60.6 %) and was not kept. Dogfooding starts in this
   repository (plugin from the local marketplace; the manifest no longer lists the
   standard hook/skill/command directories, which Claude Code loads by itself).

@@ -996,8 +996,47 @@ pub fn run(
     rerun_errors: bool,
     rescore: bool,
 ) -> Result<()> {
+    // a grid's own configuration travels with its results: every run writes it to
+    // `<out>/config.json`, and a rescore or a re-run of errors refuses a different one
+    // (a rescore once loaded the default task file and scored a foreign grid)
     let text =
         std::fs::read_to_string(config).with_context(|| format!("reading {}", config.display()))?;
+    let frozen_cfg = out_dir.join("config.json");
+    if rescore || rerun_errors {
+        if let Ok(prev) = std::fs::read_to_string(&frozen_cfg) {
+            let a: serde_json::Value = serde_json::from_str(&prev)?;
+            let b: serde_json::Value = serde_json::from_str(&text)?;
+            anyhow::ensure!(
+                a == b,
+                "{} is not the configuration this grid ran with ({}); pass --config with the grid's own file",
+                config.display(),
+                frozen_cfg.display()
+            );
+        } else {
+            let tasks_here: std::collections::HashSet<String> =
+                std::fs::read_to_string(out_dir.join("results.jsonl"))
+                    .unwrap_or_default()
+                    .lines()
+                    .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                    .filter_map(|v| v["task"].as_str().map(str::to_string))
+                    .collect();
+            let cfg_tasks: std::collections::HashSet<String> =
+                serde_json::from_str::<serde_json::Value>(&text)?["tasks"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|t| t["id"].as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+            anyhow::ensure!(
+                tasks_here.is_subset(&cfg_tasks),
+                "{} does not define every task in {}; pass --config with the grid's own file",
+                config.display(),
+                out_dir.display()
+            );
+        }
+    }
     let mut cfg: Config = serde_json::from_str(&text)?;
     if let Some(r) = runs_override {
         cfg.runs = r;
@@ -1030,6 +1069,9 @@ pub fn run(
         "no seed transcripts found and no seed_records"
     );
     std::fs::create_dir_all(out_dir)?;
+    if !out_dir.join("config.json").exists() {
+        std::fs::write(out_dir.join("config.json"), &text)?;
+    }
     let out_dir = &std::fs::canonicalize(out_dir)?;
     // cells and stores live outside the repository tree and outside `out`: a cell that
     // walks `..` finds no other cell, no store and no report with the answers
@@ -1109,12 +1151,15 @@ pub fn run(
                 if !out_of_turns {
                     continue;
                 }
+            }
+            let Some(task) = cfg.tasks.iter().find(|t| t.id == c.task) else {
+                // a rescore with the wrong task file must not touch cells it cannot score
+                continue;
+            };
+            if c.status == "error" {
                 c.error = None;
                 c.status = "fail".into();
             }
-            let Some(task) = cfg.tasks.iter().find(|t| t.id == c.task) else {
-                continue;
-            };
             let patch = out_dir
                 .join("diffs")
                 .join(format!("r{}-{}-{}.patch", c.run, c.task, c.arm));
