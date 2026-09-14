@@ -988,3 +988,24 @@ is published beside Gate 3, including a result at the level of `off`.
 **What may not change after this point.** The Muninn binary, the seed wording, the acknowledgement
 line, the tasks, the oracles and the arm configurations. A fix to the harness (not to any tool) found
 during a smoke is recorded here before the grid; an engine change would void this pre-registration.
+
+**Head-to-head amendment after the harness smoke, before any grid cell (2026-09-14).** A smoke of the
+`off` and `muninn` arms on one task (not part of the grid, not reported as a result) showed two things
+about Muninn on this input:
+1. Muninn's capture stores each seeding session as an `episode`; supersession (ENGINE.md §5.1) only
+   applies to typed records with a shared (subject, relation), so "change of plan — X is now Y" in
+   ordinary conversation retires nothing. This is the product as it is and is what the grid measures.
+2. The prompt hook delivered nothing (21 × `silence:no_match`) although lexical recall found both
+   records: the injection validator (`cue.rs::validate_block`) rejects any block containing
+   `"\nassistant:"`, which is how capture renders every episode of an exchange with an assistant
+   reply. Every such episode is silently dropped. This is a bug that affects any user with short
+   exchanges, not an artefact of the seeding line.
+The pre-registration froze the binary, so the frozen arm stays exactly as registered: `muninn`
+(`973ef470…`). A second Muninn arm is added to the same grid, randomised with the others:
+`muninn-fixed`, identical except for the validator fix (an episode's own single `assistant:` label
+passes; a second one, or one in any other kind of block, is still rejected; unit-tested), binary
+`fdcb4606…`. Both arms are published. The confirmatory comparison against the competitors uses the
+frozen `muninn` arm; `muninn-fixed` is reported as a post-smoke fix and its comparisons are labelled
+exploratory. Nothing else in the design changes. Also removed from the Muninn arm before any cell:
+`MUNINN_CONFINE_ROOT`, which in cells makes Muninn's hook deny out-of-checkout reads with a message
+about memory — a nudge no competitor arm receives.
