@@ -796,3 +796,13 @@ operations, and how often that FORM outcome occurs per arm.
 
 **Implementation constraint.** The scaffold file is not edited while the Codex round 8 is
 running (its manifests hash the scaffold); `--shadow` is added after that grid's last job exits.
+
+**Replications: credit outage and a wrong-config re-run (recorded 2026-09-14 00:35).** The
+account's session limit hit during the boot-vehicle replication (89 of 140 cells `error`,
+"You've hit your session limit") and the whole expansion replication (120/120 `error`); the
+public-seed Gate 3 grid had finished before it (90/90, no error). Error cells are re-run with
+`--rerun-errors` as infrastructure errors. The first re-run was launched without `--config` and
+the runner fell back to its default (Gate 2's task file): it was killed after three foreign cells
+(`off` arm, Gate 2 tasks) had run; their rows, logs, diffs and control store were removed from the
+boot-vehicle directory, the 51 completed cells were untouched, and the re-run was relaunched with
+the replication's own task file. Nothing was read from the kept cells before this.
