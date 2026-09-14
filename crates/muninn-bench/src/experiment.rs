@@ -110,6 +110,8 @@ fn codex_cell(
 fn codex_summary(jsonl: &str) -> serde_json::Value {
     let mut result = String::new();
     let mut commands = 0u64;
+    // every command the agent ran, kept for audit (what it read and how)
+    let mut command_log: Vec<String> = Vec::new();
     let mut usage = serde_json::Value::Null;
     let mut error: Option<String> = None;
     for line in jsonl.lines() {
@@ -121,7 +123,12 @@ fn codex_summary(jsonl: &str) -> serde_json::Value {
                 Some("agent_message") => {
                     result = v["item"]["text"].as_str().unwrap_or("").to_string()
                 }
-                Some("command_execution") => commands += 1,
+                Some("command_execution") => {
+                    commands += 1;
+                    if let Some(c) = v["item"]["command"].as_str() {
+                        command_log.push(c.chars().take(400).collect());
+                    }
+                }
                 Some("error") => {
                     let m = v["item"]["message"].as_str().unwrap_or("");
                     if !m.contains("bypass-hook-trust") {
@@ -146,6 +153,7 @@ fn codex_summary(jsonl: &str) -> serde_json::Value {
     serde_json::json!({
         "result": result,
         "num_turns": commands + 1,
+        "commands": command_log,
         "usage": usage,
         "is_error": error.is_some(),
         "error": error,
@@ -465,13 +473,27 @@ fn run_cell(
         let no_muninn = arm.strip_suffix("-hookboot").unwrap_or(arm) == "off";
         std::fs::create_dir_all(store.join(".git"))?;
         let seed_records = cfg.seed_records.as_deref().map(expand);
+        // the `control` arm's whole store is the foreign project's: every channel the
+        // agent can reach — hooks, `muninn why`, `muninn recall` — serves irrelevant
+        // memory. Gate 2 on Codex found control agents running `muninn why` against a
+        // store seeded with the real transcript while only prompt delivery was swapped.
+        let is_control = arm.strip_suffix("-hookboot").unwrap_or(arm) == "control";
+        let control_seeds = if is_control {
+            transcripts(&cfg.control_transcripts)
+        } else {
+            Vec::new()
+        };
         if !no_muninn {
             cell.stored_episodes = seed_store_full(
                 muninn,
                 &store,
-                seeds,
+                if is_control { &control_seeds } else { seeds },
                 false,
-                seed_records.as_deref(),
+                if is_control {
+                    None
+                } else {
+                    seed_records.as_deref()
+                },
                 arm,
                 Some(&dir),
             )?;

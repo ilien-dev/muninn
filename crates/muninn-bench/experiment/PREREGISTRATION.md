@@ -895,3 +895,27 @@ fewer than three complete runs, the missing ones are run and reported as such. T
 count is fixed (count score files, not directories) after this grid's last job exits, so this grid's
 hashes stay coherent. The sonnet grid is unaffected: its resume deleted and re-ran those runs, and
 every (week, arm) there ended with exactly three.
+
+**Gate 2 on Codex: the control arm leaked, and the fix (recorded 2026-09-14 02:40, before the
+re-run).** The first grid (`results/gate2-codex-v1-control-leak/`, kept, not reported as a
+measurement) gave `off` 4/25, `literal` 15/25 and `control` 14/25 — a length-matched *irrelevant*
+memory arm passing tasks whose answers exist only in the seeded transcript. Two replayed control
+cells, with the agent's commands now logged, show why: the control agent ran `muninn why "<the
+question>"`, and in that arm only prompt-time delivery was swapped to the foreign store
+(`MUNINN_CONTROL_DB`); the store behind `muninn why`, `muninn recall` and event reinjection was the
+real one. Fix in the runner: the `control` arm's entire store is seeded from the foreign project's
+transcripts, so every channel serves irrelevant memory. Replay of the same two cells after the
+fix: both fail, the agents still call `muninn why` and get nothing relevant. The runner now also
+keeps every command a Codex agent runs (`commands` in each cell's log), which the first grid did
+not.
+
+**Earlier grids with a `control` arm.** Gate 2 run 2 (Claude): `muninn why` was not an allowed
+tool then (it was added during Gate 3), so the channel did not exist; control passed 0/15 fact
+cells. First cue grid (Claude): the channel existed; control passed 2/24. Any leak there helped the
+control, i.e. worked against the reported literal − control margin. Neither is re-run; both notes
+go into their reports.
+
+**Re-run.** `tasks-gate2-codex.json` unchanged, 90 cells, fixed runner, same muninn binary
+`9c8c80b9…`, Gate 2's rule verbatim. Also reported: the share of passing `literal` cells in which
+the agent itself ran `muninn why` (the product allows it; a reader should know how much of the
+effect is pull rather than hook delivery).

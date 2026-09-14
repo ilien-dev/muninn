@@ -96,7 +96,7 @@ def load(root):
             adir = os.path.join(wdir, arm)
             if not os.path.isdir(adir):
                 continue
-            for s in sorted(glob.glob(os.path.join(adir, "**", "*.score.md"), recursive=True)):
+            for s in sorted(p for p in glob.glob(os.path.join(adir, "**", "*.score.md"), recursive=True) if "excess-runs" not in p):  # runs beyond the pre-registered count are never used
                 r = parse_rates(s)
                 if "set_f1" in r:
                     data.setdefault(week, {}).setdefault(arm, []).append((os.path.basename(s), r))
