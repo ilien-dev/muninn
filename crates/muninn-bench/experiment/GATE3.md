@@ -1,5 +1,13 @@
 # Gate 3 — F1 filter: does "retired is never served" change what the agent does? (measured 2026-09-13)
 
+**Read this first — what Gate 3 does and does not measure (note added 2026-09-14).** The seeded
+store is built from `revocation/seed.jsonl`, in which every retired record already carries
+`invalid: true`; `muninn import` keeps that flag. Every Gate 3 grid below therefore measures the F1
+*filter* — a store that never serves records it knows are retired, against a render-matched store
+that serves them — and not F1's *detection* of a replacement from ordinary conversation. Detection
+is measured, without labels and against other memory tools, in the head-to-head pre-registered in
+`PREREGISTRATION.md` (2026-09-14).
+
 **Result: PASS on both model families.** On the eight scenarios with a replacement
 decision, the filtered arm beats the render-matched unfiltered arm with a CI that
 excludes zero, no retired record was ever delivered, and the filtered arm never wrote a
