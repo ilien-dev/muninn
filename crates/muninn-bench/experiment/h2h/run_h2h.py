@@ -172,7 +172,7 @@ def run_cell(cfg: dict, task: dict, arm: str, run: int, out: Path, work: Path) -
                 cell["error"] = f"claude is_error: {str(v.get('result'))[:200]}"
             if arm != "off":
                 sid = v.get("session_id") or ""
-                slug = str(co).replace("/", "-").replace(".", "-")
+                slug = "".join(ch if ch.isalnum() else "-" for ch in str(co))   # Claude Code's project-dir slug
                 transcript = Path.home() / ".claude" / "projects" / slug / f"{sid}.jsonl"
                 (logs / f"r{run}-{task['id']}-{arm}.delivered.json").write_text(arm_cmd(arm, "delivered", env, str(transcript)) or "{}")
                 if transcript.exists():
