@@ -488,3 +488,8 @@ rounds 8 and 9.
 score; the typed-intention mechanism is, and any correct store gives the same boards. The claim
 stays worded as the mechanism, and the one sentence that may be said about the engine is that it
 implements that mechanism exactly (0 of 1 458 boards differ).
+
+*Bridge log note (round 9, gpt-5.6-sol).* Round 9 reused the Codex bridge process started for round
+8, whose request log lives in `results/pmbench/round8-codex/`. Requests after round 9's start time
+(`round9-codex/FROZEN.json`): 3 060, 0 tool calls, 1 bridge error (an empty completion, retried by
+the scaffold).
