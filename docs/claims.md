@@ -26,7 +26,6 @@ grid, its pre-registration and its raw data are indexed in
 |---|---|---|
 | Do the two stores ever disagree on the same operations? | round 9, shadow store inside muninn runs (no extra model call), 18 runs | any disagreement → the round-8 gap stays attributed to the store |
 | Second model family on PM-Bench | round 8 on gpt-5.6-sol via Codex | a family where the effect fails is reported as such |
-| Two decisions whose CI touched zero | five-run replications of boot vehicle and query expansion | replication decides default vs opt-in vs removal |
 
 ## Not claimed
 
@@ -37,6 +36,11 @@ grid, its pre-registration and its raw data are indexed in
   cited as comparisons.
 - **DreamBench-SWE.** The benchmark's hidden oracles are not public; see the experiment
   README for the status of that item.
+- **Query expansion through the symbol graph helps.** +0.125 on three runs did not replicate:
+  −0.125 [−0.275, −0.025] on five, −0.031 [−0.125, +0.062] pooled. Withdrawn.
+- **The SessionStart summary is better than the block in CLAUDE.md.** The first grid's +0.119
+  did not replicate (+0.000 [−0.114, +0.129]); pooled +0.045 [−0.045, +0.152]. What is claimed is
+  only that it is not worse within that precision, which is why it can stay the default.
 - **Cue-anchored delivery (dir/symbol cues) helps.** Measured, not distinguishable from lexical
   recall (+0.08 [−0.08, +0.25]); shipped off by default.
 - **Any figure on a repository that is not this one.** All harness grids run on this

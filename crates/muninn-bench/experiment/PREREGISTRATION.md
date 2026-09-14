@@ -867,3 +867,18 @@ control arm, so the old exclusion had flattered the control, not Muninn; no conc
 None had been re-run: the only `--rerun-errors` passes so far re-ran credit-limit errors, checked
 cell by cell. In the running replications, 5 boot-vehicle cells and 1 expansion cell hit the turn
 limit; they will be scored, not re-run.
+
+## Replications result (2026-09-14)
+
+Boot vehicle: replication +0.000 [−0.114, +0.129], non-inferiority not met on the replication
+alone, point not negative → default stays; pooled +0.045 [−0.045, +0.152]. Query expansion:
+replication −0.125 [−0.275, −0.025] → rule applied, the opt-in is withdrawn from docs and claims;
+its code is removed once no running grid hashes the binary. `GATE4.md` §1 replications.
+
+**Tooling fixes found while scoring (before any contrast was read).** A `--rescore` launched
+without `--config` loaded the default task file (Gate 2) and marked cue-task cells it could not
+score as fails; caught from the summary header, undone from backups, and redone with each grid's
+own file — for the two published cells the outcome was the same (fail by oracle). The runner now
+writes each grid's configuration to `<out>/config.json` and refuses a rescore or re-run with a
+different one (or, for older grids, one that does not define every task present), and a cell is
+only reclassified after its task is found.
