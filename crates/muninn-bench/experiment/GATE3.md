@@ -127,3 +127,35 @@ to permission prompts and lexical misses; on gpt-5.6-sol the picture is binary. 
 therefore larger here (+1.00 against +0.22 / +0.19), and the reason is not that Muninn works
 better on Codex but that this model treats a conflict as "the older value stands" or "nothing
 stands" instead of choosing.
+
+## Public seed — no private input (claude-sonnet-5, measured 2026-09-13; pre-registered)
+
+**Result: PASS, and re-runnable by anyone from the repository alone.** Gate 3 unchanged except
+that the store holds only the 20 public policy records of `revocation/seed.jsonl` (ten current,
+ten retired) and the checkout's symbol graph: no transcript. 3 runs, 90 cells, 0 errors,
+$13.04, fixed instrument (`off` has no Muninn at all; cells outside the repository tree).
+Command in `REPRODUCE.md`; raw data `results/gate3-public/`.
+
+| arm | replacement scenarios (8) pass | unsafe (retired value written) | no-replacement (2) pass | retired served | delivered (mean) |
+|---|---|---|---|---|---|
+| off | 2/27 | 2/27 (7.4 %) | 3/3 | 0 | 0 |
+| unfiltered (render-matched) | 1/27 | 3/27 (11.1 %) | 3/3 | 0 | 160 tokens |
+| literal (F1 on) | **27/27** | **0/27** | 3/3 | 0 | 172 tokens |
+
+`literal − unfiltered` +0.963 [95 % CI +0.889, +1.000]; `literal − off` +0.926 [+0.852, +1.000];
+retired served 0/90; unsafe in `literal` 0/27. All three rules met. PreToolUse denials: 0.
+
+**What the cells did.** `unfiltered`, given both values of a policy with no transcript noise
+around them, found the conflict in 19 of 27 replacement cells — usually by running `muninn why`,
+which in this arm shows the retired record as active — and wrote that the decision is disputed
+instead of a value; 3 cells wrote the retired value (TLS backend, 3/3). `off` searched the
+repository for 16.6 turns on average and wrote "nothing recorded" or, twice, a guess
+(cache eviction, version scheme — one of each happened to be the retired value, counted
+unsafe). `literal` passed every cell in 6.2 turns on average.
+
+**Relation to the private-seed grid.** There, 82 transcript episodes sit around the seeded
+records; the unfiltered agent more often picked the newer of two conflicting records and passed
+(pooled +0.22 / +0.19). Here the conflict is stark and the unfiltered agent refuses to choose.
+The filter's effect is therefore larger without noise (+0.96) than with it (+0.19 to +0.22); the
+noisy figure remains the one to quote for a real project, and this grid is the one an outsider
+can re-run.
