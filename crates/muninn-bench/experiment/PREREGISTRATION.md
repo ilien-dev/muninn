@@ -763,3 +763,36 @@ partial and deleted: sonnet v9 `single_baseline` ×3, v9 `todo_ledger` ×2, held
 no score from the deleted runs was read (their score files were never opened by anyone), so
 the effect is cost and time, not selection. The lookup is recursive from now on. The kept runs
 (sonnet v9 `muninn_store` ×2 and `plain_store` ×2, Codex v9 `muninn_store` ×1) are unaffected.
+
+## Gate 4 §3, round 9 — store equivalence by shadowing, and the day-1 typing rate (recorded 2026-09-13 20:40, after round 8 sonnet was read, before any round-9 cell)
+
+**What round 8 left open.** R2 read as `plain_store` > `muninn_store` by 5.0 points pooled; the
+traces attribute all of it to the first FORM call typing the daily medication as a clock time in
+four `muninn_store` runs and no `plain_store` run, on byte-identical prompts. Two things are
+therefore worth measuring separately: whether the two stores ever disagree when fed the same
+operations, and how often that FORM outcome occurs per arm.
+
+**Design.**
+1. *Shadow store* (no extra model call). `run_muninn_pis.py --shadow`: a `muninn_store` run also
+   keeps a `PlainStore` fed the identical add / reschedule / override / cancel / done / start_day /
+   end_day sequence; at every step both boards are computed and the trace records both and
+   whether they differ as sets of intention ids. Decisions still come from the Muninn board. A
+   disagreement is a genuine semantic difference between the engine's `cues` evaluation and the
+   documented rule; the count over all steps is the result.
+2. *Runs*: 3 additional `muninn_store --shadow` runs and 3 additional `plain_store` runs per
+   held-out week (18 runs), same bridge, same binary, same weeks; the Codex family the same once
+   its round 8 has been read.
+
+**Decision rules.**
+- S1: shadow disagreements = 0 over every step of every shadow run → "the store implementation is
+  equivalent in effect on this benchmark"; any disagreement is listed with its step and cause,
+  and R2's reading stands until explained.
+- S2: the FORM typing outcome (time vs event for the daily medication) is tabulated per arm over
+  round 8 + round 9 (6 runs per arm per week); a two-sided Fisher exact test on arm × outcome; p >
+  0.05 → the round-8 gap is reported as sampling variation with S1 as the mechanism; p ≤ 0.05 →
+  reported as an unexplained arm effect and investigated further before any claim.
+- R1 is *not* re-evaluated on the pooled six runs (that would be optional stopping after a
+  failed rule); round 9's runs are reported on their own and, separately, pooled with a note.
+
+**Implementation constraint.** The scaffold file is not edited while the Codex round 8 is
+running (its manifests hash the scaffold); `--shadow` is added after that grid's last job exits.
