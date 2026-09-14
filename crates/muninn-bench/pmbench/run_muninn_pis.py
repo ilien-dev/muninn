@@ -476,6 +476,52 @@ class PlainStore(MuninnStore):
         return board
 
 
+class ShadowMuninnStore(MuninnStore):
+    """Round 9: a Muninn store that also keeps, for every active Muninn record, the cues the
+    dict store would hold, and at every board computes both answers from the same record ids.
+    Decisions use the Muninn board; `last_shadow` records whether the dict rule would have
+    fired a different set. A disagreement is a semantic difference between `muninn cues` and
+    the documented rule, with no model call involved."""
+
+    def __init__(self, out_dir: str, day_names: list[str]):
+        super().__init__(out_dir, day_names)
+        self._shadow: dict[int, list[dict[str, Any]]] = {}
+        self.last_shadow: dict[str, Any] = {}
+        self.disagreements = 0
+        self.boards_compared = 0
+
+    def _import(self, it: Intention, day: str, created_ms: int) -> None:
+        super()._import(it, day, created_ms)
+        if it.record_id is not None:
+            self._shadow[it.record_id] = self._cues_for(it, day)
+
+    def _revoke(self, it: Intention, reason: str) -> None:
+        if it.record_id is not None:
+            self._shadow.pop(it.record_id, None)
+        super()._revoke(it, reason)
+
+    def board(self, day: str, clock_minutes: int | None, answered_channels: list[str]) -> list[Intention]:
+        got = super().board(day, clock_minutes, answered_channels)
+        d = self.day_index(day)
+        now_ms = fake_ms(d, clock_minutes if clock_minutes is not None else 0)
+        keys = {channel_key(c) for c in answered_channels}
+        fired = [rid for rid in sorted(self._shadow) if all(
+            (c["kind"] == "after" and now_ms >= int(c["key"])) or (c["kind"] == "keyword" and c["key"] in keys)
+            for c in self._shadow[rid])]
+        shadow = []
+        for rid in fired:
+            iid = self.by_record.get(rid)
+            it = self.intentions.get(iid) if iid else None
+            if it and it.status == "pending" and day not in it.done_days:
+                shadow.append(it.iid)
+        a, b = sorted(i.iid for i in got), sorted(shadow)
+        self.boards_compared += 1
+        if a != b:
+            self.disagreements += 1
+        self.last_shadow = {"muninn": a, "dict": b, "agree": a == b}
+        return got
+
+
 def sha256_file(path: str) -> str:
     try:
         return hashlib.sha256(open(path, "rb").read()).hexdigest()
@@ -738,7 +784,9 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
     day_names = [d["name"] for d in scenario["days"]]
 
     claude = Claude(model, prompt_log, base_url=base_url)
-    store = PlainStore(out_dir, day_names) if store_kind == "plain" else MuninnStore(out_dir, day_names)
+    store = (PlainStore(out_dir, day_names) if store_kind == "plain"
+             else ShadowMuninnStore(out_dir, day_names) if store_kind == "muninn-shadow"
+             else MuninnStore(out_dir, day_names))
     write_manifest(str(Path(resolved_log).with_suffix(".manifest.json")), model=model, store=store_kind, base_url=base_url,
                    scenario_path=scenario_path, out_log=str(resolved_log))
     entries: list[dict[str, Any]] = []
@@ -918,7 +966,8 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
                 entries.append(entry)
                 trace_log.write(json.dumps({**entry, "ops": ops, "clock": clock_text, "replies": replies,
                                             "board": [{"id": it.iid, "text": it.text, "trigger": it.trigger} for it in board],
-                                            "clock_due": sorted(clock_due), "due": due_pairs, "guards": guards}) + "\n")
+                                            "clock_due": sorted(clock_due), "due": due_pairs, "guards": guards,
+                                            **({"shadow": store.last_shadow} if isinstance(store, ShadowMuninnStore) else {})}) + "\n")
             store.end_day(day_name)
     finally:
         prompt_log.close()
@@ -929,6 +978,9 @@ def run(scenario: dict[str, Any], model: str, out_dir: str, log_path: str | None
     metadata["model_calls"] = claude.calls
     metadata["est_input_tokens"] = claude.est_input_tokens
     metadata["guard_events"] = guard_events
+    if isinstance(store, ShadowMuninnStore):
+        metadata["shadow_boards_compared"] = store.boards_compared
+        metadata["shadow_disagreements"] = store.disagreements
     metadata["items_acted"] = due_items_acted
     PM_BENCH.write_log(resolved_log, entries, run_metadata=metadata)
     with open(str(Path(resolved_log).with_suffix(".store.json")), "w", encoding="utf-8") as fh:
@@ -946,7 +998,7 @@ def main() -> None:
     ap.add_argument("--log", default=None)
     ap.add_argument("--score", action="store_true")
     ap.add_argument("--max-days", type=int, default=None, help="smoke test: stop after N days (the log is then not scoreable)")
-    ap.add_argument("--store", choices=["muninn", "plain"], default="muninn",
+    ap.add_argument("--store", choices=["muninn", "plain", "muninn-shadow"], default="muninn",
                     help="round 8: muninn (the engine) or plain (same scaffold, in-process dict, no muninn binary)")
     ap.add_argument("--base-url", default=None,
                     help="round 8: OpenAI-compatible bridge (e.g. http://127.0.0.1:30002/v1); default calls claude -p directly")

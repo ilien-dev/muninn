@@ -141,6 +141,7 @@ def main() -> None:
     ap.add_argument("--arms", default="muninn_store,plain_store,single_baseline,todo_ledger")
     ap.add_argument("--weeks", default="v9,heldout")
     ap.add_argument("--muninn-bin", default=str(HERE.parents[2] / "target" / "release" / "muninn"))
+    ap.add_argument("--shadow", action="store_true", help="round 9: muninn_store runs keep a dict shadow store and log both boards at every step")
     ap.add_argument("--resume", action="store_true",
                     help="keep every run that finished with a score file, delete partial run directories, and launch only what is missing; "
                          "refuses if the muninn binary hash differs from the previous FROZEN.json")
@@ -211,7 +212,8 @@ def main() -> None:
                     continue
                 if arm in ("muninn_store", "plain_store"):
                     cmd = [py, "-u", str(HERE / "run_muninn_pis.py"), "--scenario", str(wpath), "--model", a.model,
-                           "--out-dir", str(d), "--score", "--store", arm.split("_")[0], "--base-url", base_url]
+                           "--out-dir", str(d), "--score", "--base-url", base_url,
+                           "--store", ("muninn-shadow" if a.shadow and arm == "muninn_store" else arm.split("_")[0])]
                 else:
                     cmd = [py, "-u", str(pmb / "sim" / "run_eval.py"), "--setup", arm, "--scenario", str(wpath),
                            "--backend", "sglang", "--base-url", base_url, "--model", a.model, "--out-dir", str(d),

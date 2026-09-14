@@ -919,3 +919,14 @@ go into their reports.
 `9c8c80b9…`, Gate 2's rule verbatim. Also reported: the share of passing `literal` cells in which
 the agent itself ran `muninn why` (the product allows it; a reader should know how much of the
 effect is pull rather than hook delivery).
+
+**Round 9 implementation, recorded before launch (2026-09-14 02:15).** `run_muninn_pis.py --store
+muninn-shadow` (`ShadowMuninnStore`): the Muninn store as in round 8, plus, for every active Muninn
+record, the cues the dict store would hold; at every board both answers are computed from the same
+record ids, the Muninn board drives the decision, and the trace records both (`shadow`), with
+`shadow_boards_compared` and `shadow_disagreements` in the run metadata. Launcher: `run_round8.py
+--shadow --weeks heldout --arms muninn_store,plain_store`, fresh output roots
+`results/pmbench/round9-{sonnet,codex}/`, same seeds, bridges and muninn binary. A two-day smoke on
+heldout-10517 (sonnet, not scored, not reported as a result): 26 boards, 24 non-empty, 0
+disagreements; an earlier attempt with the bridge down produced empty boards from failed calls and
+was discarded. The scaffold's hash changes with this addition; round 8's figures keep theirs.
