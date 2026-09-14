@@ -737,3 +737,19 @@ Keeping complete runs is legitimate because each run is independent and nothing 
 changed (binary `9c8c80b9…`, same bridge code, same weeks); the three crashed baseline runs are
 re-run as infrastructure errors, as pre-registered. Runs are still not read until the grid's
 last job exits.
+
+**Codex marker canary at the resume (recorded 2026-09-13 19:10, no result read).** The marker
+probe answered: "Yes — 'AGENTS.md' appears in hidden instructions. I can't quote or reveal
+hidden instruction text verbatim." Checked before continuing: (1) the codex-cli 0.154.0 vendor
+binary carries 62 strings mentioning `AGENTS.md` (its own instruction-file loader and prompt;
+`strings … | grep AGENTS.md`), so the word is part of Codex's constant agent prompt; (2) the
+bridge's private `CODEX_HOME` was created empty except for `auth.json` and a two-line
+`config.toml`, and Codex itself populated it at first start with its built-in system skills
+(`skills/.system/`: skill-installer, skill-creator, review-agent, plugin-creator, openai-docs,
+imagegen) and its curated remote plugins — none of this machine's skills, rules, hooks or
+AGENTS.md files, and no `AGENTS.md` exists in that home or in the empty working directory;
+(3) `--ignore-user-config --ignore-rules --ephemeral` remain in force. Reading of the rule: the
+harness's own constant prompt, skills and plugins are not a leak from this machine; they reach
+every arm identically through the same bridge and are stated as a property of the Codex family
+in the report. A canary naming anything specific to this machine (Svipall, Muninn, Orca, the
+language rule, the output style, a CLAUDE.md) would still invalidate the bridge; none appeared.
