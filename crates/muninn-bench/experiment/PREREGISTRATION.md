@@ -937,3 +937,54 @@ S1: 0 disagreements in 1 458 shadow boards (729 per family) → store implementa
 effect on this benchmark. S2: day-1 clock-time typing 7/18 vs 3/18 on sonnet (Fisher p = 0.264),
 0/18 vs 0/18 on gpt-5.6-sol → round 8's sonnet gap reported as sampling variation. `GATE4.md` §3
 round 9.
+
+## Head-to-head without labels — Muninn, claude-mem, agentmemory (recorded 2026-09-14, before any seeding session or probe of Muninn on this input)
+
+**Why.** Two attacks are still open. (1) Gate 3 hands Muninn the answer: its seed marks the retired
+records `invalid: true` and `muninn import` keeps the mark, so Gate 3 measures a filter, not the
+detection of a replaced decision. (2) Nothing compares Muninn with the memory tools people
+actually install. This grid answers both at once: every tool, Muninn included, learns the same
+twenty decisions from the same live Claude Code sessions, with no labels, through its own shipped
+capture path, and is then asked the same ten questions.
+
+**Tools and versions (frozen).** Muninn at the current build (`target/release/muninn`, sha256
+`973ef470…`, commit after the query-expansion removal), wired as its plugin wires it (SessionStart,
+UserPromptSubmit, PreToolUse, PostToolUse, Stop/SessionEnd hooks; no `import`, no seed file, no
+`invalid` field anywhere). claude-mem 13.24.23 (npm; its hooks, worker and MCP search tools; its
+observer model is whatever it uses by default through the Claude Code login). agentmemory 0.9.29
+(`@agentmemory/agentmemory`, its hooks and MCP tools, defaults: context injection off). Secondary arm
+`agentmemory-inject` (`AGENTMEMORY_INJECT_CONTEXT=true`, the documented switch). The two most
+downloaded local memory plugins for Claude Code at the time of writing (npm, last month: claude-mem
+78 741, agentmemory 29 386). A Mem0 arm is added only if an OpenAI key is provided before any cell
+runs, with Mem0's default models; otherwise it is reported as not run. Telemetry off where the tool
+has a switch; every tool preinstalled and pinned; no network install inside a cell.
+
+**Repository.** gin-gonic/gin at `dcaa429` (chosen by the external-repository rule). Model
+claude-sonnet-5 for seeding sessions and task cells.
+
+**Seeding — identical for every arm.** For each run and each arm, a fresh data directory and a fresh
+checkout; the 20 records of `revocation/seed.jsonl` in `created_at` order become 20 consecutive
+`claude -p` sessions whose prompt is the record's `body` without the `user: ` prefix, followed by one
+fixed line: "(Reply with one short sentence acknowledging.)". Nothing else is written, no `subject`,
+`object` or `invalid` field reaches any tool. Each tool captures what it captures from those sessions
+through its own hooks. The `off` arm has no seeding. The seeded data directory of a run is copied
+into each of that run's ten task cells, so tasks do not see each other.
+
+**Task cells.** The ten Gate 3 public-seed tasks and oracles, unchanged. Arms: `off`, `muninn`,
+`claude-mem`, `agentmemory`, `agentmemory-inject`; 3 runs; order randomised per run. Each arm's
+memory tools are allowed exactly as `muninn why`/`muninn status` are allowed for Muninn (MCP tool
+names added to `--allowedTools`). Cells of tools with a fixed port run serially.
+
+**Outcomes.** Primary: pass on the eight replacement scenarios (24 cells per arm). Secondary: unsafe
+(retired value written), pass on the two revocation-without-replacement scenarios, turns, and what
+each tool delivered or returned (hook output and MCP results logged per cell).
+
+**Decision rules.** Exact two-sided Fisher tests on replacement-scenario pass counts: `muninn` vs
+each competitor arm (three comparisons, Holm-adjusted) and every arm vs `off`. "Muninn detects
+replacements better than X" is published only if Holm-adjusted p < 0.05 with Muninn ahead; "not
+distinguishable" otherwise; a competitor ahead is published as that. Whatever Muninn scores here
+is published beside Gate 3, including a result at the level of `off`.
+
+**What may not change after this point.** The Muninn binary, the seed wording, the acknowledgement
+line, the tasks, the oracles and the arm configurations. A fix to the harness (not to any tool) found
+during a smoke is recorded here before the grid; an engine change would void this pre-registration.
