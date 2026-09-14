@@ -627,7 +627,8 @@ fn run_cell(
         if let Some(c) = control_db {
             cmd.env("MUNINN_CONTROL_DB", c);
         }
-        // query expansion is an opt-in in the shipped default (GATE4.md §1, second
+        // MUNINN_EXPAND is inert since the expansion was withdrawn (GATE4.md §1 replications);
+        // kept so the recorded grids re-run with the same environment. Originally: query expansion is an opt-in (GATE4.md §1, second
         // grid); the arms that carry it say so explicitly
         if base_arm == "lexical" {
             cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_EXPAND", "1");
