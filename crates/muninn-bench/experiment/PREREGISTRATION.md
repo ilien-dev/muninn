@@ -1054,3 +1054,8 @@ injection in the smoke; the line is pre-registered and stays. (4) Every arm, Mun
 receives Claude Code's own session context (the account e-mail, git status) and the claude.ai connector
 list; identical across arms. (5) claude-mem's worker needs a fresh login token per run (the token it
 receives does not refresh within a long grid).
+
+## DreamBench public pilot result (2026-09-14)
+
+Stopped by the Codex plan's usage limit after four complete runs: B0 48/48, MUNINN 24/24, B5 23/24. B0 at
+100 % ≥ the 90 % ceiling rule → not discriminating; partial runs not re-run. `dreambench/STATUS.md`.

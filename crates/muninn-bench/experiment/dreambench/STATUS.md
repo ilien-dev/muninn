@@ -38,3 +38,31 @@ the reviewer package (`--private`: oracles + reference solutions), the fixture r
 for the 11 initial commits, the v2.1 synthetic conformance corpus, and a pre-registered slot
 for an external `MuninnPolicy` condition run with a concurrent B0 on their infrastructure —
 or acceptance of a pull request that adds the policy so they can run it.
+
+## Public pilot run under the benchmark's own harness (2026-09-14; pre-registered)
+
+Four conditions — B0 (no memory), B5 (the harness's literal event memory), B5-MEM0-LIT (Mem0 OSS offline,
+`infer=False`), MUNINN (`muninn_policy.py`) — × seeds 1–3 on the 24 public v0 tasks, Codex 0.142.0 in
+Docker, `gpt-5.5`. Raw data `results/dreambench-public/`.
+
+**The grid stopped on the ChatGPT plan's usage limit** at 10:18 UTC: every later session failed with
+"You've hit your usage limit" (`agent_error`). Complete runs (24/24 sessions `completed`):
+
+| condition | seed | sessions passed |
+|---|---|---|
+| B0 | 1 | 24/24 |
+| B0 | 2 | 24/24 |
+| MUNINN | 1 | 24/24 |
+| B5 | 1 | 23/24 |
+
+Every other run is partial or empty because of the limit (B5, B5-MEM0-LIT, MUNINN seeds 2–3, B0 seed 3,
+B5-MEM0-LIT seed 1; the first B5-MEM0-LIT seed-1 attempt had crashed at start on an uncached embedding
+model and was re-run, then hit the limit).
+
+**Verdict by the pre-registered rule: not discriminating.** The rule required B0 below 90 % of sessions for
+any contrast to count; B0 passed 48/48 (100 %). On this subset the agent solves every session without
+memory — each session starts from the previous session's reference solution and the failing test is in
+the checkout — so no memory condition can show an effect, positive or negative. The partial runs were not
+re-run: more sessions cannot move a contrast the rule already declares uninformative. Nothing is claimed
+from this grid beyond "Muninn runs as a `MemoryPolicy` inside DreamBench's harness without errors (24/24
+completed sessions)". The confirmatory 60 traps still require the authors' private oracles (`REQUEST.md`).

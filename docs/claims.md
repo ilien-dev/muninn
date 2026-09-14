@@ -34,8 +34,9 @@ grid, its pre-registration and its raw data are indexed in
 - **Better than Mem0, Rekal, agentmemory or any other product.** No head-to-head on the same
   harness has been run. Vendor LoCoMo / LongMemEval figures are not comparable and are not
   cited as comparisons.
-- **DreamBench-SWE.** The benchmark's hidden oracles are not public; see the experiment
-  README for the status of that item.
+- **DreamBench-SWE.** The confirmatory traps need the authors' private oracles (request drafted). The
+  public 24-task pilot was run under the benchmark's own harness and does not discriminate: without
+  memory the agent passed 48/48 sessions (`dreambench/STATUS.md`).
 - **Query expansion through the symbol graph helps.** +0.125 on three runs did not replicate:
   −0.125 [−0.275, −0.025] on five, −0.031 [−0.125, +0.062] pooled. Withdrawn.
 - **The SessionStart summary is better than the block in CLAUDE.md.** The first grid's +0.119
