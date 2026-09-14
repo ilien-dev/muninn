@@ -401,3 +401,48 @@ such.
 plain lexical recall of literal records — dir/symbol cues, query expansion — has a replicated
 positive effect. F3's shipped delivery is lexical recall plus event reinjection, which is what
 the plan already defaulted to.
+
+## §3 round 8 on gpt-5.6-sol through Codex (measured 2026-09-14; pre-registered, R3)
+
+Same weeks, arms, scaffold (sha256 `bccb89f2…`) and muninn binary (`9c8c80b9…`) as the sonnet grid;
+`codex exec` through `codex_bridge.py` (`--ephemeral --ignore-user-config --ignore-rules -s
+read-only`, private `CODEX_HOME`, empty cwd; no temperature control exists in Codex). 48 counted
+runs, 0 non-zero exits, 9 792 bridge requests, 0 bridge errors, 12 of them in which the model ran a
+read-only shell command in the empty directory. Canaries: refusals, and a marker probe that named
+only `AGENTS.md` (Codex's own prompt; `PREREGISTRATION.md`). A launcher defect started 11 extra
+baseline runs; by the rule fixed before any score was read, the first three by launch time count
+and the rest sit in `excess-runs/` unused. Raw data `results/pmbench/round8-codex/`.
+
+| week | muninn_store | plain_store | single_baseline | todo_ledger |
+|---|---|---|---|---|
+| heldout-76233 | 98.7 · 96.2 · 96.7 → **97.2** | 95.5 · 96.7 · 98.7 → 97.0 | 78.4 · 82.4 · 78.9 → 79.9 | 83.0 · 77.6 · 80.5 → 80.4 |
+| heldout-10517 | 97.8 · 98.6 · 97.1 → **97.8** | 94.2 · 96.4 · 97.8 → 96.1 | 85.7 · 87.9 · 83.1 → 85.6 | 87.1 · 87.1 · 84.3 → 86.2 |
+| heldout-77013 | 98.2 · 96.9 · 96.9 → **97.3** | 98.1 · 98.1 · 98.1 → 98.1 | 73.9 · 77.6 · 77.1 → 76.2 | 72.5 · 75.0 · 76.6 → 74.7 |
+| v9 (development) | 98.1 · 98.8 · 98.1 → **98.3** | 97.5 · 96.9 · 95.0 → 96.5 | 79.7 · 80.0 · 80.0 → 79.9 | 79.2 · 83.3 · 81.6 → 81.4 |
+
+| contrast, held-out pooled | Δ mean | one-sided p (exact, 8 000) | 95 % CI (coarse) | weeks where every A run beat every B run |
+|---|---|---|---|---|
+| muninn_store − single_baseline | +16.9 | 1/8 000 | [+12.6, +21.0] | 3/3 |
+| muninn_store − todo_ledger | +17.0 | 1/8 000 | [+12.0, +22.4] | 3/3 |
+| plain_store − single_baseline | +16.5 | 1/8 000 | [+11.0, +21.6] | 3/3 |
+| muninn_store − plain_store | +0.4 | 2 149/8 000 | [−0.9, +1.9] | 0/3 |
+
+**Rules.** R1 line (97.5 % ≥ 82.9 %) — met. R1 spread rule (margin above every baseline larger than
+the largest within-arm range, every held-out week) — **met**: the smallest margin is +11.7 against a
+range of 4.8. R2 ablation band ±2 — pooled +0.4, met. One reading has to be stated: on heldout-76233
+the worst-case gap `min(muninn) − max(plain)` is −2.5. The analysis script reads the band as "no
+week where every run of one arm beats every run of the other by more than 2 points" (a negative gap
+means the runs overlap, which is what "not distinguishable" means); read literally as "the number
+must lie within ±2", that week would fail the band. The first reading is the one the rule was
+written for; both are printed here so the reader can apply the other.
+
+**Store equivalence, from the traces.** On Codex every one of the 24 store runs typed the daily
+antibiotic as an event on day 1 (12/12 per arm), and the two stores score the same. On sonnet the
+four low `muninn_store` runs were exactly the four with a clock-time typing, on prompts identical
+to the dict arm's. Across both families the store implementation never produced a different board
+from the same operations in the traces checked; round 9 measures that at every step.
+
+**Both families, held-out weeks.** `muninn_store` 91.4 % (sonnet) and 97.5 % (gpt-5.6-sol) against
+the paper's two scaffolds at 78.7–80.6 % and 80.6–81.1 % on the same model, same bridge, same
+weeks; exact p ≤ 5/8 000 for every baseline contrast in both families. The worst-case rule held on
+gpt-5.6-sol and failed on sonnet in one week.
