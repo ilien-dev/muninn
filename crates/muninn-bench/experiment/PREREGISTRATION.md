@@ -882,3 +882,16 @@ own file — for the two published cells the outcome was the same (fail by oracl
 writes each grid's configuration to `<out>/config.json` and refuses a rescore or re-run with a
 different one (or, for older grids, one that does not define every task present), and a cell is
 only reclassified after its task is found.
+
+**Round 8 Codex: excess baseline runs from the resume, and the rule for them (recorded 2026-09-14
+01:55, no Codex round-8 score read).** The second `--resume` counted run directories one level
+below each arm; PM-Bench's baselines keep every run under a single `<model>/` directory, so an arm
+with three complete runs counted as one and the launcher started two more. Result: 5 score files
+for some (week, baseline) cells, 4 for one, with the grid still running. Rule, fixed now: for every
+(week, arm), the runs that count are the **first three complete runs by launch time** (the
+timestamp PM-Bench writes into the run directory name); later complete runs are moved to
+`excess-runs/` inside the grid, kept, listed, and not used in any figure. If a cell ends with
+fewer than three complete runs, the missing ones are run and reported as such. The launcher's
+count is fixed (count score files, not directories) after this grid's last job exits, so this grid's
+hashes stay coherent. The sonnet grid is unaffected: its resume deleted and re-ran those runs, and
+every (week, arm) there ended with exactly three.
