@@ -141,6 +141,9 @@ def main() -> None:
     ap.add_argument("--arms", default="muninn_store,plain_store,single_baseline,todo_ledger")
     ap.add_argument("--weeks", default="v9,heldout")
     ap.add_argument("--muninn-bin", default=str(HERE.parents[2] / "target" / "release" / "muninn"))
+    ap.add_argument("--resume", action="store_true",
+                    help="keep every run that finished with a score file, delete partial run directories, and launch only what is missing; "
+                         "refuses if the muninn binary hash differs from the previous FROZEN.json")
     a = ap.parse_args()
 
     pmb = Path(a.pmbench).resolve()
@@ -166,6 +169,28 @@ def main() -> None:
               "model": a.model, "bridge": a.bridge, "base_url": base_url, "runs": a.runs, "arms": arms,
               "weeks": [w for w, _ in weeks], "prereg_commit": a.prereg_commit,
               "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    done: dict[tuple[str, str], int] = {}
+    if a.resume and (out / "FROZEN.json").exists():
+        prev = json.loads((out / "FROZEN.json").read_text())
+        for key in ("muninn_bin_sha256", "scaffold_sha256", "claude_bridge_sha256", "codex_bridge_sha256", "pm_bench_py_sha256"):
+            if prev.get(key) != frozen.get(key):
+                sys.exit(f"resume refused: {key} changed since the grid started ({prev.get(key)} -> {frozen.get(key)})")
+        frozen["resumed"] = prev.get("resumed", []) + [{"at_utc": frozen["started_utc"], "previous_started_utc": prev.get("started_utc")}]
+        frozen["started_utc"] = prev.get("started_utc", frozen["started_utc"])
+        removed = []
+        for wname, _ in weeks:
+            for arm in arms:
+                d = out / wname / arm
+                n = 0
+                for rd in sorted(p for p in d.glob("*") if p.is_dir()) if d.exists() else []:
+                    if list(rd.glob("*.score.md")):
+                        n += 1
+                    else:
+                        removed.append(str(rd.relative_to(out)))
+                        subprocess.run(["rm", "-rf", str(rd)], check=True)
+                done[(wname, arm)] = n
+        frozen["resume_removed_partial_dirs"] = frozen.get("resume_removed_partial_dirs", []) + removed
+        print(f"resume: complete runs kept per (week, arm): { {f'{w}/{ar}': n for (w, ar), n in done.items() if n} }; partial dirs removed: {len(removed)}", flush=True)
     (out / "FROZEN.json").write_text(json.dumps(frozen, indent=1))
 
     jobs: list[dict] = []
@@ -174,6 +199,8 @@ def main() -> None:
             for arm in arms:
                 d = out / wname / arm
                 d.mkdir(parents=True, exist_ok=True)
+                if run <= done.get((wname, arm), 0):
+                    continue
                 if arm in ("muninn_store", "plain_store"):
                     cmd = [py, "-u", str(HERE / "run_muninn_pis.py"), "--scenario", str(wpath), "--model", a.model,
                            "--out-dir", str(d), "--score", "--store", arm.split("_")[0], "--base-url", base_url]

@@ -721,3 +721,19 @@ isolation rests on the invocation (`--ephemeral --ignore-user-config --ignore-ru
 -s read-only`, a private CODEX_HOME holding only the login, an empty working directory) and
 on the fact that `codex exec` ships its own constant agent prompt (~13.8 k tokens per call,
 visible in the bridge's usage log). Stated as such in the report.
+
+**Second interruption and resume (recorded 2026-09-13 19:05, before relaunch).** At 08:56 the
+account's model credits ran out (the PM-Bench baselines died with "Empty response from backend",
+three `todo_ledger` runs with exit 1) and the machine went down until 18:58; `/tmp` (the cells)
+was lost, the result directories were not. State at the stop: round 8 sonnet 13 of 48 runs
+exited (4 complete with a score file: v9 `muninn_store` ×2, v9 `plain_store` ×2; the three
+credit crashes and every partial directory are discarded), round 8 Codex 2 of 48 exited
+(v9 `muninn_store` ×1 complete), Codex Gate 3 84 of 90 cells (archived unread with the earlier
+partials, re-run from zero: the runner has no resume). Round 8 resumes with `run_round8.py
+--resume`: it keeps only runs that ended with PM-Bench's score file, deletes partial
+directories (listed in `FROZEN.json`), refuses to start if the muninn binary, the scaffold, the
+bridge or the scorer hash differs from the grid's `FROZEN.json`, and launches the missing runs.
+Keeping complete runs is legitimate because each run is independent and nothing they depend on
+changed (binary `9c8c80b9…`, same bridge code, same weeks); the three crashed baseline runs are
+re-run as infrastructure errors, as pre-registered. Runs are still not read until the grid's
+last job exits.
