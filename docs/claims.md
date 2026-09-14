@@ -15,7 +15,7 @@ grid, its pre-registration and its raw data are indexed in
 | claim | figure | grid | caveats that travel with the claim |
 |---|---|---|---|
 | Literal memory delivered by hook changes what the agent does | pass 19/25 vs 2/25 without memory; literal − off +0.68 [+0.56, +0.80]; length-matched irrelevant control +0.09 [−0.04, +0.21] | Gate 2, claude-sonnet-5, 90 cells, private seed | one model; tasks written by the authors on the authors' repository; facts only reachable through the seeded transcript (checked by grep) |
-| Retired facts are never served, and that changes outcomes | filtered − render-matched unfiltered +0.22 [+0.11, +0.33] (sonnet), +0.19 [+0.07, +0.30] (haiku); retired served 0/180 cells; retired value written 0 % vs 7.4 % / 22.2 % | Gate 3, two families, 180 cells, private seed | the control keeps layout, budget and record count identical (render-matched); Codex/gpt-5.6-sol replication and a public-seed grid are pre-registered and pending |
+| Retired facts are never served, and that changes outcomes | filtered − render-matched unfiltered +0.22 [+0.11, +0.33] (sonnet), +0.19 [+0.07, +0.30] (haiku), 27/27 vs 0/27 on gpt-5.6-sol via Codex (Fisher p = 5 × 10⁻¹⁶); retired served 0/270 cells; retired value written 0 % vs 7.4 % / 22.2 % / 66.7 % | Gate 3, three families and two harnesses, 270 cells, private seed | the control keeps layout, budget and record count identical (render-matched); the first Codex grid was invalid (instrument) and is published as such; a public-seed grid is pre-registered and pending |
 | Invariants survive compaction | 100/100 forced compactions delivered all 10 invariants; 1.4 ms median per hook | Gate 4 §2, no model | mechanism test; the without-Muninn loss rate is cited from the literature, not re-measured |
 | Read hooks are cheap | SessionStart p95 2.1 ms, UserPromptSubmit gated 0.86 ms / full 3.5 ms at 20 000 records | `perf --strict`, one machine | one machine; the contract fails CI when exceeded |
 | PM-Bench: the typed-intention store beats the paper's scaffolds on the same model | set F1 96.3 % (round 5) and 96.7 % (round 7) vs 79.8 % (todo ledger) and 77.9 % (single baseline), 3 runs each, claude-sonnet-5, temperature 0 | Gate 4 §3 rounds 4–7 | development week only until round 8 reports; scaffold with lifecycle in code, not the harness delivery path; the 82.9 % PIS line is another model; round-8 store ablation decides whether the sentence says "Muninn" or "the mechanism Muninn implements" |
@@ -26,7 +26,7 @@ grid, its pre-registration and its raw data are indexed in
 |---|---|---|
 | Does the PM-Bench figure hold on weeks nobody tuned on? | round 8, 3 held-out weeks, seeds from the pre-registration commit hash | R1 fails → "development week only" |
 | Is it the store or the scaffold? | round 8, `plain_store` ablation | R2 within ±2 points → "the mechanism, which Muninn implements" |
-| Second model family | round 8 on gpt-5.6-sol via Codex; Gate 3 on Codex | a family where the effect fails is reported as such |
+| Second model family on PM-Bench | round 8 on gpt-5.6-sol via Codex | a family where the effect fails is reported as such |
 | Reproducible by outsiders | Gate 3 with a public records-only seed | none; it exists so the grid can be re-run |
 | Two decisions whose CI touched zero | five-run replications of boot vehicle and query expansion | replication decides default vs opt-in vs removal |
 
