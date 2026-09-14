@@ -79,3 +79,11 @@ logs/ (the model's final message per cell), tasks.json (the exact prompts and or
 Reproduce: `muninn-bench experiment --jobs 3` with the seed at
 `~/.local/share/muninn-bench/seed-14a6ab47-frozen.jsonl`; `--rescore` re-runs the
 oracles on the saved patches without model calls.
+
+## Note added 2026-09-14 — the control arm and `muninn why`
+
+A Codex replication found that a `control` agent can reach the real memory by running `muninn
+why` itself, because only prompt delivery was swapped to the foreign store (`PREREGISTRATION.md`,
+2026-09-14). This grid is not affected: `muninn why` was not an allowed tool in run 2 (it was added
+during Gate 3), and the control arm passed 0/15 fact cells. The runner now gives the control arm a
+store that is foreign in every channel.
