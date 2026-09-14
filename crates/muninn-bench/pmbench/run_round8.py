@@ -181,9 +181,17 @@ def main() -> None:
         for wname, _ in weeks:
             for arm in arms:
                 d = out / wname / arm
+                # a run directory is one whose own log `<dir>/<dir>.jsonl` exists; store arms
+                # keep runs at `<arm>/<run>/`, PM-Bench baselines at `<arm>/<model>/<run>/`.
+                # complete = its score report exists; partial run directories are removed;
+                # anything else (the stores' scratch roots) is left alone. `excess-runs/`
+                # (runs beyond the pre-registered count, moved aside) is never counted.
                 n = 0
-                for rd in sorted(p for p in d.glob("*") if p.is_dir()) if d.exists() else []:
-                    if list(rd.rglob("*.score.md")):   # PM-Bench baselines nest <model>/<run>/ one level deeper
+                runs_here = [q for q in (d.rglob("*") if d.exists() else [])
+                             if q.is_dir() and "excess-runs" not in q.parts
+                             and ((q / f"{q.name}.jsonl").exists() or (q / f"{q.name}.prompt.txt").exists())]
+                for rd in sorted(runs_here):
+                    if (rd / f"{rd.name}.score.md").exists():
                         n += 1
                     else:
                         removed.append(str(rd.relative_to(out)))
