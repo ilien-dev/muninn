@@ -930,3 +930,10 @@ record ids, the Muninn board drives the decision, and the trace records both (`s
 heldout-10517 (sonnet, not scored, not reported as a result): 26 boards, 24 non-empty, 0
 disagreements; an earlier attempt with the bridge down produced empty boards from failed calls and
 was discarded. The scaffold's hash changes with this addition; round 8's figures keep theirs.
+
+## Round 9 result (2026-09-14)
+
+S1: 0 disagreements in 1 458 shadow boards (729 per family) → store implementation equivalent in
+effect on this benchmark. S2: day-1 clock-time typing 7/18 vs 3/18 on sonnet (Fisher p = 0.264),
+0/18 vs 0/18 on gpt-5.6-sol → round 8's sonnet gap reported as sampling variation. `GATE4.md` §3
+round 9.

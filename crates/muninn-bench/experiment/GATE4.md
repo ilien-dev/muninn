@@ -446,3 +446,45 @@ from the same operations in the traces checked; round 9 measures that at every s
 the paper's two scaffolds at 78.7–80.6 % (sonnet) and 80.4–80.6 % (gpt-5.6-sol) on the same model, same bridge, same
 weeks; exact p ≤ 5/8 000 for every baseline contrast in both families. The worst-case rule held on
 gpt-5.6-sol and failed on sonnet in one week.
+
+## §3 round 9 — store equivalence by shadowing (measured 2026-09-14; pre-registered)
+
+**Question.** Round 8 on sonnet put `plain_store` 5.0 points above `muninn_store` on the held-out
+weeks, and the traces tied every low run to one day-1 decision of the model. Round 9 tests the two
+explanations directly. 3 `muninn_store` runs with a shadow dict store and 3 `plain_store` runs per
+held-out week, per family: 36 runs, 0 non-zero exits, same weeks, bridges and muninn binary
+(`9c8c80b9…`). Raw data `results/pmbench/round9-{sonnet,codex}/`.
+
+**S1 — do the stores ever disagree on the same operations?** Inside every `muninn_store` run the
+dict rule was evaluated on the same records at every step. **0 disagreements in 1 458 boards**
+(729 per family, every step of every week). On this benchmark the engine's cue evaluation and the
+dict implementation are the same function.
+
+**S2 — is the round-8 gap an arm effect or sampling?** Day-1 typing of the daily antibiotic, rounds
+8 + 9, held-out weeks:
+
+| family | muninn_store: clock time / event | plain_store: clock time / event | Fisher two-sided |
+|---|---|---|---|
+| claude-sonnet-5 | 7 / 11 | 3 / 15 | p = 0.264 |
+| gpt-5.6-sol | 0 / 18 | 0 / 18 | p = 1.000 |
+
+In round 9 the clock-time typing landed on both arms on sonnet, and it predicts the score exactly:
+every run that typed it scored 84.6–86.5 %, every run that did not scored 92.7–98.6 %, in both arms
+(`muninn_store` 85.5, 85.7, 86.5 against `plain_store` 85.5, 84.6, 86.5). By the rule, the round-8
+gap is reported as sampling variation of the model on byte-identical prompts, with S1 as the
+mechanism check. Round 8's R2 verdict on sonnet ("not met") stays in the record as measured.
+
+| week | sonnet muninn | sonnet plain | gpt-5.6-sol muninn | gpt-5.6-sol plain |
+|---|---|---|---|---|
+| heldout-76233 | 92.7 · 94.7 · 94.8 | 96.8 · 93.4 · 96.1 | 98.1 · 98.7 · 99.4 | 97.4 · 98.7 · 97.4 |
+| heldout-10517 | 98.6 · 85.5 · 98.6 | 85.5 · 97.8 · 84.6 | 98.6 · 99.3 · 97.8 | 97.8 · 96.4 · 95.7 |
+| heldout-77013 | 85.7 · 97.5 · 86.5 | 97.5 · 96.9 · 86.5 | 98.1 · 97.5 · 97.5 | 97.5 · 95.0 · 98.2 |
+| mean | 92.7 | 92.8 | 98.3 | 97.1 |
+
+Round 9's runs are reported on their own, as pre-registered; R1 is not re-evaluated on a pool of
+rounds 8 and 9.
+
+**What this settles for the public claim.** Muninn's store is not what makes the PM-Bench scaffold
+score; the typed-intention mechanism is, and any correct store gives the same boards. The claim
+stays worded as the mechanism, and the one sentence that may be said about the engine is that it
+implements that mechanism exactly (0 of 1 458 boards differ).
