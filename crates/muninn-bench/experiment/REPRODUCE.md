@@ -40,7 +40,7 @@ Corpus, labels and report: `../corpora/claude-md/GATE1.md`.
 ./target/release/muninn-bench experiment --config crates/muninn-bench/experiment/tasks.json --jobs 3 --out <dir>
 ./target/release/muninn-bench experiment --rescore --out <dir>
 ```
-Report `GATE2.md`; raw `results/run2/`.
+Report `GATE2.md`; raw `results/run2/`. Codex replication: `--config crates/muninn-bench/experiment/tasks-gate2-codex.json` (`results/gate2-codex/`).
 
 ## Gate 3 — F1 filter
 
@@ -56,6 +56,12 @@ Codex / gpt-5.6-sol (pre-registered, `results/gate3-codex/`):
 Public seed, no private input at all (pre-registered, `results/gate3-public/`):
 ```sh
 ./target/release/muninn-bench experiment --config crates/muninn-bench/experiment/revocation/tasks-revocation-public.json --jobs 3 --out <dir>
+```
+Public seed on three external repositories chosen by rule (`results/gate3-ext-{gin,vue,python}-{codex,sonnet}/`):
+```sh
+gh repo clone gin-gonic/gin <dir>/gin -- --depth 1        # likewise vuejs/vue, TheAlgorithms/Python; commits in the task files
+# edit "repo" in each task file to your clone path, then:
+./target/release/muninn-bench experiment --config crates/muninn-bench/experiment/revocation/tasks-external-gin-codex.json --jobs 3 --out <dir>
 ```
 
 ## Gate 4 §1 — cues, expansion, boot vehicle (private seed)
@@ -89,9 +95,10 @@ python3 crates/muninn-bench/pmbench/run_round8.py --pmbench <PMBench checkout> -
     --prereg-commit f173f2dc75625b89f7b0543004ed7cf44c51b399 --model gpt-5.6-sol --bridge codex --port 30003
 python3 crates/muninn-bench/pmbench/analyze_round8.py sonnet=<dir> codex=<dir-codex>
 ```
+Round 9 — shadow store (`results/pmbench/round9-*/`): the same launcher with `--shadow --weeks heldout --arms muninn_store,plain_store`.
 The held-out seeds are a function of the pre-registration commit hash (`run_round8.py`,
 `heldout_seeds`); the launcher regenerates and validates them with PM-Bench's own tools and
-writes `weeks/MANIFEST.json` with their hashes. Every run writes a `*.manifest.json` with the
+writes `weeks/MANIFEST.json` with their hashes. Grids resume with `--resume` (complete runs kept, partial ones removed, refused if a frozen hash changed); experiment grids re-run infrastructure errors with `--rerun-errors --config <the grid's own file>` and rescore with `--rescore --config <same>` (the runner refuses another file). Every run writes a `*.manifest.json` with the
 hashes of the scaffold, the scorer, the scenario, the muninn binary and the bridge's canary
 answer.
 
