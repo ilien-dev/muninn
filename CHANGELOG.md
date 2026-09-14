@@ -67,6 +67,19 @@ Everything below carries a measurement; the reports live under
   PostToolUse now match it and read every file in the patch, so compiled deny rules,
   pre-edit cues and the turn context cover Codex edits. Confinement denies a relative
   `../` path to a new file. `muninn init --codex` writes the new matchers.
+- **Instrument integrity (experiments).** The `off` arm has no store, hooks or `MUNINN_*`
+  variables; cells live outside the repository tree; in a cell the PreToolUse hook denies and
+  counts store reads and escapes (`deny:store-access`, `deny:escape`). Found by the first
+  Codex Gate 3 grid, where a no-memory agent located the store from the engine's source
+  (kept as `results/gate3-codex-v1-leaky/`). With the fix: Gate 3 on Codex / gpt-5.6-sol,
+  literal 27/27, unfiltered 0/27 (18 retired values written), off 0/27, 0 denials in 90 cells.
+- **Compaction reinjection says what it cut.** `decay_probe.py` (committed, one command) gives
+  100/100 at 10 invariants; at 20+ the 700-token budget delivers 16, and PostCompact now ends
+  with `[muninn:gated] N more … did not fit`.
+- **Reproducibility surfaces.** `experiment/REPRODUCE.md` (one command per number),
+  `docs/claims.md` (claimed / pending / not claimed), OpenTimestamps proofs of every
+  pre-registration commit under `experiment/prereg-stamps/`, per-run manifests and bridge
+  canaries for PM-Bench round 8.
 - **Not done, on purpose.** See `docs/scope.md`. Codex replication of the gates is
   not measured yet: the harness now runs (hooks fire under `codex exec` 0.154.0 with
   the project `hooks.json`; one smoke cell, `PREREGISTRATION.md`), no grid has. PM-Bench is measured in
