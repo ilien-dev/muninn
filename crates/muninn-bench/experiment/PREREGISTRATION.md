@@ -1009,3 +1009,29 @@ frozen `muninn` arm; `muninn-fixed` is reported as a post-smoke fix and its comp
 exploratory. Nothing else in the design changes. Also removed from the Muninn arm before any cell:
 `MUNINN_CONFINE_ROOT`, which in cells makes Muninn's hook deny out-of-checkout reads with a message
 about memory — a nudge no competitor arm receives.
+
+## DreamBench-SWE public pilot under the benchmark's own harness (recorded 2026-09-14, before any grid cell)
+
+**Why, and what it cannot show.** DreamBench-SWE's confirmatory traps need the authors' private oracles
+(`dreambench/STATUS.md`; request drafted). Its public checkout has one scorable subset: the 24-task v0
+pilot (6 sequences × 4 sessions, `experiments/env/tasks.jsonl`). Running it answers a narrower question
+than the paper — does Muninn, dropped into a third party's harness as a `MemoryPolicy` next to that
+harness's own literal baseline (B5) and Mem0 (B5-MEM0-LIT), help or hurt a Codex agent — and the
+feasibility study (`dreambench/FEASIBILITY.md` §6) lists why it may not discriminate at all: each
+session starts from the reference solution of the previous one, the failing test is visible in the
+checkout, and a smoke on one sequence put both B0 and MUNINN at 4/4. A result at the ceiling is
+published as "not discriminating", never as equivalence or superiority.
+
+**Frozen.** DreamBench-SWE checkout `d340bb2` unmodified (a wrapper, `dreambench/run_bench_ext.py`,
+registers MUNINN and an offline Mem0 client without editing the benchmark); agent image built from
+`scripts/Dockerfile.codex-agent` (Codex 0.142.0), model `gpt-5.5` (the harness accepts only it);
+conditions B0, B5, B5-MEM0-LIT (mem0ai 2.0.20 OSS, `infer=False` as in the paper, fastembed
+`BAAI/bge-small-en-v1.5` + local Qdrant, offline — the paper used hosted Mem0), MUNINN
+(`dreambench/muninn_policy.py`: events → `decision` records with origin `user_said`, episode →
+`episode`; read = `muninn why --json`, ≤ 6 items / 1 200 tokens; binary `fdcb4606…`, the head-to-head's
+fixed build); seeds 1, 2, 3; all 24 tasks; 288 agent sessions; four processes in parallel.
+
+**Outcome and tests.** Per-session `final_passed` as the harness scores it. Per condition: passes out of
+72. MUNINN vs each other condition: exact McNemar on sessions paired by (seed, task), two-sided, Holm
+over the three comparisons. "Discriminating" requires B0 below 90 % of sessions; otherwise every
+contrast is reported as uninformative whatever its p.
