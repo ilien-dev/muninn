@@ -159,3 +159,35 @@ records; the unfiltered agent more often picked the newer of two conflicting rec
 The filter's effect is therefore larger without noise (+0.96) than with it (+0.19 to +0.22); the
 noisy figure remains the one to quote for a real project, and this grid is the one an outsider
 can re-run.
+
+## Three external repositories nobody here wrote (Codex / gpt-5.6-sol, measured 2026-09-14; pre-registered)
+
+**Result: PASS on all three.** The public-seed Gate 3 run unchanged on repositories chosen by a
+rule fixed before any cell (`PREREGISTRATION.md`: most-starred MIT repository per shipped grammar,
+not archived, ≤ 50 MB, ≥ 50 source files): TheAlgorithms/Python `6883049`, vuejs/vue `9e88707`,
+gin-gonic/gin `dcaa429`. 3 runs, 90 cells each, 0 errors, same muninn binary `9c8c80b9…`. Raw
+data `results/gate3-ext-{gin,vue,python}-codex/`.
+
+| repository | literal pass | unfiltered pass | off pass | unfiltered wrote the retired value | literal wrote it | Fisher one-sided p (literal vs unfiltered) |
+|---|---|---|---|---|---|---|
+| gin-gonic/gin (Go) | **27/27** | 0/27 | 0/27 | 23/27 (85 %) | 0/27 | 5.1 × 10⁻¹⁶ |
+| vuejs/vue (TypeScript) | **26/27** | 0/27 | 0/27 | 23/27 (85 %) | 0/27 | 1.4 × 10⁻¹⁴ |
+| TheAlgorithms/Python | **27/27** | 0/27 | 0/27 | 18/27 (67 %) | 0/27 | 5.1 × 10⁻¹⁶ |
+| pooled | 80/81 | 0/81 | 0/81 | 64/81 (79 %) | 0/81 | 2.2 × 10⁻⁴⁶ |
+
+Replacement scenarios (8 of 10) shown; the two revocation-without-replacement scenarios passed
+3/3 in every arm and repository. Retired records served: 0/270. Hook deliveries in every
+`literal` and `unfiltered` cell, none in `off`; hook p95 ≤ 5.0 ms; one PreToolUse denial
+(`unfiltered`, an escape from the checkout, Python). All three Gate 3 rules met per repository.
+
+**The one `literal` miss.** vue, run 1, `revoke-version-scheme`: the file says "This project uses
+Semantic Versioning"; the oracle requires the token `semver`. The agent had the right decision and
+the oracle did not accept the phrasing. Scored as the oracle says; the oracle is not amended
+after the fact.
+
+**What this adds.** Memory *without* invalidation is not neutral on code nobody tuned for: on these
+repositories an agent given both the retired and the current policy wrote the retired one in 64 of
+81 cells, while the same agent with no memory wrote it in none. With F1 on, 0 of 81. The repository
+under test does not change the result. What is still not measured: the same three repositories on
+a Claude model (running), and any repository for Gate 2, whose facts live in this project's own
+transcript.
