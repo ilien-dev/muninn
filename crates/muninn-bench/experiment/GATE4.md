@@ -30,6 +30,11 @@ rewritten prompts still share enough vocabulary with the records); the cues fire
 of 24 literal cells and added two passes. The length control gains +0.083 with a lower
 bound at exactly 0, so part of the literal arm's extra 580 tokens per cell is length.
 
+*Note added 2026-09-14:* in this grid the `control` agent could run `muninn why` against the
+real store (only prompt delivery used the foreign store; `PREREGISTRATION.md`, Gate 2 on Codex).
+The control arm passed 2/24, so any such leak inflated the control, not the literal arm; the
+figures stand and the runner is fixed for later grids.
+
 Consequence, as the plan states it: F3 ships as reinjection on compaction and at
 session start (event cues, §2) plus lexical recall; dir/symbol cue delivery at prompt
 and tool time stays in the engine, measured, **off by default** (`muninn init --cues`,
