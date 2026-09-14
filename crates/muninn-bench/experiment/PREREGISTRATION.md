@@ -851,3 +851,19 @@ the rule (a pooled figure is reported beside it). A repository where rule (1) fa
 as a failure on that repository. Gate 2's rule verbatim (literal − off > 0 with CI excluding 0;
 control − off CI including 0 or below half the literal effect); a Codex hook-delivery rate below
 90 % of `literal` cells is an instrument failure, reported as such.
+
+**Amendment: running out of turns is an outcome, not an error (recorded 2026-09-14 01:20, before
+reading either replication).** A cell whose harness reported `error_max_turns` (the agent used
+all 25 turns) was recorded as `error`, excluded from pass rates, and eligible for
+`--rerun-errors`. That is wrong in both directions a statistician would name: exclusion drops
+failures from the denominator, and re-running resamples failures only. From now on such a cell
+is scored by its oracle on what the agent left (the runner no longer marks it as an error;
+`--rescore` scores recorded ones on their saved patch, and a patch that does not apply stays a
+fail). Checked across every grid in `results/`: the only published cells affected are one
+`control` cell in Gate 2 run 2 and one `control` cell in the first cue grid, both now `fail` —
+Gate 2 control 4/24 → 4/25, control − off +0.087 [−0.035, +0.208] → +0.080 [−0.040, +0.200];
+Gate 4 §1 control 2/23 → 2/24, control − off +0.087 → +0.083 [+0.000, +0.167]. Both were in the
+control arm, so the old exclusion had flattered the control, not Muninn; no conclusion changes.
+None had been re-run: the only `--rerun-errors` passes so far re-ran credit-limit errors, checked
+cell by cell. In the running replications, 5 boot-vehicle cells and 1 expansion cell hit the turn
+limit; they will be scored, not re-run.

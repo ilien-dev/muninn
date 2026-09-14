@@ -8,26 +8,26 @@ in the same document once its replicate runs finish.
 Eight decisions anchored to eight files (one per crate), each naming a token absent
 from the repository; one task per file, naming the area but never the file; the record
 shares as few words as possible with the task. claude-sonnet-5, 3 runs, 96 cells,
-$28.03, 1 error (control).
+$28.03, 0 errors (one control cell first recorded as an error was the agent running out of turns, now scored as a fail; `PREREGISTRATION.md`, 2026-09-14).
 
 | arm | pass | cells where a dir/symbol cue fired | tokens delivered (mean) |
 |---|---|---|---|
 | off | 0/24 | — | 0 |
 | lexical (cues off) | 12/24 | 0 | 609 |
 | literal (cues + lexical, tool-time delivery on) | 14/24 | 15/24 | 1 187 |
-| control (length-matched irrelevant) | 2/23 | 0 | 1 039 |
+| control (length-matched irrelevant) | 2/24 | 0 | 1 039 |
 
 | contrast | point | 95 % bootstrap CI |
 |---|---|---|
 | literal − lexical | +0.083 | [−0.083, +0.250] |
 | literal − off | +0.583 | [+0.458, +0.708] |
 | lexical − off | +0.500 | [+0.375, +0.625] |
-| control − off | +0.087 | [+0.000, +0.174] |
+| control − off | +0.083 | [+0.000, +0.167] |
 
 Pre-registered rule: literal − lexical > 0 with a CI excluding 0. The CI includes 0.
 Lexical recall of the prompt already finds the anchored record in half the cells (the
 rewritten prompts still share enough vocabulary with the records); the cues fired in 15
-of 24 literal cells and added two passes. The length control gains +0.087 with a lower
+of 24 literal cells and added two passes. The length control gains +0.083 with a lower
 bound at exactly 0, so part of the literal arm's extra 580 tokens per cell is length.
 
 Consequence, as the plan states it: F3 ships as reinjection on compaction and at

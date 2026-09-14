@@ -655,7 +655,11 @@ fn run_cell(
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
                     cell.cost_usd = v["total_cost_usd"].as_f64();
                     cell.num_turns = v["num_turns"].as_u64();
-                    if v["is_error"].as_bool().unwrap_or(false) {
+                    // running out of turns is the agent's outcome, not an infrastructure
+                    // error: the cell is scored by its oracle like any other, and
+                    // `--rerun-errors` never re-rolls it (that would resample failures only)
+                    let out_of_turns = v["subtype"].as_str() == Some("error_max_turns");
+                    if v["is_error"].as_bool().unwrap_or(false) && !out_of_turns {
                         cell.error = Some(format!(
                             "claude is_error: {}",
                             v["result"]
@@ -1093,7 +1097,20 @@ pub fn run(
         let mut changed = 0usize;
         for c in cells.iter_mut() {
             if c.status == "error" {
-                continue;
+                // a cell recorded as an error because the agent ran out of turns (runner
+                // versions before this fix) is an outcome: score it on its saved patch
+                let log = out_dir
+                    .join("logs")
+                    .join(format!("r{}-{}-{}.json", c.run, c.task, c.arm));
+                let out_of_turns = std::fs::read_to_string(&log)
+                    .ok()
+                    .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                    .is_some_and(|v| v["subtype"].as_str() == Some("error_max_turns"));
+                if !out_of_turns {
+                    continue;
+                }
+                c.error = None;
+                c.status = "fail".into();
             }
             let Some(task) = cfg.tasks.iter().find(|t| t.id == c.task) else {
                 continue;
