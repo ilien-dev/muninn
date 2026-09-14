@@ -104,7 +104,7 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
     root = work / f"seed-r{run}-{arm}"
     shutil.rmtree(root, ignore_errors=True)
     (root / "cell").mkdir(parents=True)
-    co = root / "checkout"
+    co = root / REPO.name   # tools key state by the checkout basename: same name in seed and task cells
     checkout(co)
     settings = root / "settings.json"
     settings.write_text(json.dumps({"autoMemoryEnabled": False}))
@@ -141,7 +141,7 @@ def run_cell(cfg: dict, task: dict, arm: str, run: int, out: Path, work: Path) -
     root = work / f"cell-r{run}-{task['id']}-{arm}"
     shutil.rmtree(root, ignore_errors=True)
     (root / "cell").mkdir(parents=True)
-    co = root / "checkout"
+    co = root / REPO.name
     t0 = time.time()
     lk = lock_for(arm) if arm != "off" else threading.Lock()
     with lk:
@@ -171,7 +171,12 @@ def run_cell(cfg: dict, task: dict, arm: str, run: int, out: Path, work: Path) -
             elif v.get("is_error") and v.get("subtype") != "error_max_turns":
                 cell["error"] = f"claude is_error: {str(v.get('result'))[:200]}"
             if arm != "off":
-                (logs / f"r{run}-{task['id']}-{arm}.delivered.json").write_text(arm_cmd(arm, "delivered", env) or "{}")
+                sid = v.get("session_id") or ""
+                slug = str(co).replace("/", "-").replace(".", "-")
+                transcript = Path.home() / ".claude" / "projects" / slug / f"{sid}.jsonl"
+                (logs / f"r{run}-{task['id']}-{arm}.delivered.json").write_text(arm_cmd(arm, "delivered", env, str(transcript)) or "{}")
+                if transcript.exists():
+                    shutil.copy(transcript, logs / f"r{run}-{task['id']}-{arm}.transcript.jsonl")
             subprocess.run(["git", "-C", str(co), "add", "-A"], check=True, capture_output=True)
             diff = subprocess.run(["git", "-C", str(co), "diff", "--cached"], capture_output=True, text=True).stdout
             (out / "diffs").mkdir(parents=True, exist_ok=True)

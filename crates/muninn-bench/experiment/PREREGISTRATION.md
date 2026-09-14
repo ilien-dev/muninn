@@ -1035,3 +1035,22 @@ fixed build); seeds 1, 2, 3; all 24 tasks; 288 agent sessions; four processes in
 72. MUNINN vs each other condition: exact McNemar on sessions paired by (seed, task), two-sided, Holm
 over the three comparisons. "Discriminating" requires B0 below 90 % of sessions; otherwise every
 contrast is reported as uninformative whatever its p.
+
+**Head-to-head: competitor arms built and smoked, harness fixes (recorded 2026-09-14, before any grid
+cell).** claude-mem 13.24.23 and agentmemory 0.9.29 arms (`h2h/competitors/`) each ran two seeding
+sessions, a snapshot, a restore and one task session end to end with `--setting-sources ""`; their hooks
+fired (claude-mem in the transcript and worker log; agentmemory in the server state), their MCP tools
+answered through `--allowedTools`, and a canary found no user CLAUDE.md, skills or MCP servers. n = 1
+per arm, not a result. Harness fixes, none touching a tool: every checkout is named after the repository
+(both tools key their state by the git top-level's basename, so a restored store was invisible under a
+different name); each task cell's session transcript is copied into the grid's logs and handed to the
+arm's `delivered` step (neither tool logs what it injects or returns). Facts a reader must know, left as
+they are because they are the tools' defaults or apply to every arm: (1) claude-mem's observer rewrites
+what it sees with an LLM (via the Claude Code login) and retires nothing; its async Stop summary never
+ran under `claude -p`. (2) agentmemory stores raw prompts as observations, injects nothing by default,
+and ignores `--port`/`--data-dir` (cells serial, state under the cell). (3) In the `agentmemory-inject`
+arm the fixed acknowledgement line reaches the task session verbatim and the agent called it a prompt
+injection in the smoke; the line is pre-registered and stays. (4) Every arm, Muninn included, still
+receives Claude Code's own session context (the account e-mail, git status) and the claude.ai connector
+list; identical across arms. (5) claude-mem's worker needs a fresh login token per run (the token it
+receives does not refresh within a long grid).
