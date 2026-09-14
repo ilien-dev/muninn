@@ -491,10 +491,22 @@ fn run_cell(
         let hookboot = arm.ends_with("-hookboot");
         let base_arm = arm.strip_suffix("-hookboot").unwrap_or(arm);
         if base_arm != "off" && !hookboot {
-            let tpl = repo.join("plugin/templates/CLAUDE.muninn.md");
+            // the template ships with Muninn, not with the repository under test (an
+            // external repository has none); a repository's own CLAUDE.md / AGENTS.md is
+            // kept and the block appended, so the `off` arm and the Muninn arms see the
+            // same project instructions
+            let own = repo.join("plugin/templates/CLAUDE.muninn.md");
+            let shipped = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../plugin/templates/CLAUDE.muninn.md");
+            let tpl = if own.exists() { own } else { shipped };
             if let Ok(t) = std::fs::read_to_string(&tpl) {
                 for f in ["CLAUDE.md", "AGENTS.md"] {
-                    let _ = std::fs::write(dir.join(f), &t);
+                    let path = dir.join(f);
+                    let text = match std::fs::read_to_string(&path) {
+                        Ok(existing) => format!("{existing}\n\n{t}"),
+                        Err(_) => t.clone(),
+                    };
+                    let _ = std::fs::write(&path, text);
                 }
             }
         }
