@@ -350,8 +350,27 @@ fn measure_store(dir: &Path) -> (i64, i64, Option<f64>) {
     let mut extra_tokens = 0i64;
     let mut extra_recs = 0i64;
     {
-        for l in muninn_core::logfold::pending(&db, &dir.join(".muninn/log/delivery.jsonl")) {
+        let lines = muninn_core::logfold::pending(&db, &dir.join(".muninn/log/delivery.jsonl"));
+        // only the harness's own session counts as delivered: an agent that runs Muninn's
+        // benchmark inside the cell fires the hook hundreds of times under other session
+        // ids (Gate 2 on Codex), and none of that reaches the agent
+        let harness: std::collections::HashSet<String> = lines
+            .iter()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .filter(|v| {
+                v["reason"]
+                    .as_str()
+                    .is_some_and(|r| r.starts_with("cue:event:session_start"))
+            })
+            .filter_map(|v| v["session"].as_str().map(str::to_string))
+            .collect();
+        for l in lines {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&l) {
+                if !harness.is_empty()
+                    && !v["session"].as_str().is_some_and(|s| harness.contains(s))
+                {
+                    continue;
+                }
                 if v["reason"]
                     .as_str()
                     .map(|r| !r.starts_with("off") && !r.starts_with("silence"))
@@ -579,7 +598,15 @@ fn run_cell(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
         if no_muninn {
-            cmd.env_remove("MUNINN_ROOT")
+            // no `muninn` on the agent's PATH either (this machine has one installed)
+            let clean: Vec<String> = std::env::var("PATH")
+                .unwrap_or_default()
+                .split(':')
+                .filter(|d| !Path::new(d).join("muninn").exists())
+                .map(str::to_string)
+                .collect();
+            cmd.env("PATH", clean.join(":"))
+                .env_remove("MUNINN_ROOT")
                 .env_remove("MUNINN_ARM")
                 .env_remove("MUNINN_BOOT")
                 .env_remove("MUNINN_CONFINE_ROOT")
