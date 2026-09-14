@@ -127,7 +127,7 @@ store that is foreign in every channel and with every agent command logged. Raw 
 **Instrument notes.** Deliveries in every `literal` and `control` cell, none in `off`; delivered
 tokens counted from the agent's own session: `literal` 777, `control` 1 230 (the control carries
 more irrelevant text than the literal arm carries relevant text, so length does not favour
-`literal`). In six `control` cells and one other the agent built and ran Muninn's own performance
+`literal`). In six `control` cells the agent built and ran Muninn's own performance
 benchmark inside the checkout, which fired the hook hundreds of times under other session ids; the
 runner's token count included those (mean 47 909 in the first summary) and now counts only the
 harness session. `muninn why`/`recall` executed by the agent: `literal` 7 cells (none of its 10
