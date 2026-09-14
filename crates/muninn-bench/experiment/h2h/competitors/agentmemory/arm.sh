@@ -143,7 +143,8 @@ EOF
 
 cmd_snapshot() {
   need CELL_ROOT; local dest=${1:?snapshot <dir>}
-  healthy && die "stop the server before snapshot"
+  # the harness snapshots before `stop`: stop the engine first so its files are copied closed
+  if healthy; then cmd_stop >/dev/null; fi
   mkdir -p "$dest"
   cp -a "$CELL_ROOT/data/." "$dest/"
   rm -f "$dest/iii-config.yaml"

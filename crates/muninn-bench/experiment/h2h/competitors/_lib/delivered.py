@@ -40,6 +40,13 @@ def text_of(content):
     return json.dumps(content)
 
 if a.transcript:
+    import os
+    if not os.path.exists(a.transcript):
+        # Claude Code's project slug replaces every non-alphanumeric character; a caller that
+        # guessed it differently still names the session id, which is unique
+        hits = glob.glob(os.path.expanduser("~/.claude/projects/*/") + os.path.basename(a.transcript))
+        if len(hits) == 1:
+            a.transcript = hits[0]
     out["source"] = a.transcript
     calls = {}
     try:

@@ -155,7 +155,9 @@ EOF
 
 cmd_snapshot() {
   need CELL_ROOT; local dest=${1:?snapshot <dir>}
-  healthy 2>/dev/null && [ -n "${PORT:-}" ] && die "stop the worker before snapshot"
+  # the harness snapshots before `stop`: quiesce the worker first so SQLite and chroma are
+  # copied closed (stop is idempotent, the harness's own `stop` afterwards is a no-op)
+  if [ -n "${PORT:-}" ] && healthy; then cmd_stop >/dev/null; fi
   mkdir -p "$dest"
   cp -a "$CELL_ROOT/data/." "$dest/"
   rm -f "$dest/worker.pid" "$dest/supervisor.json"; rm -rf "$dest/logs"
