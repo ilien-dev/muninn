@@ -200,10 +200,10 @@ claude-sonnet-5`; 3 runs, 90 cells each, 0 errors, $24.20 in total, same muninn 
 
 | repository | literal pass | unfiltered pass | off pass | unfiltered wrote the retired value | literal wrote it | Fisher one-sided p (literal vs unfiltered) |
 |---|---|---|---|---|---|---|
-| gin-gonic/gin (Go) | **27/27** | 1/27 | 1/27 | 6/27 | 0/27 | 2.8 × 10⁻¹⁴ |
+| gin-gonic/gin (Go) | **27/27** | 1/27 | 1/27 | 6/27 | 0/27 | 1.4 × 10⁻¹⁴ |
 | vuejs/vue (TypeScript) | **27/27** | 0/27 | 1/27 | 4/27 | 0/27 | 5.1 × 10⁻¹⁶ |
-| TheAlgorithms/Python | **27/27** | 2/27 | 1/27 | 5/27 | 0/27 | 7.3 × 10⁻¹³ |
-| pooled | **81/81** | 3/81 | 3/81 | 15/81 (19 %) | 0/81 | < 10⁻⁴⁰ |
+| TheAlgorithms/Python | **27/27** | 2/27 | 1/27 | 5/27 | 0/27 | 2.1 × 10⁻¹³ |
+| pooled | **81/81** | 3/81 | 3/81 | 15/81 (19 %) | 0/81 | 2.6 × 10⁻⁴³ |
 
 Retired records served 0/270; deliveries in every Muninn cell and none in `off`; 0 PreToolUse
 denials. `literal − unfiltered` per repository: +0.963 [+0.889, +1.000], +1.000, +0.926
