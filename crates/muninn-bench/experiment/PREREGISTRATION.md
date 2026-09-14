@@ -753,3 +753,13 @@ harness's own constant prompt, skills and plugins are not a leak from this machi
 every arm identically through the same bridge and are stated as a property of the Codex family
 in the report. A canary naming anything specific to this machine (Svipall, Muninn, Orca, the
 language rule, the output style, a CLAUDE.md) would still invalidate the bridge; none appeared.
+
+**Resume defect, recorded 2026-09-13 19:40 while the grids run.** The first `--resume` looked
+for a run's score file one directory deep; PM-Bench's own runners nest their runs one level
+deeper (`<arm>/<model>/<run>/`), so every completed baseline run directory was classed as
+partial and deleted: sonnet v9 `single_baseline` ×3, v9 `todo_ledger` ×2, heldout-76233
+`single_baseline` ×1; Codex v9 `single_baseline` ×1 (the list is in each `FROZEN.json`,
+`resume_removed_partial_dirs`). Those runs are being re-run as fresh runs by the same launcher;
+no score from the deleted runs was read (their score files were never opened by anyone), so
+the effect is cost and time, not selection. The lookup is recursive from now on. The kept runs
+(sonnet v9 `muninn_store` ×2 and `plain_store` ×2, Codex v9 `muninn_store` ×1) are unaffected.

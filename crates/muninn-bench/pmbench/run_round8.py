@@ -183,7 +183,7 @@ def main() -> None:
                 d = out / wname / arm
                 n = 0
                 for rd in sorted(p for p in d.glob("*") if p.is_dir()) if d.exists() else []:
-                    if list(rd.glob("*.score.md")):
+                    if list(rd.rglob("*.score.md")):   # PM-Bench baselines nest <model>/<run>/ one level deeper
                         n += 1
                     else:
                         removed.append(str(rd.relative_to(out)))
