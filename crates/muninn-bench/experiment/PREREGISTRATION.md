@@ -806,3 +806,48 @@ the runner fell back to its default (Gate 2's task file): it was killed after th
 (`off` arm, Gate 2 tasks) had run; their rows, logs, diffs and control store were removed from the
 boot-vehicle directory, the 51 completed cells were untouched, and the re-run was relaunched with
 the replication's own task file. Nothing was read from the kept cells before this.
+
+## Gate 3 on three external repositories, and Gate 2 on Codex (recorded 2026-09-14 00:50, before any cell)
+
+**Why.** Every agent grid so far runs on this repository. "It works on the authors' own
+codebase" is the first thing an expert will say. Gate 3's public seed (ten policies with a
+retired and a current value, oracles that check a written policy file) does not depend on the
+repository, so it can be run unchanged on code nobody here wrote. Gate 2 cannot (its facts
+live in this project's transcript), but it has only one model family; Codex is the second.
+
+**Repository selection — a rule, applied before looking at anything but the rule's inputs.**
+For each language whose grammar Muninn ships (Python, TypeScript, Go; Rust is this repository,
+JavaScript overlaps TypeScript): `gh search repos --language=<lang> --license=mit --sort=stars`
+on 2026-09-14, take the first result that is not archived, is ≤ 50 MB, and has ≥ 50 tracked
+source files in that language at HEAD. MIT because every seed's `license` scenario assumes a
+repository whose real license is neither the retired nor the current value (as in this
+repository). Outcome of the rule, with the rejected candidates: Python — `public-apis` (6 `.py`
+files), `project-based-learning` (0), `hermes-agent` (> 50 MB) rejected, **TheAlgorithms/Python
+`6883049`** (1 507 `.py`); TypeScript — `deepseek-harness` (> 50 MB) rejected, **vuejs/vue
+`9e88707`** (388 `.ts`); Go — `awesome-go` (10 `.go`), `ollama` (> 50 MB) rejected,
+**gin-gonic/gin `dcaa429`** (99 `.go`). Shallow clones at those commits under
+`~/.local/share/muninn-bench/external/`. TheAlgorithms/Python has its own `AGENTS.md`.
+
+**Frozen.** `revocation/tasks-external-{python,vue,gin}-{codex,sonnet}.json`: the public-seed Gate
+3 configuration with only `repo` and `base_ref` changed (and `harness`/`model` for the Codex
+files). Muninn binary `9c8c80b9…` (the one every running grid uses, passed with `--muninn`). One
+runner change, needed for a repository that is not this one and built into a separate target
+directory so the running grids are untouched: the boot template is read from Muninn's own
+`plugin/templates/` when the repository under test has none, and an existing `CLAUDE.md` /
+`AGENTS.md` is kept with the block appended instead of overwritten (in this repository at
+`0cb51ab` neither file existed, so earlier grids are unaffected). Seed-term collisions at HEAD,
+counted before any run: `gzip` 1 file in each repository, `LFU` 7 (Python) and 2 (vue),
+`msgpack` 11 (gin), `calver` 3 (Python), `semver` 3 (vue), `GPL`/`Apache` 1–5 — these are the
+repositories as they are and nothing is edited.
+
+**Order.** Codex first (its quota is separate from the Claude account that ran out twice): gin,
+vue, Python, then Gate 2 on Codex (`tasks-gate2-codex.json`: Gate 2 unchanged, `harness: codex`,
+`model: gpt-5.6-sol`, 5 runs, 90 cells), three cells at a time, after the Codex round 8 finishes
+or alongside it. The sonnet external grids run after the two sonnet replications finish, if the
+account's limit allows; if they do not run, that is stated, and the Codex grids stand alone.
+
+**Decision rules.** Gate 3's rule per repository, verbatim, no pooling across repositories for
+the rule (a pooled figure is reported beside it). A repository where rule (1) fails is published
+as a failure on that repository. Gate 2's rule verbatim (literal − off > 0 with CI excluding 0;
+control − off CI including 0 or below half the literal effect); a Codex hook-delivery rate below
+90 % of `literal` cells is an instrument failure, reported as such.
