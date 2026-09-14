@@ -13,7 +13,7 @@ Everything below carries a measurement; the reports live under
   episodes (long turns chunked), corrections and invariants (user_said, trust 3),
   commit-linked decisions (trust 2), dead ends (tool_observed, trust 1); user steering
   inside tool results captured; secrets redacted by shape and entropy. Gate 2: with
-  literal delivery 19/25 vs 2/25 without, length-matched control 4/24 (+0.68
+  literal delivery 19/25 vs 2/25 without, length-matched control 4/25 (+0.68
   [+0.56, +0.80]).
 - **F1 — filter.** Supersession, anchor validation, reverts, explicit revoke; retired
   records never served; conflicts served as conflicts. Gate 3, two model families:

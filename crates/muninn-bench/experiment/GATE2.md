@@ -1,18 +1,18 @@
 # Gate 2 — does literal episode delivery by hook change the outcome? (measured 2026-09-13)
 
 **Result: PASS.** On the five non-inferable tasks, the literal arm passed 19/25 cells and
-the no-memory arm 2/25; the length-matched irrelevant control passed 4/24.
+the no-memory arm 2/25; the length-matched irrelevant control passed 4/25.
 
 | contrast (non-inferable tasks) | point estimate | 95 % bootstrap CI (10 000, stratified by task) |
 |---|---|---|
 | literal − off | +0.680 | [+0.560, +0.800] |
-| control − off | +0.087 | [−0.035, +0.208] |
+| control − off | +0.080 | [−0.040, +0.200] |
 
 Decision rule (PREREGISTRATION.md): (1) literal − off > 0 with a CI excluding 0 — met;
 (2) control − off has a CI including 0, or a point estimate below half the literal effect
 — both met. Model: claude-sonnet-5, 5 runs, task×arm order randomised per run, one fresh
 git worktree and one fresh store per cell, executable oracles, no judge model. 90 cells,
-$27.63, 1 cell excluded as `error` (control, model error), 0 timeouts.
+$27.63, 0 errors, 0 timeouts (one control cell first recorded as an error was the agent running out of turns; since 2026-09-14 it is scored as a fail — see the amendment in `PREREGISTRATION.md`).
 
 ## Per task
 
@@ -36,7 +36,7 @@ never state them and ask the agent to write "not found" rather than invent.
 | stored (episodes in the seeded store) | 82 | 82 | 82 (+183 in the foreign store) |
 | delivered per cell (tokens, mean; records) | 0 | 627 · 3.5 | 539 · length-matched, foreign project |
 | management (UserPromptSubmit p95, max over cells) | 0.07 ms | 1.36 ms | 1.75 ms |
-| outcome (non-inferable pass) | 2/25 | 19/25 | 4/24 |
+| outcome (non-inferable pass) | 2/25 | 19/25 | 4/25 |
 | turns per cell (mean) · wall time · cost | 19.5 · 77 s · $0.321 | 12.5 · 49 s · $0.245 | 20.4 · 80 s · $0.348 |
 
 The literal arm is also the cheapest: fewer turns, because the agent stops searching.
@@ -53,7 +53,7 @@ The literal arm is also the cheapest: fewer turns, because the agent stops searc
   in the reported set because it was pre-registered for run 2.
 - `fact-corpus-fetch-limits` literal 4/5: one cell wrote "60-second window" as "per
   minute" phrasing the oracle did not accept; scored as the oracle says.
-- The control arm's 4/24 are s12 (4/5): irrelevant blocks do not help the fact tasks
+- The control arm's 4/25 are s12 (4/5): irrelevant blocks do not help the fact tasks
   (0/15) and the s12 gain is within what the off arm shows.
 
 ## Reading the result honestly
