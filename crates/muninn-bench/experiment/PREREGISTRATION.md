@@ -1127,3 +1127,18 @@ Gate 3, from the loop-1 set and from each other), including terse imperatives, c
 Spanish. After the loop-2 freeze commit, a new held-out set (new topics, same fixed prompt, a different
 generation run) is generated and committed before the mechanism evaluation; the loop-1 set is reported
 beside it as a secondary check. Same metrics as loop 1.
+
+**Loop 2 frozen (2026-09-17), binary `e697ecf5…`.** Change cues broadened (generic English and Spanish
+list), imperative/first-person choice forms added, and a change now also retires an earlier short episode
+that shares at least two content words and 34 % of the smaller content-word set. Development set
+(`loop2/dev_*.json`, eight new topics, terse/chatty/Spanish, with distractors): earlier statement retired
+8/8, change kept 8/8, only the current statement served 7/8 (0/8 with the binary before loop 1). The
+mechanism evaluator gained the served-statement metric (`current_only`: the later statement is served and
+the earlier one is not), applied to every binary alike; it replaces `served_ok`, which counted the old value
+even when the later message names it. 80 workspace tests, clippy and fmt green.
+
+**Loop 2 held-out evaluation, recorded before generation.** Ten new topics (`loop2/scenarios.json`), the
+loop-1 generation prompt unchanged, a fresh claude-haiku-4-5 generation committed before the evaluator
+runs; the loop-1 held-out set is reported beside it as a secondary (already used) check. Reported for the
+binary before loop 1 (`fdcb4606`), loop 1 (`8de732af`) and loop 2 (`e697ecf5`): retired_a, kept_b,
+current_only.

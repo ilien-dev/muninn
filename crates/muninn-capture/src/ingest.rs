@@ -93,6 +93,14 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
         rows.flatten().collect()
     };
     let mut n = 0;
+    let own_ref: Option<String> = tx
+        .query_row(
+            "SELECT transcript_ref FROM record WHERE id=?1",
+            [new_id],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten();
     for (id, subject, tref) in olds {
         let (_, old_words) = parse(&subject);
         if !crate::extract::replaces(&old_words, &new_words, change) {
@@ -108,6 +116,35 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
                  WHERE invalid=0 AND kind='episode' AND transcript_ref=?2 AND length(body) <= 700",
                 rusqlite::params![new_id, tref],
             )?;
+        }
+    }
+    // loop 2: a change also retires an earlier short episode on the same content words, whether
+    // or not that earlier message was recognised as a decision
+    if change {
+        let eps: Vec<(i64, String, Option<String>)> = {
+            let mut st = tx.prepare(
+                "SELECT id, body, transcript_ref FROM record WHERE invalid=0 AND kind='episode' AND length(body) <= 700 AND id<>?1",
+            )?;
+            let rows = st.query_map([new_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.flatten().collect()
+        };
+        for (id, body, tref) in eps {
+            if tref.is_some() && tref == own_ref {
+                continue;
+            }
+            let user_part = body
+                .strip_prefix("user: ")
+                .unwrap_or(&body)
+                .split("\nassistant: ")
+                .next()
+                .unwrap_or("");
+            let words = crate::extract::topic_words(user_part);
+            if crate::extract::replaces(&words, &new_words, true) {
+                n += tx.execute(
+                    "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 WHERE id=?2 AND invalid=0",
+                    rusqlite::params![new_id, id],
+                )?;
+            }
         }
     }
     Ok(n)
