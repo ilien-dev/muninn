@@ -84,10 +84,10 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
                 .collect(),
         )
     };
-    let (change, new_words) = parse(&c.subject);
+    let (change, _) = parse(&c.subject);
     let olds: Vec<(i64, String, Option<String>)> = {
         let mut st = tx.prepare(
-            "SELECT id, subject, transcript_ref FROM record WHERE invalid=0 AND kind='decision' AND relation='user_decision' AND id<>?1",
+            "SELECT id, object, transcript_ref FROM record WHERE invalid=0 AND kind='decision' AND relation='user_decision' AND id<>?1",
         )?;
         let rows = st.query_map([new_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.flatten().collect()
@@ -101,9 +101,16 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
         )
         .ok()
         .flatten();
-    for (id, subject, tref) in olds {
-        let (_, old_words) = parse(&subject);
-        if !crate::extract::replaces(&old_words, &new_words, change) {
+    let new_object: String = tx
+        .query_row("SELECT object FROM record WHERE id=?1", [new_id], |r| {
+            r.get(0)
+        })
+        .unwrap_or_default();
+    for (id, old_object, tref) in olds {
+        let new_value = crate::extract::names_new_value(&old_object, &new_object);
+        if !crate::extract::replaces_text(&old_object, &new_object, change)
+            || !(change || new_value)
+        {
             continue;
         }
         n += tx.execute(
@@ -118,9 +125,24 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
             )?;
         }
     }
+    // loop 3: a new decision that names a value the earlier one did not, on the same content
+    // words, replaces it even without a change marker ("use X for the Y" after "we go with W for
+    // the Y"); the earlier short episode goes with it
+    let new_text: String = tx
+        .query_row("SELECT object FROM record WHERE id=?1", [new_id], |r| {
+            r.get(0)
+        })
+        .unwrap_or_default();
+    let new_names = crate::extract::name_tokens(&new_text);
+    let new_created: i64 = tx
+        .query_row("SELECT created_at FROM record WHERE id=?1", [new_id], |r| {
+            r.get(0)
+        })
+        .unwrap_or(i64::MAX);
+    let mut matched_any = n > 0;
     // loop 2: a change also retires an earlier short episode on the same content words, whether
     // or not that earlier message was recognised as a decision
-    if change {
+    {
         let eps: Vec<(i64, String, Option<String>)> = {
             let mut st = tx.prepare(
                 "SELECT id, body, transcript_ref FROM record WHERE invalid=0 AND kind='episode' AND length(body) <= 700 AND id<>?1",
@@ -138,16 +160,130 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
                 .split("\nassistant: ")
                 .next()
                 .unwrap_or("");
-            let words = crate::extract::topic_words(user_part);
-            if crate::extract::replaces(&words, &new_words, true) {
+            let new_value = crate::extract::names_new_value(user_part, &new_text);
+            if crate::extract::replaces_text(user_part, &new_text, change) && (change || new_value)
+            {
                 n += tx.execute(
                     "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 WHERE id=?2 AND invalid=0",
                     rusqlite::params![new_id, id],
                 )?;
+                matched_any = true;
             }
         }
     }
+    // loop 3: a short change that names no topic of its own and introduces a new name refers to
+    // the most recent earlier short user statement that named something, within three hours
+    if change && !matched_any && !new_names.is_empty() && crate::extract::is_anaphoric(&new_text) {
+        let prev: Option<(i64, String)> = tx
+            .query_row(
+                "SELECT id, body FROM record WHERE invalid=0 AND kind='episode' AND length(body) <= 700 \
+                 AND created_at < ?1 AND created_at >= ?1 - 10800000 AND (transcript_ref IS NULL OR transcript_ref <> ?2) \
+                 ORDER BY created_at DESC LIMIT 1",
+                rusqlite::params![new_created, own_ref.clone().unwrap_or_default()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+        if let Some((id, body)) = prev {
+            let user_part = body
+                .strip_prefix("user: ")
+                .unwrap_or(&body)
+                .split("\nassistant: ")
+                .next()
+                .unwrap_or("");
+            let old_names = crate::extract::name_tokens(user_part);
+            if !user_part.contains('?')
+                && !old_names.is_empty()
+                && new_names.iter().any(|w| !old_names.contains(w))
+            {
+                n += tx.execute(
+                    "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 WHERE id=?2 AND invalid=0",
+                    rusqlite::params![new_id, id],
+                )?;
+                // and a decision record taken from that same turn
+                let tref: Option<String> = tx
+                    .query_row("SELECT transcript_ref FROM record WHERE id=?1", [id], |r| {
+                        r.get(0)
+                    })
+                    .ok()
+                    .flatten();
+                if let Some(tref) = tref {
+                    n += tx.execute(
+                        "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 \
+                         WHERE invalid=0 AND kind='decision' AND relation='user_decision' AND transcript_ref=?2",
+                        rusqlite::params![new_id, tref],
+                    )?;
+                }
+            }
+        }
+    }
+    if n > 0 {
+        inherit_topic(tx, new_id)?;
+    }
     Ok(n)
+}
+
+/// A change that replaced something takes over the replaced statements' topic words (their
+/// names excluded) in its supersession key, so a question about the topic reaches it and a
+/// later change on the same topic still finds it.
+fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
+    let (subject, body): (String, String) = tx.query_row(
+        "SELECT subject, body FROM record WHERE id=?1",
+        [new_id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let mut st = tx.prepare("SELECT body FROM record WHERE invalidated_by=?1")?;
+    let olds: Vec<String> = st.query_map([new_id], |r| r.get(0))?.flatten().collect();
+    let (head, words) = subject
+        .rsplit_once(':')
+        .unwrap_or(("said:change", subject.as_str()));
+    let mut set: Vec<String> = words
+        .split(' ')
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect();
+    let mut added: Vec<String> = Vec::new();
+    for b in olds {
+        let user_part = b
+            .strip_prefix("user: ")
+            .unwrap_or(&b)
+            .split("\nassistant: ")
+            .next()
+            .unwrap_or("")
+            .to_string();
+        let names = crate::extract::name_tokens(&user_part);
+        for w in crate::extract::topic_words(&user_part) {
+            if !names.contains(&w) && !set.contains(&w) {
+                set.push(w.clone());
+                added.push(w);
+            }
+        }
+    }
+    if added.is_empty() {
+        return Ok(());
+    }
+    set.sort();
+    // the body carries the inherited topic for recall; no value of the replaced statement
+    let body = format!("{}topic: {}\n", body, added.join(" "));
+    let (old_subject, object, old_body): (String, String, String) = tx.query_row(
+        "SELECT subject, object, body FROM record WHERE id=?1",
+        [new_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let new_subject = format!("{head}:{}", set.join(" "));
+    tx.execute(
+        "UPDATE record SET subject=?1, body=?2 WHERE id=?3",
+        rusqlite::params![new_subject, body, new_id],
+    )?;
+    // the full-text index only follows inserts and (in)validation: re-index this row by hand
+    tx.execute(
+        "INSERT INTO record_fts(record_fts, rowid, subject, object, body) VALUES ('delete', ?1, ?2, ?3, ?4)",
+        rusqlite::params![new_id, old_subject, object, old_body],
+    )?;
+    tx.execute(
+        "INSERT INTO record_fts(rowid, subject, object, body) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![new_id, new_subject, object, body],
+    )?;
+    Ok(())
 }
 
 /// Ingest one transcript from its watermark; `paths` enables the Markdown projection.
