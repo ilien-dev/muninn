@@ -1231,3 +1231,11 @@ change kept 60/60, 30/30, 29/30, 29/30. 82 tests, clippy, perf --strict green.
 Loop 4 (`cd6fe32a`): retired 17/30, kept 30/30, current-only English 3/20. Loop 5 (`1356069a`): retired
 21/30, kept 30/30, current-only English 5/20, Spanish 1/10. Detection generalises; serving the current
 statement for a topic question is now the bottleneck. `loop5/mechanism_*.json`.
+
+**Evaluator fix and corrected loop-5 figures (2026-09-17).** The served-statement check compared the first
+50 characters of a message including its final punctuation; capture stores sentences without it, so a
+short served statement never matched. Fixed (compare 40 characters without trailing `.!;`) and applied to
+every binary. Loop-5 held-out, corrected: before loop 1 — current-only English 0/20, total 1/30; loop 4 —
+English 8/20, total 11/30; loop 5 — English 12/20, total 15/30 (retired 0, 17, 21 of 30; kept 30/30 for
+all). The earlier loop-4 figures (8/20 English) were not affected by the bug in the direction reported;
+re-run with the fix they read 8/20 English, 10/30 total. Files `loop*/mechanism_fixed_*.json`.

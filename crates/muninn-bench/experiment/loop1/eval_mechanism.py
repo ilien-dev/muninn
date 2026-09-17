@@ -77,7 +77,7 @@ def main() -> None:
                 results.append({"style": style, "id": s["id"], "missing": True})
                 continue
             def active_with(text):
-                return [r for r in recs if not r.get("invalid") and text.strip()[:60].lower() in (r.get("body") or "").lower()]
+                return [r for r in recs if not r.get("invalid") and text.strip().rstrip(".!;")[:40].lower() in (r.get("body") or "").lower()]
             a_active = active_with(it["a"])
             b_active = active_with(it["b"])
             rec = subprocess.run([a.muninn, "--cwd", str(root), "recall", s["topic"]], env=env, capture_output=True, text=True).stdout.lower()
@@ -85,7 +85,9 @@ def main() -> None:
             served_ok = (old not in rec) and (not new or new.split()[0] in rec)
             # loop 2 (instrument, applied to every binary alike): the later message often names the
             # old value itself, so the fair check is on the statements served, not on the value
-            snippet = lambda t: t.strip()[:50].lower()
+            # (fixed 2026-09-17, applied to every binary alike: capture stores a sentence without
+            # its final punctuation, so a short message compared with its period never matched)
+            snippet = lambda t: t.strip().rstrip(".!;").lower()[:40]
             a_served = snippet(it["a"]) in rec
             b_served = snippet(it["b"]) in rec
             results.append({"style": style, "id": s["id"], "retired_a": not a_active, "kept_b": bool(b_active),
