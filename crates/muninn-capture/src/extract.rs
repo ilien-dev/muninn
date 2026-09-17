@@ -137,6 +137,7 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
             end_offset: t.end_offset,
         });
     }
+    decision_candidates(t, up, out);
     for sent in split_sentences(up) {
         let n = sent.chars().count();
         if !(12..=220).contains(&n) || sent.contains('?') || !invariant_re().is_match(sent) {
@@ -150,6 +151,254 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
             kind: "invariant",
             subject: key,
             relation: "must".into(),
+            object: redact(sent),
+            body: redact(&format!("user: {}\n", sent)),
+            origin: "user_said",
+            anchor_path: None,
+            turn_index: t.index,
+            end_offset: t.end_offset,
+        });
+    }
+}
+
+/// A sentence that states a decision ("we go with X", "X is now Y", "usamos X"). The
+/// families are generic statement forms, English and Spanish, not the wording of any
+/// benchmark (PREREGISTRATION.md, 2026-09-17: developed on topics and phrasings that no
+/// grid uses, then frozen).
+fn decision_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(we(?:'ll| will| are|'re)? (?:go|going) with|we(?:'ll| will)? (?:use|pick|adopt|keep)|we(?:'re| are) (?:using|on)|let'?s (?:use|go with|stick with|keep)|we (?:chose|picked|decided|settled on|standardi[sz]ed on|switched|moved|migrated|agreed)|decided (?:to|on)|(?:is|are) now\b|(?:should|must) (?:now )?(?:be|use)\b|switch(?:ed|ing)? (?:to|over)|mov(?:e|ed|ing) (?:to|over)|migrat(?:e|ed|ing) to|change of plan|instead of|replac(?:e|ed|ing) \w|no longer|from now on|going forward|revert(?:ed|ing)? (?:to|back)|roll(?:ed)? back to|stick(?:ing)? with|drop(?:ped|ping)? \w|(?:decision|policy|convention)\s*:|review comment accepted|usamos|usaremos|vamos (?:a usar|con)|elegimos|decidimos|nos quedamos con|ahora (?:es|son|usamos|va)|cambiamos (?:a|de)|pasamos a|migramos a|volvemos a|en vez de|en lugar de|a partir de ahora|ya no)",
+        )
+        .unwrap()
+    })
+}
+
+/// The subset of decision forms that announce a change to an earlier decision.
+fn change_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b((?:is|are) now|switch|mov(?:e|ed|ing) (?:to|over)|migrat|change of plan|changed? (?:to|our|the)|instead|replac|no longer|from now on|going forward|revert|roll(?:ed)? back|drop(?:ped|ping)?|actually|update[ds]?\s*:|review comment accepted|ahora (?:es|son|usamos|va)|cambiamos|cambio de plan|pasamos a|migramos|volvemos a|en vez de|en lugar de|a partir de ahora|ya no)",
+        )
+        .unwrap()
+    })
+}
+
+const STOP: &[&str] = &[
+    // English function words and the decision/change vocabulary itself
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "these",
+    "those",
+    "from",
+    "into",
+    "onto",
+    "our",
+    "we",
+    "will",
+    "are",
+    "was",
+    "were",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "use",
+    "uses",
+    "using",
+    "used",
+    "now",
+    "going",
+    "forward",
+    "go",
+    "goes",
+    "let",
+    "lets",
+    "stick",
+    "keep",
+    "chose",
+    "choose",
+    "picked",
+    "pick",
+    "decided",
+    "decide",
+    "decision",
+    "settled",
+    "settle",
+    "switch",
+    "switched",
+    "switching",
+    "over",
+    "move",
+    "moved",
+    "moving",
+    "migrate",
+    "migrated",
+    "change",
+    "changed",
+    "plan",
+    "instead",
+    "replace",
+    "replaced",
+    "replacing",
+    "longer",
+    "revert",
+    "reverted",
+    "back",
+    "roll",
+    "rolled",
+    "drop",
+    "dropped",
+    "actually",
+    "update",
+    "updated",
+    "policy",
+    "convention",
+    "review",
+    "comment",
+    "accepted",
+    "should",
+    "must",
+    "all",
+    "any",
+    "not",
+    "but",
+    "only",
+    "also",
+    "then",
+    "than",
+    "project",
+    "team",
+    "its",
+    "it's",
+    "you",
+    "your",
+    "they",
+    "them",
+    "there",
+    "here",
+    "what",
+    "which",
+    "when",
+    "where",
+    "adopt",
+    "agreed",
+    "standardized",
+    "standardised",
+    "reply",
+    "short",
+    "sentence",
+    "acknowledging",
+    "one",
+    "please",
+    "okay",
+    "fine",
+    // Spanish
+    "el",
+    "la",
+    "los",
+    "las",
+    "del",
+    "que",
+    "una",
+    "uno",
+    "unos",
+    "unas",
+    "para",
+    "por",
+    "con",
+    "sin",
+    "como",
+    "usamos",
+    "usaremos",
+    "usar",
+    "vamos",
+    "elegimos",
+    "decidimos",
+    "nos",
+    "quedamos",
+    "ahora",
+    "cambiamos",
+    "cambio",
+    "plan",
+    "pasamos",
+    "migramos",
+    "volvemos",
+    "vez",
+    "lugar",
+    "partir",
+    "ya",
+    "este",
+    "esta",
+    "estos",
+    "estas",
+    "proyecto",
+    "equipo",
+    "todo",
+    "todos",
+    "pero",
+    "más",
+    "mas",
+    "sus",
+    "hay",
+    "son",
+    "es",
+    "va",
+];
+
+/// Content words of a decision sentence: the topic and the value, without the
+/// decision vocabulary. The supersession test compares these sets.
+pub fn topic_words(s: &str) -> Vec<String> {
+    let key = norm_key(s, 400);
+    let mut out: Vec<String> = key
+        .split(' ')
+        .filter(|w| {
+            w.chars().count() >= 3 && !STOP.contains(w) && !w.chars().all(|c| c.is_ascii_digit())
+        })
+        .map(str::to_string)
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Does a later decision (`new`, with or without a change marker) replace an earlier
+/// one (`old`)? Two shared content words at least, and a share of the smaller set of
+/// ≥ 0.34 when the later sentence announces a change, ≥ 0.5 otherwise.
+pub fn replaces(old: &[String], new: &[String], announces_change: bool) -> bool {
+    let shared = old.iter().filter(|w| new.contains(w)).count();
+    let small = old.len().min(new.len()).max(1);
+    let share = shared as f64 / small as f64;
+    shared >= 2 && share >= if announces_change { 0.34 } else { 0.5 }
+}
+
+fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
+    for sent in split_sentences(up) {
+        let n = sent.chars().count();
+        if !(8..=300).contains(&n) || sent.contains('?') || !decision_re().is_match(sent) {
+            continue;
+        }
+        let words = topic_words(sent);
+        if words.len() < 2 {
+            continue;
+        }
+        let change = change_re().is_match(sent);
+        out.push(Candidate {
+            kind: "decision",
+            // the supersession key is the content-word set; the flag rides in the subject
+            subject: format!(
+                "said:{}:{}",
+                if change { "change" } else { "state" },
+                words.join(" ")
+            ),
+            relation: "user_decision".into(),
             object: redact(sent),
             body: redact(&format!("user: {}\n", sent)),
             origin: "user_said",
@@ -338,6 +587,98 @@ mod tests {
         let inv = c.iter().find(|x| x.kind == "invariant").unwrap();
         assert_eq!(inv.subject, "nunca uses pkill en bash");
         assert_eq!(trust_of(inv.origin), 3);
+    }
+
+    /// Development set: topics and phrasings that no benchmark in this repository uses.
+    #[test]
+    fn user_decisions_and_what_replaces_them() {
+        let dec = |p: &str| {
+            let s = Session {
+                turns: vec![turn(0, p)],
+                ..Default::default()
+            };
+            extract(&s, "abcdef12")
+                .into_iter()
+                .filter(|c| c.relation == "user_decision")
+                .collect::<Vec<_>>()
+        };
+        let w = |p: &str| topic_words(&dec(p)[0].object);
+        let ch = |p: &str| dec(p)[0].subject.starts_with("said:change:");
+        // replaced: English, several forms
+        let pairs = [
+            (
+                "We'll use PostgreSQL for the analytics warehouse.",
+                "Change of plan: the analytics warehouse is now ClickHouse.",
+            ),
+            (
+                "Let's go with Tailwind for the admin dashboard styling.",
+                "We switched the admin dashboard styling to vanilla CSS modules.",
+            ),
+            (
+                "The retry policy: exponential backoff capped at 30 seconds for webhook delivery.",
+                "Webhook delivery retry policy is now a fixed 5-second interval.",
+            ),
+            (
+                "We picked Mapbox for the store locator map.",
+                "Instead of Mapbox, the store locator map uses MapLibre going forward.",
+            ),
+            (
+                "We decided on weekly releases for the mobile app.",
+                "The mobile app no longer ships weekly releases; releases are now monthly.",
+            ),
+            (
+                "Para el logging del backend usamos log4rs.",
+                "Ya no usamos log4rs en el logging del backend; ahora es tracing.",
+            ),
+            (
+                "Decidimos desplegar el frontend en Netlify.",
+                "A partir de ahora el frontend se despliega en Cloudflare Pages en vez de Netlify.",
+            ),
+        ];
+        for (a, b) in pairs {
+            assert!(!dec(a).is_empty(), "no decision in {a:?}");
+            assert!(!dec(b).is_empty(), "no decision in {b:?}");
+            assert!(
+                replaces(&w(a), &w(b), ch(b)),
+                "{a:?} should be replaced by {b:?}: {:?} / {:?}",
+                w(a),
+                w(b)
+            );
+        }
+        // not replaced: same technology or neighbouring subject, different decision
+        let apart = [
+            (
+                "We use Redis for the session cache.",
+                "We use Redis for API rate limiting.",
+            ),
+            (
+                "We'll use JWT for the public API authentication.",
+                "Let's go with gRPC for the internal service mesh.",
+            ),
+            (
+                "The deploy target is now Fly.io for the marketing site.",
+                "Let's use Vitest for the component unit tests.",
+            ),
+            (
+                "Usamos Stripe para los pagos con tarjeta.",
+                "Vamos con Resend para los correos transaccionales.",
+            ),
+        ];
+        for (a, b) in apart {
+            assert!(
+                !replaces(&w(a), &w(b), ch(b)),
+                "{a:?} must not be replaced by {b:?}: {:?} / {:?}",
+                w(a),
+                w(b)
+            );
+        }
+        // questions and ordinary chatter are not decisions
+        assert!(dec("Should we use ClickHouse for the analytics warehouse?").is_empty());
+        assert!(dec("Thanks, that looks good.").is_empty());
+        assert_eq!(
+            trust_of(dec("We'll use PostgreSQL for the analytics warehouse.")[0].origin),
+            3
+        );
     }
 
     #[test]
