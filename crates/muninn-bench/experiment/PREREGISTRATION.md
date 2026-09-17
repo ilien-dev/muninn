@@ -1190,3 +1190,19 @@ build (`532cb3e6…`); nothing else in loop 3 changed. The aborted pilot's parti
 archived outside the repository and not used; the pilot restarts from zero. The competitors' own
 asynchronous Stop hooks have the same exposure under `claude -p` (claude-mem's summary never ran in the
 smoke); their arms stay at their defaults, as pre-registered.
+
+## Improvement loop 4 frozen (recorded 2026-09-17, binary `cd6fe32ae77f3ae9…`, before its held-out set is generated)
+
+**Change.** A change that replaced a statement inherits every content word of the replaced statement,
+names included, into its hidden supersession key and full-text row; the served body gets only the
+non-name words (it never restates a replaced value). Development data (adjacent order): seed wording
+current-only 10/10, loop-1 set 15/60, loop-2 set 8/30 (6/30 in loop 3), loop-3 set 11/30 (6/30 in loop
+3); change kept 59/60, 30/30, 29/30.
+
+**Metric split, decided now.** The evaluator's topic query is written in English. For the Spanish style
+the served metrics measure cross-lingual lexical recall, which Muninn's design does not attempt; from loop
+4 on, served metrics are reported for English styles (terse, chatty) as the primary figure and for
+Spanish separately. Retirement and kept metrics are language-independent and are reported for all.
+
+**Held-out.** Ten new topics (`loop4/scenarios.json`), the unchanged generation prompt, generated after
+this commit.
