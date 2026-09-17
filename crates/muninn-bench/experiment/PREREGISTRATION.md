@@ -1142,3 +1142,13 @@ loop-1 generation prompt unchanged, a fresh claude-haiku-4-5 generation committe
 runs; the loop-1 held-out set is reported beside it as a secondary (already used) check. Reported for the
 binary before loop 1 (`fdcb4606`), loop 1 (`8de732af`) and loop 2 (`e697ecf5`): retired_a, kept_b,
 current_only.
+
+**Loop 2 result (2026-09-17).** Fresh held-out set (30 items, ten new topics): identical for the three
+binaries — earlier statement retired 0/30, change kept 30/30, only the current statement served 0/30.
+The loop-1 set (secondary): 0/60 retired, current only 2/60, again identical. The loop-2 development set
+still gives 8/8 and 7/8 with the pinned binary, so the instrument is not at fault: loop 2 does not
+generalise either. `loop2/mechanism_*.json`.
+
+**Rule for the following loops.** A loop's held-out set becomes the next loop's development set; every
+loop is measured on a set generated after its freeze. The loop-1 and loop-2 sets (90 items, 20 topics
+plus the ten Gate 3 topics) are now development data for loop 3.
