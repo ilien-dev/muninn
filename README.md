@@ -1,133 +1,121 @@
-# Muninn
+# muninn
 
-Local, deterministic memory engine for coding agents. Ships as a Claude Code
-plugin and a Codex hooks file, one Rust binary, no server, no model and no LLM
-in the read path. Hooks cost single-digit milliseconds.
+Muninn gives AI coding assistants (Claude Code and Codex) a memory that stays up to date.
 
-Three functions, each behind a hard evidence gate before it ships:
+When you work with an assistant over many sessions, you make decisions along the way: "we use
+Postgres", "don't touch the payments folder", "we switched from gzip to zstd". A memory that only
+saves notes keeps serving the old decision next to the new one when something changes, and the
+assistant may follow the wrong one. Muninn keeps a history of what was decided and
+notices when a decision has been replaced. The assistant only sees what is true now.
 
-- **F1 filter** — superseded, revoked, anchor-changed and reverted facts are
-  retained but never served.
-- **F2 compiler** — rules in `CLAUDE.md` / `AGENTS.md` / `.claude/rules/` become
-  permission rules and `PreToolUse` deny hooks the harness enforces, with a
-  coverage report. Applied only after you see the diff.
-- **F3 delivery** — memory arrives by permanent trigger conditions (directory,
-  symbol, event), under a budget of 700 tokens per turn, silent by default.
+Everything runs on your computer. There is no server, no account, no cloud service and no AI
+model inside Muninn. It is one small program that stores its notes in a local file inside your
+project.
 
-Also in the MVP: an embedding sidecar (never in the hot path), a tree-sitter
-symbol graph (Rust, TypeScript/TSX, JavaScript/JSX, Python, Go), a routed
-`muninn why` responder, and a ≤ 1 000-token boot block for the agent.
+## What it does
 
-## Status
+After each session, Muninn reads the conversation and keeps the parts worth remembering:
+decisions, corrections you made, rules you stated and approaches that failed. When a later question touches one of them, it hands the assistant the
+original words and says where they came from.
 
-Phases 0–2 complete.
-- Gate 1 (F2 compiler) passed on a clean held-out set: precision 0.905, recall 0.864
-  (`crates/muninn-bench/corpora/claude-md/GATE1.md`; corpus now 330 files).
-- Gate 2 (literal episode delivery by hook) passed: on non-inferable tasks, no memory
-  2/25, literal 19/25, length-matched irrelevant control 4/25; literal − off = +0.68
-  [+0.56, +0.80], control − off = +0.08 [−0.04, +0.20]; 90 cells, sonnet, $27.63
-  (`crates/muninn-bench/experiment/GATE2.md`, pre-registration and both runs in
-  `experiment/`). Run 1 failed with an invalid instrument and is reported in full.
-  Replication on Codex / gpt-5.6-sol: literal 10/25, no memory 5/25, control 4/25 — the rule is
-  met as written but the exact test gives p = 0.108; the two facts recoverable only from memory
-  10/10 vs 0/10 (p = 2.2 × 10⁻⁴).
-- Phase 3 (real engine): typed capture (corrections, invariants, commit-linked
-  decisions, dead ends), supersession, caps, Markdown projection + export/import,
-  `muninn maintain` (git capture, resume), embedding sidecar (potion-base-8M,
-  checksummed, write path only, exact kNN), 10-check gate, 15 fault scenarios. The
-  literal arm re-run on the real engine: 21/25 vs 19/25 on the throwaway store
-  (`crates/muninn-bench/experiment/PHASE3.md`).
-- Phase 4 (F1 filter + `muninn why`): anchor validator, reverts, explicit revoke,
-  conflicts served as conflicts, lineage; routed `muninn why` (lexical + sidecar, RRF,
-  sufficiency marker, 55 ms). Gate 3 passed on two families: filtered vs render-matched
-  unfiltered +0.22 [+0.11, +0.33] (sonnet) and +0.19 [+0.07, +0.30] (haiku), retired
-  records served 0/180 cells, retired value written 0 % vs 7–22 % unfiltered
-  (`crates/muninn-bench/experiment/GATE3.md`). Replicated on Codex / gpt-5.6-sol (27/27 vs
-  0/27), with a public seed anyone can re-run (27/27 vs 1/27), and on three external
-  repositories chosen by a fixed rule — gin (Go), vue (TypeScript), TheAlgorithms/Python — on
-  two model families: 161/162 cells correct with the filter; without it 3/162 correct and the
-  retired value written in 79 of 162.
-- Phase 5 (F3): tree-sitter symbol graph for Rust/TS/TSX/JS/JSX/Python/Go (5 000 files
-  in 6.8 s, incremental by hash), cues derived on the write path, turn context from
-  PostToolUse, tool-time delivery, compaction epochs, summary verification. Gate 4:
-  compaction survival 100/100 at 10 invariants (the 700-token budget holds 16 and the hook says
-  how many it cut); dir/symbol cues vs lexical-only +0.08
-  [−0.08, +0.25] — not distinguishable, so they ship **off by default** (`muninn config
-  cues on`); symbol-graph query expansion did not replicate (+0.13 on three runs, −0.13 [−0.28, −0.03] on five) and is withdrawn; PM-Bench on three held-out weeks generated from a commit hash: the typed-intention mechanism 91.4 % (claude-sonnet-5) and 97.5 % (gpt-5.6-sol) set F1 against 78.7–80.6 % for the paper's two scaffolds on the same model and bridge, exact p ≤ 5/8 000; an identical scaffold on a plain dict store scores the same, and a shadow comparison found 0 differing boards in 1 458, so the result belongs to the mechanism, which Muninn implements (`crates/muninn-bench/experiment/GATE4.md` §3 rounds 8–9).
-Every public claim, its grid, its caveats and what is **not** claimed: `docs/claims.md`. One
-command per number: `crates/muninn-bench/experiment/REPRODUCE.md`. Pre-registrations are
-timestamped with OpenTimestamps (`experiment/prereg-stamps/`).
-Phase 6 (hardening, release) is in progress: signed releases, config scanner, audits.
-See `PLAN` in the repository description and `design/ENGINE.md`.
+If you later say "actually, let's use zstd", the gzip note is kept in the history but is no longer
+shown to the assistant.
 
-## Install (development)
+Rules in `CLAUDE.md` or `AGENTS.md`, such as "never edit the migrations folder", can become
+permission settings that the assistant's tool actually enforces. Nothing is changed until you have seen the proposed change.
+
+Each check takes a few thousandths of a second, and what it adds to a prompt is capped at 700
+tokens (a few hundred words).
+
+## Does it work?
+
+Every result below comes from a test whose rules were written and timestamped before it ran.
+The raw data is in this repository, and anyone can re-run the tests.
+
+| test | with Muninn | without memory |
+|---|---|---|
+| The assistant needs a fact that only an earlier session contains (tasks on this project) | 19 of 25 tasks solved | 2 of 25 |
+| The assistant is given notes in which the replaced decisions are already marked, on three open-source projects | 161 of 162 tasks correct | 3 of 162 |
+| Important rules survive when the conversation is compressed to save space | 100 of 100 compressions | not measured here |
+
+Some results were weaker, and they are published too. The same fact test on Codex gave 10 of 25
+against 5 of 25, which is not a clear difference. Two features did not help and were removed or
+turned off by default.
+
+The comparison with other memory tools (claude-mem and agentmemory) is still running. In it,
+every tool learns the same decisions from the same real sessions, and nobody tells it which
+decisions were replaced. Version 0.1.0 lost that comparison to claude-mem (12 of 27 against
+26 of 27). Version 0.2.0 tied it (27 of 27 against 26 of 27) on the same sessions, but those
+sessions were used while improving it, so that result is not taken as proof. A second round with
+new wording that no version has seen is the one that counts, and its results will be published
+whatever they are.
+
+The full list of what is claimed, what is not, and the limits of each result is in
+[`docs/claims.md`](docs/claims.md). The commands to reproduce every number are in
+[`crates/muninn-bench/experiment/REPRODUCE.md`](crates/muninn-bench/experiment/REPRODUCE.md).
+
+## Install
+
+You need [Rust](https://rustup.rs) and Claude Code or Codex.
 
 ```sh
+git clone https://github.com/ilien-dev/muninn
+cd muninn
 cargo build --release -p muninn-cli
-# Claude Code plugin: point the plugin at the binary
 mkdir -p plugin/bin && cp target/release/muninn plugin/bin/
-claude plugin add ./plugin        # or add the marketplace once published
-# In your project:
-muninn init             # creates .muninn/, disables native memory for this project;
-                        # touches no CLAUDE.md/AGENTS.md: the SessionStart hook injects
-                        # a ~425-token summary of how to read blocks (see GATE4.md)
-muninn init --boot-file # put the long boot block into CLAUDE.md and AGENTS.md instead
-muninn init --codex     # also writes .codex/hooks.json for Codex
-muninn status           # MUNINN 10/10 GREEN
+claude plugin add ./plugin
 ```
 
-`muninn init --keep-native` leaves the harness's own memory on.
-`muninn clean --yes` undoes everything `init` touched.
-
-## Everyday commands
+Then, inside your own project:
 
 ```sh
-muninn why "why did we choose exponential backoff"   # literal records, provenance, lineage, conflicts
-muninn why 142                                        # one record and its history
-muninn why --all "retry policy"                       # include retired records
-muninn revoke 142 --reason "no longer true"           # retire by hand (kept, never served)
-muninn maintain          # the asynchronous write path, now: fold logs, resume ingest,
-                         # capture commits and reverts, validate anchors, project Markdown, embed
-muninn export --all      # JSONL of every record   ·   muninn import <file-or-dir>
-muninn embed --status    # sidecar state; `muninn embed` embeds pending records
-muninn compile && muninn apply   # F2: rules → permissions/hooks, applied only after the diff
+muninn init          # set up memory for this project
+muninn init --codex  # also set it up for Codex
+muninn status        # check that everything is working
 ```
 
-The embedding model (`potion-base-8M`, three files, sha256-checked) is looked up in
-`$MUNINN_MODEL_DIR`, `$CLAUDE_PLUGIN_ROOT/models/potion-base-8M` and
-`~/.local/share/muninn/models/potion-base-8M`; without it everything works and the
-sidecar shows as cold.
+`muninn clean --yes` removes everything `init` added.
 
-## Layout
+## Everyday use
 
-```
-crates/muninn-core      store, schema, sanitisation, heartbeat, health gate
-crates/muninn-cli       the `muninn` binary: commands and hook entry points
-crates/muninn-capture   transcript & git capture, typed extraction (Phases 2–3)
-crates/muninn-compile   F2 rule compiler (Phase 1)
-crates/muninn-embed     embedding sidecar (Phase 3)
-crates/muninn-symbols   tree-sitter symbol graph (Phase 5)
-crates/muninn-why       routed why responder (Phase 4)
-crates/muninn-bench     performance contracts, experiment harness
-plugin/                 Claude Code plugin (hooks.json, skill, commands, boot block)
-codex/                  Codex hooks.json template
-design/ENGINE.md        engine specification
-research/               evidence log, conclusion, dossier, benchmarks
-docs/                   threat model, portable format
+Once it is set up, you don't need to do anything. Muninn works in the background while you use
+the assistant. A few commands are useful when you want to look inside:
+
+```sh
+muninn why "why did we choose exponential backoff"   # what was decided, when, and what replaced it
+muninn revoke 142 --reason "no longer true"          # hide a note by hand (it stays in the history)
+muninn export --all                                  # every note, as a file you can read
+muninn compile && muninn apply                       # turn written rules into enforced ones
 ```
 
-## Verify
+## For developers
+
+The code is a Rust workspace. The storage layer is SQLite with full-text search.
+
+```
+crates/muninn-core      storage, search, filtering
+crates/muninn-cli       the muninn program and its hooks
+crates/muninn-capture   reads conversations and git history
+crates/muninn-compile   turns written rules into permission settings
+crates/muninn-embed     optional local similarity search (never used while answering the assistant)
+crates/muninn-symbols   map of the code's functions and types
+crates/muninn-why       answers `muninn why`
+crates/muninn-bench     speed tests and the experiments behind every number
+plugin/                 Claude Code plugin
+codex/                  Codex setup
+```
+
+Tests:
 
 ```sh
 cargo test --workspace --features exact-tokens
-MUNINN_FAULT_REPS=200 cargo test -p muninn-cli --release --test fault
-cargo run --release -p muninn-cli --features exact-tokens -- init --check-budget
 cargo run --release -p muninn-bench -- perf --strict
 ```
 
-## Research
+The design and the reasons behind it are in [`design/ENGINE.md`](design/ENGINE.md) and
+[`research/CONCLUSION.md`](research/CONCLUSION.md). Changes between versions are in
+[`CHANGELOG.md`](CHANGELOG.md).
 
-The design is fixed by `research/CONCLUSION.md` and the evidence log
-`research/00-evidence-log.md` (window: June–September 2026). The dossier
-`research/dossier.html` is the same material as a page. Every number in the
-docs is either measured in `crates/muninn-bench` or cited by evidence id.
+## License
+
+AGPL-3.0-only

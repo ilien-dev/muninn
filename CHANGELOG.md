@@ -1,6 +1,33 @@
 # Changelog
 
-## 0.1.0 — unreleased (MVP, measured)
+## 0.2.0 — 2026-09-17
+
+Built from the source measured as `muninn-latest` (binary `1356069a`) in the head-to-head; the
+release binary differs from it only by the version string.
+
+- **Replaced decisions detected from ordinary conversation.** Capture keeps each thing the user
+  says as its own decision (origin `user_said`) and retires an earlier decision or short episode when
+  a later message replaces or withdraws it: change and reconsideration cues ("switch to", "on second
+  thought", "never mind", Spanish "mejor", "cambia"), a new value named in the same slot, labels
+  compared without their shared words, and short follow-ups ("let's go with that instead") tied to the
+  most recent statement. The replacing record inherits the topic words it omits. Built in five
+  improvement loops, each frozen and then measured on phrasings written after the freeze
+  (`experiment/loop1`–`loop5`): on the latest held-out set the earlier statement is retired in 21/30
+  and recall serves only the current one in 12/20 English cases (0/30 and 0/20 before loop 1).
+- **Sessions ended by a headless run are no longer lost.** Hooks note every transcript they see;
+  the write path ingests any that the asynchronous Stop hook did not finish.
+- **Validator.** An episode's own `assistant:` label is not treated as a role injection (short
+  episodes were dropped before delivery).
+- **Head-to-head without labels (v1, three runs, 27 replacement cells per arm).** 0.2.0: 27/27;
+  claude-mem 26/27 (tie, p = 1); agentmemory 12/27; no memory 1/27. The seed wording of this grid
+  was used during the loops, so the result is not held-out; v2, with new wording, is pre-registered
+  and running.
+
+## 0.1.0 — 2026-09-14 (MVP, measured)
+
+Tagged at the commit that registered the head-to-head with this build (`973ef470`). In that
+head-to-head it scored 12/27 against claude-mem's 26/27 (p = 4.6 × 10⁻⁵): it did not detect replaced
+decisions in ordinary conversation.
 
 Everything below carries a measurement; the reports live under
 `crates/muninn-bench/experiment/` and `crates/muninn-bench/corpora/claude-md/`.
