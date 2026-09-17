@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/muninn-dark.png">
+    <img src="assets/muninn-light.png" alt="Muninn: What still holds, returns." width="480">
+  </picture>
+</p>
+
 # muninn
 
 Muninn gives AI coding assistants (Claude Code and Codex) a memory that stays up to date.
