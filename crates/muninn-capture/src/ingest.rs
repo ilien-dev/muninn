@@ -241,7 +241,11 @@ fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
         .filter(|w| !w.is_empty())
         .map(str::to_string)
         .collect();
+    // the key (indexed, never shown) takes every content word of the replaced statements, names
+    // included ("Node", "ORM"); the served body takes only the non-name words, so it never
+    // restates a replaced value
     let mut added: Vec<String> = Vec::new();
+    let mut shown: Vec<String> = Vec::new();
     for b in olds {
         let user_part = b
             .strip_prefix("user: ")
@@ -252,9 +256,12 @@ fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
             .to_string();
         let names = crate::extract::name_tokens(&user_part);
         for w in crate::extract::topic_words(&user_part) {
-            if !names.contains(&w) && !set.contains(&w) {
+            if !set.contains(&w) {
                 set.push(w.clone());
-                added.push(w);
+                added.push(w.clone());
+                if !names.contains(&w) && !shown.contains(&w) {
+                    shown.push(w);
+                }
             }
         }
     }
@@ -263,7 +270,11 @@ fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
     }
     set.sort();
     // the body carries the inherited topic for recall; no value of the replaced statement
-    let body = format!("{}topic: {}\n", body, added.join(" "));
+    let body = if shown.is_empty() {
+        body
+    } else {
+        format!("{}topic: {}\n", body, shown.join(" "))
+    };
     let (old_subject, object, old_body): (String, String, String) = tx.query_row(
         "SELECT subject, object, body FROM record WHERE id=?1",
         [new_id],
