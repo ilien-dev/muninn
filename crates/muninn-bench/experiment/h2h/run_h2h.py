@@ -36,6 +36,9 @@ _ports = iter(range(38100, 39000))
 _plock = threading.Lock()
 
 
+PHRASINGS: list = []
+
+
 def lock_for(arm: str) -> threading.Lock:
     key = PORT_GROUP.get(arm, f"solo:{threading.get_ident()}:{arm}")
     if key.startswith("solo:"):
@@ -125,6 +128,8 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
                 for i, r in enumerate(seed_rows):
                     body = r["body"].strip()
                     body = body[len("user: "):] if body.startswith("user: ") else body
+                    if PHRASINGS:   # v2: row 2k is pair k's original decision, row 2k+1 its change
+                        body = PHRASINGS[i // 2]["a" if i % 2 == 0 else "b"]
                     prompt = f"{body}\n\n{ACK}"
                     v, raw, secs = claude(prompt, co, session_env(env, spec), spec, settings, 3, None, timeout=300)
                     settled = arm_cmd(arm, "settle", env)
@@ -212,6 +217,8 @@ def main() -> None:
     ap.add_argument("--arms", default="off,muninn,claude-mem,agentmemory,agentmemory-inject")
     ap.add_argument("--only-seed", action="store_true")
     ap.add_argument("--rerun-errors", action="store_true")
+    ap.add_argument("--seed-phrasings", default=None,
+                    help="v2: JSON list of {key,a,b}, one per seed pair in time order, used instead of the seed bodies")
     ap.add_argument("--tasks", default=str(EXP / "revocation" / "tasks-revocation-public.json"))
     a = ap.parse_args()
 
@@ -222,8 +229,12 @@ def main() -> None:
     cfg = json.loads(Path(a.tasks).read_text())
     seed_rows = sorted((json.loads(l) for l in open(EXP / "revocation" / "seed.jsonl")), key=lambda r: r["created_at"])
     arms = a.arms.split(",")
+    global PHRASINGS
+    if a.seed_phrasings:
+        PHRASINGS = json.loads(Path(a.seed_phrasings).read_text())
+        assert len(PHRASINGS) * 2 == len(seed_rows), "one phrasing pair per seed pair"
     frozen = {"arms": arms, "runs": a.runs, "model": MODEL, "repo": str(REPO), "base_ref": BASE_REF, "ack": ACK,
-              "tasks_file": a.tasks, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "tasks_file": a.tasks, "seed_phrasings": a.seed_phrasings, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "harness_sha256": subprocess.run(["sha256sum", __file__], capture_output=True, text=True).stdout[:64],
               "arm_scripts_sha256": {arm: subprocess.run(["sha256sum", str(HERE / "competitors" / arm / "arm.sh")], capture_output=True, text=True).stdout[:64]
                                      for arm in arms if arm != "off"}}
