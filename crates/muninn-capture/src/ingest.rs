@@ -63,6 +63,56 @@ fn supersede(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<us
     Ok(n)
 }
 
+/// Supersession for decisions stated in conversation (PREREGISTRATION.md, 2026-09-17): an
+/// active user decision whose content words the new one shares (`extract::replaces`) is
+/// retired and points at its replacement; so is the literal episode of the same turn when
+/// that turn was short (the episode is the same statement, and serving it would restate the
+/// retired decision). Long turns keep their episode.
+fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<usize> {
+    if c.relation != "user_decision" {
+        return Ok(0);
+    }
+    let parse = |subject: &str| -> (bool, Vec<String>) {
+        let rest = subject.strip_prefix("said:").unwrap_or(subject);
+        let (flag, words) = rest.split_once(':').unwrap_or(("state", rest));
+        (
+            flag == "change",
+            words
+                .split(' ')
+                .filter(|w| !w.is_empty())
+                .map(str::to_string)
+                .collect(),
+        )
+    };
+    let (change, new_words) = parse(&c.subject);
+    let olds: Vec<(i64, String, Option<String>)> = {
+        let mut st = tx.prepare(
+            "SELECT id, subject, transcript_ref FROM record WHERE invalid=0 AND kind='decision' AND relation='user_decision' AND id<>?1",
+        )?;
+        let rows = st.query_map([new_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.flatten().collect()
+    };
+    let mut n = 0;
+    for (id, subject, tref) in olds {
+        let (_, old_words) = parse(&subject);
+        if !crate::extract::replaces(&old_words, &new_words, change) {
+            continue;
+        }
+        n += tx.execute(
+            "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 WHERE id=?2 AND invalid=0",
+            rusqlite::params![new_id, id],
+        )?;
+        if let Some(tref) = tref {
+            tx.execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 \
+                 WHERE invalid=0 AND kind='episode' AND transcript_ref=?2 AND length(body) <= 700",
+                rusqlite::params![new_id, tref],
+            )?;
+        }
+    }
+    Ok(n)
+}
+
 /// Ingest one transcript from its watermark; `paths` enables the Markdown projection.
 pub fn ingest_transcript(
     db: &Db,
@@ -180,6 +230,7 @@ pub fn ingest_transcript_with(
                     _ => {}
                 }
                 stats.superseded += supersede(&tx, id, &c)?;
+                stats.superseded += supersede_said(&tx, id, &c)?;
             } else {
                 stats.duplicates += 1;
             }
