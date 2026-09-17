@@ -1176,3 +1176,17 @@ change kept 59/60, 30/30, 8/8. 82 workspace tests, clippy green.
 stand before the three-run grids. The frozen `muninn` and `muninn-fixed` arms of v1 run in the full grid.
 Then, in order: a fresh loop-3 held-out mechanism set; head-to-head v2 (held-out phrasings for seeding)
 pre-registered separately.
+
+**Pilot aborted before any task cell, and a capture fix (recorded 2026-09-17).** After seeding, the
+`muninn-loop3` store held 6 records from 20 sessions. Muninn's write path runs in the Stop hook
+(asynchronous in the plugin) and in SessionEnd; a headless `claude -p` session exits before either
+finishes, so 17 of 20 sessions were never ingested. This is a product bug for every headless user, not
+a harness artefact. Fix (`muninn-cli/src/sessions.rs`): every hook that sees a transcript path appends it
+to an append-only log (no database access, so read hooks keep their invariant), and every write path
+(Stop, SessionEnd, `muninn maintain`) ingests all noted transcripts from their watermarks. Re-smoke: 6 of
+6 headless seeding sessions captured, the three replaced decisions retired. 82 tests, `perf --strict`
+(UserPromptSubmit gated p95 0.785 ms), 15 fault scenarios green. The `muninn-loop3` arm now uses this
+build (`532cb3e6…`); nothing else in loop 3 changed. The aborted pilot's partial seeding (all arms) is
+archived outside the repository and not used; the pilot restarts from zero. The competitors' own
+asynchronous Stop hooks have the same exposure under `claude -p` (claude-mem's summary never ran in the
+smoke); their arms stay at their defaults, as pre-registered.

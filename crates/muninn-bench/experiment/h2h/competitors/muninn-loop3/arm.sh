@@ -6,7 +6,7 @@
 set -euo pipefail
 REPO=/home/ilien/Projects/muninn
 PIN=${PIN:-$HOME/.local/share/muninn-bench/competitors/muninn-loop3}
-BIN_SHA=ee47cffb857d4f3d
+BIN_SHA=532cb3e62252389c
 store() { echo "$CELL_ROOT/data"; }
 envs() { printf 'MUNINN_ROOT=%s\nMUNINN_NO_PROJECT=1\nMUNINN_SOURCE_ROOT=%s\n' "$(store)" "$CHECKOUT"; }
 case "${1:?subcommand}" in
