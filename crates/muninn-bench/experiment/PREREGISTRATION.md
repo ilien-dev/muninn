@@ -1226,3 +1226,8 @@ set 11/30 (8/30), loop-3 set 13/30 (11/30), loop-4 set 13/30 (10/30); retired 41
 change kept 60/60, 30/30, 29/30, 29/30. 82 tests, clippy, perf --strict green.
 
 **Held-out.** Ten new topics (`loop5/scenarios.json`), the unchanged prompt, generated after this commit.
+
+**Loop 5 held-out result (2026-09-17).** Before loop 1: retired 0/30, kept 30/30, current-only English 0/20.
+Loop 4 (`cd6fe32a`): retired 17/30, kept 30/30, current-only English 3/20. Loop 5 (`1356069a`): retired
+21/30, kept 30/30, current-only English 5/20, Spanish 1/10. Detection generalises; serving the current
+statement for a topic question is now the bottleneck. `loop5/mechanism_*.json`.
