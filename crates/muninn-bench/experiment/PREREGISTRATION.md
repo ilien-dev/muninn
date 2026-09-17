@@ -1206,3 +1206,10 @@ Spanish separately. Retirement and kept metrics are language-independent and are
 
 **Held-out.** Ten new topics (`loop4/scenarios.json`), the unchanged generation prompt, generated after
 this commit.
+
+**Loop 4 held-out result (2026-09-17).** Thirty new items generated after the freeze, adjacent order.
+Before loop 1 (`fdcb4606`): earlier statement retired 0/30, change kept 30/30, current-only English 1/20,
+Spanish 2/10. Loop 4 (`cd6fe32a`): retired 20/30, kept 29/30 (one current statement wrongly retired),
+current-only English 8/20, Spanish 2/10. The first loop whose gain holds on unseen phrasings; the served
+side remains the weak part. `loop4/mechanism_*.json`. (The loop-3 binary was not re-run here: its pinned
+copy lives only inside the head-to-head arm.)
