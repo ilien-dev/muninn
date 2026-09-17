@@ -36,12 +36,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--muninn", required=True)
     ap.add_argument("--out", default=str(HERE / "mechanism_results.json"))
+    ap.add_argument("--phrasings", default=str(HERE / "heldout_phrasings.json"))
+    ap.add_argument("--scenarios", default=str(HERE / "scenarios.json"))
+    ap.add_argument("--styles", default="terse,chatty,Spanish")
     a = ap.parse_args()
-    items = {i["key"]: i for i in json.load(open(HERE / "heldout_phrasings.json"))}
-    sc = json.load(open(HERE / "scenarios.json"))
-    scenarios = sc["gate3"] + sc["new"]
+    items = {i["key"]: i for i in json.load(open(a.phrasings))}
+    sc = json.load(open(a.scenarios))
+    scenarios = [x for k in sc for x in sc[k]]
     results = []
-    for style in ["terse", "chatty", "Spanish"]:
+    styles = a.styles.split(",")
+    for style in styles:
         root = Path(tempfile.mkdtemp(prefix=f"loop1-{style}-"))
         (root / ".git").mkdir()
         env = {**os.environ, "MUNINN_ROOT": str(root), "MUNINN_NO_PROJECT": "1"}
@@ -73,8 +77,14 @@ def main() -> None:
             rec = subprocess.run([a.muninn, "--cwd", str(root), "recall", s["topic"]], env=env, capture_output=True, text=True).stdout.lower()
             old, new = s["old"].lower(), (s["new"] or "").lower()
             served_ok = (old not in rec) and (not new or new.split()[0] in rec)
+            # loop 2 (instrument, applied to every binary alike): the later message often names the
+            # old value itself, so the fair check is on the statements served, not on the value
+            snippet = lambda t: t.strip()[:50].lower()
+            a_served = snippet(it["a"]) in rec
+            b_served = snippet(it["b"]) in rec
             results.append({"style": style, "id": s["id"], "retired_a": not a_active, "kept_b": bool(b_active),
                             "served_ok": served_ok, "old_served": old in rec,
+                            "a_served": a_served, "b_served": b_served, "current_only": b_served and not a_served,
                             "a_kinds": sorted({r["kind"] for r in a_active}), "b_kinds": sorted({r["kind"] for r in b_active})})
     json.dump(results, open(a.out, "w"), indent=1)
     rows = [r for r in results if not r.get("missing")]
@@ -83,8 +93,8 @@ def main() -> None:
         return f"{sum(v)}/{len(v)}"
     for grp, sub in [("all", rows), ("gate3 topics", [r for r in rows if r["id"].startswith("g3-")]),
                      ("new topics", [r for r in rows if r["id"].startswith("new-")])] + \
-                    [(st, [r for r in rows if r["style"] == st]) for st in ["terse", "chatty", "Spanish"]]:
-        print(f"{grp:14s} retired_a {share('retired_a', sub):7s} kept_b {share('kept_b', sub):7s} served_ok {share('served_ok', sub):7s} old_served {share('old_served', sub)}")
+                    [(st, [r for r in rows if r["style"] == st]) for st in styles]:
+        print(f"{grp:14s} retired_a {share('retired_a', sub):7s} kept_b {share('kept_b', sub):7s} served_ok {share('served_ok', sub):7s} old_served {share('old_served', sub):7s} a_served {share('a_served', sub):7s} b_served {share('b_served', sub):7s} current_only {share('current_only', sub)}")
     print("missing:", sum(1 for r in results if r.get("missing")))
 
 

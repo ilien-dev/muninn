@@ -175,12 +175,24 @@ fn decision_re() -> &'static Regex {
     })
 }
 
-/// The subset of decision forms that announce a change to an earlier decision.
+/// Words and phrases that announce a change to something said earlier (loop 2: a broad,
+/// generic list, English and Spanish, developed on the loop-2 development set).
 fn change_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)\b((?:is|are) now|switch|mov(?:e|ed|ing) (?:to|over)|migrat|change of plan|changed? (?:to|our|the)|instead|replac|no longer|from now on|going forward|revert|roll(?:ed)? back|drop(?:ped|ping)?|actually|update[ds]?\s*:|review comment accepted|ahora (?:es|son|usamos|va)|cambiamos|cambio de plan|pasamos a|migramos|volvemos a|en vez de|en lugar de|a partir de ahora|ya no)",
+            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch|\bswap|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\breview comment accepted\b|\bahora\b|\bcambi|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz|\bsustitu|\bdejamos de\b|\bmejor usa|\bal final\b)",
+        )
+        .unwrap()
+    })
+}
+
+/// Imperative and first-person forms of stating a choice (loop 2), besides `decision_re`.
+fn choice_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)(^\s*(?:ok(?:ay)?[, ]+|so[, ]+|hey[, ]+|alright[, ]+)?(?:use|go with|stick (?:to|with)|prefer|default to|keep|pick|choose|run|deploy|host|store|put)\b|\b(?:i|we)(?:'d| would)? (?:prefer|want|like) (?:to use|to go with|to keep)?\b|\bthe way to go\b|\bit is\b.{0,20}$|^\s*(?:usa|usemos|utiliza|vamos con|quedate con|quédate con|prefiero|despliega|guarda)\b|\bnos quedamos\b|\bvamos a (?:usar|ir con)\b)",
         )
         .unwrap()
     })
@@ -300,6 +312,47 @@ const STOP: &[&str] = &[
     "please",
     "okay",
     "fine",
+    "swap",
+    "swapped",
+    "ditch",
+    "ditched",
+    "scrap",
+    "scrapped",
+    "scratch",
+    "after",
+    "turns",
+    "out",
+    "anymore",
+    "prefer",
+    "default",
+    "way",
+    "think",
+    "hey",
+    "yeah",
+    "just",
+    "like",
+    "want",
+    "would",
+    "i'd",
+    "we'd",
+    "let's",
+    "i'm",
+    "we're",
+    "don't",
+    "can",
+    "could",
+    "maybe",
+    "probably",
+    "really",
+    "thing",
+    "stuff",
+    "sure",
+    "right",
+    "good",
+    "better",
+    "best",
+    "idea",
+    "for now",
     // Spanish
     "el",
     "la",
@@ -351,6 +404,26 @@ const STOP: &[&str] = &[
     "son",
     "es",
     "va",
+    "usa",
+    "usemos",
+    "utiliza",
+    "prefiero",
+    "mejor",
+    "final",
+    "cambia",
+    "cambiar",
+    "reemplaza",
+    "reemplazamos",
+    "sustituye",
+    "dejamos",
+    "vuelve",
+    "creo",
+    "bueno",
+    "vale",
+    "pues",
+    "algo",
+    "tambien",
+    "también",
 ];
 
 /// Content words of a decision sentence: the topic and the value, without the
@@ -382,14 +455,17 @@ pub fn replaces(old: &[String], new: &[String], announces_change: bool) -> bool 
 fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
     for sent in split_sentences(up) {
         let n = sent.chars().count();
-        if !(8..=300).contains(&n) || sent.contains('?') || !decision_re().is_match(sent) {
+        if !(6..=300).contains(&n) || sent.contains('?') {
+            continue;
+        }
+        let change = change_re().is_match(sent);
+        if !(change || decision_re().is_match(sent) || choice_re().is_match(sent)) {
             continue;
         }
         let words = topic_words(sent);
         if words.len() < 2 {
             continue;
         }
-        let change = change_re().is_match(sent);
         out.push(Candidate {
             kind: "decision",
             // the supersession key is the content-word set; the flag rides in the subject
@@ -679,6 +755,94 @@ mod tests {
             trust_of(dec("We'll use PostgreSQL for the analytics warehouse.")[0].origin),
             3
         );
+    }
+
+    /// Loop-2 development set: new topics, terse imperatives, chatty and Spanish messages.
+    #[test]
+    fn loop2_changes_in_everyday_wording() {
+        let dec = |p: &str| {
+            let s = Session {
+                turns: vec![turn(0, p)],
+                ..Default::default()
+            };
+            extract(&s, "abcdef12")
+                .into_iter()
+                .filter(|c| c.relation == "user_decision")
+                .collect::<Vec<_>>()
+        };
+        let words = |p: &str| topic_words(p);
+        let is_change = |p: &str| dec(p).iter().any(|c| c.subject.starts_with("said:change:"));
+        // (earlier statement, later change): the earlier one need not be a recognised decision
+        let pairs = [
+            (
+                "sharp for the thumbnails",
+                "swap sharp out, thumbnails go through libvips now",
+            ),
+            (
+                "hey so for the API docs page I think Swagger UI is the way to go",
+                "actually let's ditch Swagger UI and render the API docs with Redoc instead",
+            ),
+            (
+                "app secrets live in Vault",
+                "move the app secrets to Doppler",
+            ),
+            (
+                "run the CLI tests with pytest",
+                "scratch that, the CLI tests run on ward from now on",
+            ),
+            (
+                "Lerna manages the monorepo",
+                "we replaced Lerna with Turborepo for the monorepo",
+            ),
+            (
+                "el gestor de paquetes es npm",
+                "cambia el gestor de paquetes a pnpm",
+            ),
+            (
+                "la base de datos de pruebas es SQLite",
+                "ya no usamos SQLite para la base de datos de pruebas, ahora es Postgres en Docker",
+            ),
+            (
+                "deploy the staging site on Render",
+                "staging site: we're moving off Render to Railway",
+            ),
+        ];
+        for (a, b) in pairs {
+            assert!(is_change(b), "no change cue in {b:?}");
+            assert!(
+                replaces(&words(a), &words(b), true),
+                "{a:?} / {b:?}: {:?} {:?}",
+                words(a),
+                words(b)
+            );
+        }
+        let apart = [
+            (
+                "move the app secrets to Doppler",
+                "use Doppler for the CI pipeline tokens too",
+            ),
+            (
+                "the CLI tests run on ward from now on",
+                "switch the CLI help text to plain English",
+            ),
+            (
+                "ahora el gestor de paquetes es pnpm",
+                "cambia el README a español",
+            ),
+            (
+                "thumbnails go through libvips now",
+                "actually the avatars should stay square",
+            ),
+        ];
+        for (a, b) in apart {
+            assert!(
+                !replaces(&words(a), &words(b), is_change(b)),
+                "{a:?} must survive {b:?}: {:?} {:?}",
+                words(a),
+                words(b)
+            );
+        }
+        assert!(dec("should we swap sharp for libvips?").is_empty());
     }
 
     #[test]
