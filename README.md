@@ -125,4 +125,16 @@ The design and the reasons behind it are in [`design/ENGINE.md`](design/ENGINE.m
 
 ## License
 
-AGPL-3.0-only
+Muninn is © 2026 ilien and licensed under the
+[GNU Affero General Public License, version 3 only](LICENSE), with the additional
+terms in [`NOTICE`](NOTICE):
+
+- Anyone may use, modify, host and sell Muninn, including as a cloud service.
+- Anyone who distributes a modified version, or offers one to users over a network, must publish its
+  complete source code under the same license.
+- Every copy and every derived version must keep the notice
+  "Based on Muninn by ilien - https://github.com/ilien-dev/muninn", and a modified version must be
+  marked as changed.
+
+Contributions need a one-time [Contributor License Agreement](CLA.md); see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).

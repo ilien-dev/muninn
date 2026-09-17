@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **License: GNU AGPL-3.0-only with attribution terms.** Muninn is © ilien. Anyone may use, modify,
+  host and sell it. Modified versions, including ones offered over a network, must publish their
+  source, keep the notice "Based on Muninn by ilien" (`NOTICE`, AGPL section 7(b)), and be marked
+  as changed. The MIT declaration was never published: the repository was private, and its history
+  was rewritten before the first public release so that no commit carries it
+  (`crates/muninn-bench/experiment/HISTORY-REWRITE.md`).
+- **Contributor License Agreement** (`CLA.md`, `CONTRIBUTING.md`), checked on every pull request
+  by `.github/workflows/cla.yml`.
+
 ## 0.2.0 — 2026-09-17
 
 Built from the source measured as `muninn-latest` (binary `1356069a`) in the head-to-head; the
