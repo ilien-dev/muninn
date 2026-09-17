@@ -169,7 +169,7 @@ fn decision_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)\b(we(?:'ll| will| are|'re)? (?:go|going) with|we(?:'ll| will)? (?:use|pick|adopt|keep)|we(?:'re| are) (?:using|on)|let'?s (?:use|go with|stick with|keep)|we (?:chose|picked|decided|settled on|standardi[sz]ed on|switched|moved|migrated|agreed)|decided (?:to|on)|(?:is|are) now\b|(?:should|must) (?:now )?(?:be|use)\b|switch(?:ed|ing)? (?:to|over)|mov(?:e|ed|ing) (?:to|over)|migrat(?:e|ed|ing) to|change of plan|instead of|replac(?:e|ed|ing) \w|no longer|from now on|going forward|revert(?:ed|ing)? (?:to|back)|roll(?:ed)? back to|stick(?:ing)? with|drop(?:ped|ping)? \w|(?:decision|policy|convention)\s*:|review comment accepted|usamos|usaremos|vamos (?:a usar|con)|elegimos|decidimos|nos quedamos con|ahora (?:es|son|usamos|va)|cambiamos (?:a|de)|pasamos a|migramos a|volvemos a|en vez de|en lugar de|a partir de ahora|ya no)",
+            r"(?i)\b(we(?:'ll| will| are|'re)? (?:go|going) with|we(?:'ll| will)? (?:use|pick|adopt|keep)|we(?:'re| are) (?:using|on)|let'?s (?:use|go with|stick with|keep)|we (?:chose|picked|decided|settled on|standardi[sz]ed on|switched|moved|migrated|agreed)|decided (?:to|on)|(?:is|are) now\b|(?:should|must) (?:now )?(?:be|use)\b|switch(?:ed|ing)? (?:to|over)|mov(?:e|ed|ing) (?:to|over)|migrat(?:e|ed|ing) to|change of plan|instead of|replac(?:e|ed|ing) \w|no longer|from now on|going forward|revert(?:ed|ing)? (?:to|back)|roll(?:ed)? back to|stick(?:ing)? with|drop(?:ped|ping)? \w|(?:decision|policy|convention)\s*:|usamos|usaremos|vamos (?:a usar|con)|elegimos|decidimos|nos quedamos con|ahora (?:es|son|usamos|va)|cambiamos (?:a|de)|pasamos a|migramos a|volvemos a|en vez de|en lugar de|a partir de ahora|ya no)",
         )
         .unwrap()
     })
@@ -181,7 +181,7 @@ fn change_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch|\bswap|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\breview comment accepted\b|\bahora\b|\bcambi|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz|\bsustitu|\bdejamos de\b|\bmejor usa|\bal final\b)",
+            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch|\bswap|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bahora\b|\bcambi|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz|\bsustitu|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
         )
         .unwrap()
     })
@@ -192,7 +192,7 @@ fn choice_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)(^\s*(?:ok(?:ay)?[, ]+|so[, ]+|hey[, ]+|alright[, ]+)?(?:use|go with|stick (?:to|with)|prefer|default to|keep|pick|choose|run|deploy|host|store|put)\b|\b(?:i|we)(?:'d| would)? (?:prefer|want|like) (?:to use|to go with|to keep)?\b|\bthe way to go\b|\bit is\b.{0,20}$|^\s*(?:usa|usemos|utiliza|vamos con|quedate con|quédate con|prefiero|despliega|guarda)\b|\bnos quedamos\b|\bvamos a (?:usar|ir con)\b)",
+            r"(?i)((?:^|:)\s*(?:ok(?:ay)?[, ]+|so[, ]+|hey[, ]+|alright[, ]+)?(?:use|using|go with|going with|stick (?:to|with)|prefer|default to|keep|pick|choose|run|deploy|host|store|put)\b|\b(?:i|we)(?:'d| would)? (?:prefer|want|like) (?:to use|to go with|to keep)?\b|\bthe way to go\b|\bit is\b.{0,20}$|(?:^|:)\s*(?:usa|usemos|utiliza|vamos con|quedate con|quédate con|prefiero|despliega|guarda|mejor)\b|\bnos quedamos\b|\bvamos a (?:usar|ir con)\b)",
         )
         .unwrap()
     })
@@ -273,9 +273,6 @@ const STOP: &[&str] = &[
     "updated",
     "policy",
     "convention",
-    "review",
-    "comment",
-    "accepted",
     "should",
     "must",
     "all",
@@ -442,6 +439,89 @@ pub fn topic_words(s: &str) -> Vec<String> {
     out
 }
 
+/// Tokens that look like a name of a thing (a product, a library, a version): an inner
+/// capital, a digit, a dot or hyphen inside the word, or a capital that does not start the
+/// sentence. Lowercased.
+pub fn name_tokens(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (i, raw) in s
+        .split(|c: char| {
+            c.is_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '"' | '`' | '!' | '?')
+        })
+        .enumerate()
+    {
+        let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
+        if w.chars().count() < 2 {
+            continue;
+        }
+        let mut chars = w.chars();
+        let first = chars.next().unwrap();
+        let rest: String = chars.collect();
+        let inner_cap = rest.chars().any(|c| c.is_uppercase());
+        let digit = w.chars().any(|c| c.is_ascii_digit()) && w.chars().any(|c| c.is_alphabetic());
+        let joined = w.contains('.') || w.contains('-') || w.contains('_');
+        let cap_mid = first.is_uppercase() && i > 0 && !STOP.contains(&w.to_lowercase().as_str());
+        if inner_cap || digit || joined || cap_mid {
+            let l = w.to_lowercase();
+            if !out.contains(&l) {
+                out.push(l);
+            }
+        }
+    }
+    out
+}
+
+/// A short change that names no topic of its own ("actually switch to ECharts", "mejor
+/// Postmark") refers to what was said just before.
+pub fn is_anaphoric(s: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    let r = R.get_or_init(|| {
+        Regex::new(r"(?i)\b(that|this|it|those|them|eso|esto|ese|esa|lo)\b").unwrap()
+    });
+    topic_words(s).len() <= 4 || r.is_match(s)
+}
+
+/// Words of a short leading label ("note to self:", "update:"). Two statements that share
+/// only such words are not about the same thing.
+pub fn label_words(s: &str) -> Vec<String> {
+    match s.split_once(':') {
+        Some((head, tail)) if head.split_whitespace().count() <= 4 && !tail.trim().is_empty() => {
+            topic_words(head)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Does the later statement name a different value? A name-like token the earlier one lacks,
+/// or, failing names, each side has a content word the other does not ("openssl" / "rustls").
+pub fn names_new_value(old: &str, new: &str) -> bool {
+    let on = name_tokens(old);
+    if name_tokens(new).iter().any(|w| !on.contains(w)) {
+        return true;
+    }
+    let (ow, nw) = (topic_words(old), topic_words(new));
+    let (lo, ln) = (label_words(old), label_words(new));
+    let only_new = nw.iter().any(|w| !ow.contains(w) && !ln.contains(w));
+    let only_old = ow.iter().any(|w| !nw.contains(w) && !lo.contains(w));
+    only_new && only_old
+}
+
+/// `replaces` on two texts, ignoring the label words they have in common.
+pub fn replaces_text(old: &str, new: &str, announces_change: bool) -> bool {
+    let (lo, ln) = (label_words(old), label_words(new));
+    let common: Vec<String> = lo.into_iter().filter(|w| ln.contains(w)).collect();
+    let strip = |v: Vec<String>| {
+        v.into_iter()
+            .filter(|w| !common.contains(w))
+            .collect::<Vec<_>>()
+    };
+    replaces(
+        &strip(topic_words(old)),
+        &strip(topic_words(new)),
+        announces_change,
+    )
+}
+
 /// Does a later decision (`new`, with or without a change marker) replace an earlier
 /// one (`old`)? Two shared content words at least, and a share of the smaller set of
 /// ≥ 0.34 when the later sentence announces a change, ≥ 0.5 otherwise.
@@ -463,7 +543,9 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
             continue;
         }
         let words = topic_words(sent);
-        if words.len() < 2 {
+        // a one-word change that names something ("switch to ECharts") still counts: it refers
+        // to what was said before it
+        if words.len() < 2 && !(change && !name_tokens(sent).is_empty() && !words.is_empty()) {
             continue;
         }
         out.push(Candidate {
@@ -843,6 +925,51 @@ mod tests {
             );
         }
         assert!(dec("should we swap sharp for libvips?").is_empty());
+    }
+
+    #[test]
+    fn loop3_names_labels_and_anaphora() {
+        assert_eq!(name_tokens("Actually switch to ECharts"), vec!["echarts"]);
+        assert!(
+            name_tokens("Going with Chart.js for admin reports").contains(&"chart.js".to_string())
+        );
+        assert!(name_tokens("the source license is GPL-3.0").contains(&"gpl-3.0".to_string()));
+        assert!(name_tokens("Use the new thing").is_empty());
+        assert!(is_anaphoric("Mejor Postmark, es más confiable"));
+        assert!(is_anaphoric(
+            "You know what, ECharts has better customization options, let's go with that instead"
+        ));
+        assert!(!is_anaphoric(
+            "switch the CLI help text rendering pipeline over to plain English documentation"
+        ));
+        let dec = |p: &str| {
+            let s = Session {
+                turns: vec![turn(0, p)],
+                ..Default::default()
+            };
+            extract(&s, "abcdef12")
+                .into_iter()
+                .filter(|c| c.relation == "user_decision")
+                .collect::<Vec<_>>()
+        };
+        assert!(!dec("note: use Redoc for the API docs").is_empty());
+        assert!(dec("mejor Postmark, es más confiable")
+            .iter()
+            .any(|c| c.subject.starts_with("said:change:")));
+    }
+
+    #[test]
+    fn leading_labels_are_not_topic() {
+        assert!(!replaces_text(
+            "note to self: use rustls for the TLS backend",
+            "note to self: use https everywhere for internal hosts",
+            false
+        ));
+        assert!(replaces_text(
+            "deploy the staging site on Render",
+            "staging site: we're moving off Render to Railway",
+            true
+        ));
     }
 
     #[test]

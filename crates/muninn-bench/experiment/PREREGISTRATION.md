@@ -1152,3 +1152,27 @@ generalise either. `loop2/mechanism_*.json`.
 **Rule for the following loops.** A loop's held-out set becomes the next loop's development set; every
 loop is measured on a set generated after its freeze. The loop-1 and loop-2 sets (90 items, 20 topics
 plus the ten Gate 3 topics) are now development data for loop 3.
+
+## Improvement loop 3 frozen, and the head-to-head pilot (recorded 2026-09-17, before the pilot's first session)
+
+**Loop 3 (binary `ee47cffb…`).** Development-only changes on top of loop 2, all generic: choice forms after a
+short label and at the start of a message ("going with", "using", "mejor"); name-like tokens (inner
+capital, digit, dot/hyphen, mid-sentence capital); a later decision on the same content words replaces the
+earlier one without a change marker when it names a different value (a new name, or each side has a
+content word the other lacks); a short change that names no topic of its own and introduces a new name
+retires the most recent earlier short statement that named something, within three hours; one-word
+changes that name something are kept; shared leading-label words do not count as a shared topic; a
+replacing change inherits the replaced statements' topic words (names excluded) into its key and its
+full-text row. Removed as benchmark-derived: the cue "review comment accepted" and the stop words
+"review", "comment", "accepted" that loop 1 had taken from the Gate 3 seed wording (the author had seen
+it); loop 1 and 2 results stand as measured with them. Development data (adjacent order, the order of a
+conversation and of the head-to-head): Gate 3 seed wording current-only 10/10 (0/10 before loop 1; known
+input, not a held-out claim), loop-1 set 15/60 (2/60), loop-2 set 6/30 (0/30), loop-2 dev 7/8 (0/8);
+change kept 59/60, 30/30, 8/8. 82 workspace tests, clippy green.
+
+**Head-to-head pilot.** The pre-registered label-free head-to-head (v1: Gate 3 seed wording, gin
+`dcaa429`, sonnet), one run only, arms `off`, `muninn-loop3`, `claude-mem`, `agentmemory`,
+`agentmemory-inject`. A pilot: reported as such, no claim from it; its purpose is to see where the arms
+stand before the three-run grids. The frozen `muninn` and `muninn-fixed` arms of v1 run in the full grid.
+Then, in order: a fresh loop-3 held-out mechanism set; head-to-head v2 (held-out phrasings for seeding)
+pre-registered separately.

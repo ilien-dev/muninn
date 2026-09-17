@@ -39,6 +39,9 @@ def main() -> None:
     ap.add_argument("--phrasings", default=str(HERE / "heldout_phrasings.json"))
     ap.add_argument("--scenarios", default=str(HERE / "scenarios.json"))
     ap.add_argument("--styles", default="terse,chatty,Spanish")
+    ap.add_argument("--order", choices=["blocks", "adjacent"], default="blocks",
+                    help="blocks: every (a), then every (b), then every (c) (loops 1-2); adjacent: a1 b1 a2 b2 ... then every (c), "
+                         "the order of a real conversation and of the head-to-head seeding")
     a = ap.parse_args()
     items = {i["key"]: i for i in json.load(open(a.phrasings))}
     sc = json.load(open(a.scenarios))
@@ -53,7 +56,10 @@ def main() -> None:
         tdir = root / "transcripts"
         tdir.mkdir()
         t0 = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
-        order = [(s, "a") for s in scenarios] + [(s, "b") for s in scenarios] + [(s, "c") for s in scenarios]
+        if a.order == "adjacent":
+            order = [(s, part) for s in scenarios for part in ("a", "b")] + [(s, "c") for s in scenarios]
+        else:
+            order = [(s, "a") for s in scenarios] + [(s, "b") for s in scenarios] + [(s, "c") for s in scenarios]
         for k, (s, part) in enumerate(order):
             it = items.get(f"{s['id']}#{style}")
             if not it:
