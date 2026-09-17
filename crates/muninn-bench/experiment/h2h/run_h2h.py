@@ -57,10 +57,16 @@ def checkout(dest: Path) -> None:
 
 
 def arm_cmd(arm: str, sub: str, env: dict, *extra: str) -> str:
-    p = subprocess.run([str(HERE / "competitors" / arm / "arm.sh"), sub, *extra], env=env, capture_output=True, text=True, timeout=900)
+    # output goes to files, not pipes: a server an arm starts in the background inherits the
+    # script's descriptors, and a pipe held open by it made `start` never return (pilot 1)
+    with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
+        p = subprocess.run([str(HERE / "competitors" / arm / "arm.sh"), sub, *extra], env=env,
+                           stdout=out, stderr=err, stdin=subprocess.DEVNULL, text=True, timeout=900)
+        out.seek(0); err.seek(0)
+        so, se = out.read(), err.read()
     if p.returncode != 0:
-        raise RuntimeError(f"{arm} {sub} failed: {p.stderr[-400:]}")
-    return p.stdout.strip()
+        raise RuntimeError(f"{arm} {sub} failed: {se[-400:]}")
+    return so.strip()
 
 
 def clean_path() -> str:
@@ -235,9 +241,19 @@ def main() -> None:
 
     # seeding: per run, per memory arm (arms of one port group serialise through their lock)
     seed_jobs = [(arm, run) for run in range(a.runs) for arm in arms if arm != "off"]
+    def seed_one(j):
+        try:
+            return j[0], j[1], seed_arm(j[0], j[1], out, work, seed_rows), None
+        except Exception as exc:  # noqa: BLE001
+            return j[0], j[1], None, exc
+    failed_seed = set()
     with ThreadPoolExecutor(max_workers=a.jobs) as ex:
-        for arm, run, snap in ex.map(lambda j: (j[0], j[1], seed_arm(j[0], j[1], out, work, seed_rows)), seed_jobs):
-            print(f"seeded r{run} {arm} -> {snap}", flush=True)
+        for arm, run, snap, exc in ex.map(seed_one, seed_jobs):
+            if exc is not None:
+                failed_seed.add((run, arm))
+                print(f"SEEDING FAILED r{run} {arm}: {exc}", flush=True)
+            else:
+                print(f"seeded r{run} {arm} -> {snap}", flush=True)
     if a.only_seed:
         return
 
@@ -247,7 +263,10 @@ def main() -> None:
         random.Random(f"h2h:{run}").shuffle(cells)
         plan += [(run, t, arm) for t, arm in cells]
     todo = [(run, t, arm) for run, t, arm in plan
-            if (run, t["id"], arm) not in done or (a.rerun_errors and done[(run, t["id"], arm)]["status"] == "error")]
+            if (run, arm) not in failed_seed
+            and ((run, t["id"], arm) not in done or (a.rerun_errors and done[(run, t["id"], arm)]["status"] == "error"))]
+    if failed_seed:
+        print(f"cells of arms whose seeding failed are not run: {sorted(failed_seed)}", flush=True)
     print(f"{len(plan)} cells planned, {len(todo)} to run", flush=True)
 
     def go(job):

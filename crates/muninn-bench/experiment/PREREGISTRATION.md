@@ -1239,3 +1239,10 @@ every binary. Loop-5 held-out, corrected: before loop 1 — current-only English
 English 8/20, total 11/30; loop 5 — English 12/20, total 15/30 (retired 0, 17, 21 of 30; kept 30/30 for
 all). The earlier loop-4 figures (8/20 English) were not affected by the bug in the direction reported;
 re-run with the fix they read 8/20 English, 10/30 total. Files `loop*/mechanism_fixed_*.json`.
+
+**Pilot, harness fix (2026-09-17).** The pilot stopped before any task cell: agentmemory's `start` never
+returned because the harness captured arm output through pipes and the server started in the background
+inherited them; after 900 s the harness killed the script and its cleanup stopped the engine. The harness
+now captures arm output through files, and a failed seeding of one arm no longer stops the other arms (its
+cells are skipped and listed). Muninn's and claude-mem's completed seeding snapshots are reused; nothing
+about any tool changed. The pilot resumes.
