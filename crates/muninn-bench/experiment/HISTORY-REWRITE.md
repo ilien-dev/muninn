@@ -59,3 +59,37 @@ that can be shown to a reviewer.
 Both old proofs were still waiting for Bitcoin confirmation at the rewrite; once confirmed they prove the
 old hashes existed at that time, and the bundle shows those hashes differ from the new ones only by the
 address.
+
+# License rewrite of 2026-09-17
+
+Before the repository was first published, every commit declared the MIT license: `Cargo.toml`
+(`license = "MIT"`) and `plugin/.claude-plugin/plugin.json` (`"license": "MIT"`) from the first
+commit, and a `LICENSE` file with the MIT text from the 0.2.0 release commit. The project is licensed
+under AGPL-3.0-only with the attribution terms in `NOTICE`. A published history would have offered
+each earlier snapshot under MIT, so the history was rewritten while the repository was still private
+(one collaborator, no forks, no releases, no crate published): nobody ever received a copy under MIT.
+
+`git filter-repo` changed, in every commit: those two manifest lines to `AGPL-3.0-only`; the MIT
+`LICENSE` text to the AGPL-3.0 text; the README's one-word license section (three commits) to
+`AGPL-3.0-only`. The first commit gained the AGPL-3.0 `LICENSE`, so every commit carries it. The
+release commit's subject lost the word "MIT"; abbreviated hashes quoted in commit messages were
+rewritten to the new ones by `git filter-repo`. Checked on a clone before the refs moved: 145 commits
+before and after, identical authors and dates, messages identical apart from those edits, an
+identical tree at HEAD, and no commit outside third-party fixtures and recorded experiment outputs
+declares MIT. Every commit hash changed; the old → new map is
+`history-rewrite-map-2026-09-17-license.json`, and tags were moved with their commits.
+
+Recorded experiment outputs are left as they were produced. Gate 3's `revoke-license` cells ran on
+checkouts whose `Cargo.toml` still said MIT (`GATE3.md`, `PREREGISTRATION.md`); in the rewritten
+history those checkouts say `AGPL-3.0-only`, so a replay from the public history is not the same
+input. The original commits are kept, private, in a bundle (sha256
+`207b4f23efb9209fe95b953e94eead22a6cb4d78a876d53b1cfbf8192b36052f`) that can be shown to a reviewer.
+Note also that the `revoke-license` oracle rejects any text containing `gpl-3.0`, which
+`agpl-3.0` contains: a new run of that scenario on this repository needs a different oracle.
+
+Every timestamp proof in `prereg-stamps/` names a commit whose hash changed. Each proof still shows
+that its old hash existed at the anchored time; the bundle shows the old commits differ from the new
+ones only by the edits above. The new hash of every named commit (and of the commits named by
+`rewrite-2026-09-14.txt` and `rewrite-2026-09-17.txt`, which are the same commits) is listed in
+`rewrite-2026-09-17-license.txt` and stamped in `rewrite-2026-09-17-license.txt.ots`, so the
+public history is timestamped from the date of this rewrite.
