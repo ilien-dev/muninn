@@ -274,8 +274,8 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
 /// function of the store and the query.
 pub fn knn(db: &Db, query: &[f32], k: usize, model_id: &str) -> Result<Vec<Neighbour>> {
     let mut stmt = db.conn.prepare(
-        "SELECT v.record_id, v.vec FROM record_vec v JOIN record r ON r.id = v.record_id \
-         WHERE r.invalid = 0 AND v.model_id = ?1 ORDER BY v.record_id",
+        "SELECT v.record_id, v.vec FROM record_vec v JOIN served_record r ON r.id = v.record_id \
+         WHERE v.model_id = ?1 ORDER BY v.record_id",
     )?;
     let mut out: Vec<Neighbour> = stmt
         .query_map([model_id], |r| {

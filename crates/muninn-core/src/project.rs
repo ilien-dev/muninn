@@ -32,6 +32,9 @@ pub struct RecordRow {
 }
 
 const COLS: &str = "id, kind, subject, relation, object, body, origin, trust, anchor_path, anchor_hash, session_id, transcript_ref, created_at, invalid, invalidated_by, invalid_reason";
+/// The same shape read from `served_record`, which has no invalidation columns: a row that
+/// comes back from there is active by construction, so the three are constants.
+const COLS_SERVED: &str = "id, kind, subject, relation, object, body, origin, trust, anchor_path, anchor_hash, session_id, transcript_ref, created_at, 0 AS invalid, NULL AS invalidated_by, NULL AS invalid_reason";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<RecordRow> {
     Ok(RecordRow {
@@ -54,13 +57,34 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<RecordRow> {
     })
 }
 
-pub fn load(db: &Db, where_sql: &str) -> Result<Vec<RecordRow>> {
-    let tail = if where_sql.to_ascii_uppercase().contains("ORDER BY") {
+fn tail_of(where_sql: &str) -> &'static str {
+    if where_sql.to_ascii_uppercase().contains("ORDER BY") {
         ""
     } else {
         " ORDER BY id"
-    };
-    let sql = format!("SELECT {COLS} FROM record WHERE {where_sql}{tail}");
+    }
+}
+
+/// Every record, retired ones included. For the Markdown mirror, `export --all` and
+/// `muninn why`, which show the retired rows with their reason. **Not for a serving path**:
+/// that is `load_served`.
+pub fn load_all(db: &Db, where_sql: &str) -> Result<Vec<RecordRow>> {
+    let sql = format!(
+        "SELECT {COLS} FROM record WHERE {where_sql}{}",
+        tail_of(where_sql)
+    );
+    let mut st = db.conn.prepare(&sql)?;
+    let rows = st.query_map([], row)?.filter_map(|r| r.ok()).collect();
+    Ok(rows)
+}
+
+/// Records that may be served, from the `served_record` view. The three invalidation columns
+/// do not exist there, so they are filled with what the view already guarantees.
+pub fn load_served(db: &Db, where_sql: &str) -> Result<Vec<RecordRow>> {
+    let sql = format!(
+        "SELECT {COLS_SERVED} FROM served_record WHERE {where_sql}{}",
+        tail_of(where_sql)
+    );
     let mut st = db.conn.prepare(&sql)?;
     let rows = st.query_map([], row)?.filter_map(|r| r.ok()).collect();
     Ok(rows)
@@ -156,14 +180,14 @@ pub fn project(paths: &ProjectPaths, db: &Db, ids: &[i64]) -> Result<usize> {
         return Ok(0);
     }
     let rows = if ids.is_empty() {
-        load(db, "1=1")?
+        load_all(db, "1=1")?
     } else {
         let list = ids
             .iter()
             .map(|i| i.to_string())
             .collect::<Vec<_>>()
             .join(",");
-        load(db, &format!("id IN ({list})"))?
+        load_all(db, &format!("id IN ({list})"))?
     };
     let root = paths.records_dir();
     let mut n = 0;
@@ -201,9 +225,9 @@ pub fn write_index(paths: &ProjectPaths, db: &Db) -> Result<String> {
         ("correction", 30),
         ("claim", 10),
     ] {
-        let rows = load(
+        let rows = load_served(
             db,
-            &format!("invalid=0 AND kind='{kind}' ORDER BY created_at DESC LIMIT {cap}"),
+            &format!("kind='{kind}' ORDER BY created_at DESC LIMIT {cap}"),
         )?;
         if rows.is_empty() {
             continue;
@@ -240,7 +264,7 @@ pub fn write_index(paths: &ProjectPaths, db: &Db) -> Result<String> {
 
 /// JSONL export: one object per record, the frontmatter fields plus `body`.
 pub fn export_jsonl(db: &Db, out: &Path, include_invalid: bool) -> Result<usize> {
-    let rows = load(db, if include_invalid { "1=1" } else { "invalid=0" })?;
+    let rows = load_all(db, if include_invalid { "1=1" } else { "invalid=0" })?;
     let mut s = String::new();
     for r in &rows {
         s.push_str(&serde_json::to_string(r).map_err(|e| crate::Error::Other(e.to_string()))?);

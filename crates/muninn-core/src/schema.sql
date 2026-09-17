@@ -31,6 +31,18 @@ CREATE INDEX IF NOT EXISTS record_anchor     ON record(anchor_path) WHERE anchor
 CREATE INDEX IF NOT EXISTS record_kind       ON record(kind) WHERE invalid = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS record_dedup ON record(dedup_hash);
 
+-- F1's gate, in the schema rather than in every query (ENGINE.md §5). This view is the
+-- ONLY source a serving path may read from: what is selected here is what may reach the
+-- agent. `invalid`, `invalidated_by` and `invalid_reason` are left out on purpose — a
+-- serving path has no use for them, and their absence turns a forgotten `WHERE invalid = 0`
+-- into a query that fails to prepare instead of one that silently serves a retired record.
+-- The paths that must see retired rows (`muninn why --all`, `export --all`, the Markdown
+-- mirror, lineage, and the whole write path) read `record` directly and say so.
+CREATE VIEW IF NOT EXISTS served_record AS
+    SELECT id, kind, subject, relation, object, body, origin, trust,
+           anchor_path, anchor_hash, session_id, transcript_ref, dedup_hash, created_at
+    FROM record WHERE invalid = 0;
+
 -- 2.6 external-content FTS5: text is stored once, in record.
 CREATE VIRTUAL TABLE IF NOT EXISTS record_fts USING fts5(
     subject, object, body,

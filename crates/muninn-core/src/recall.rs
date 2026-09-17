@@ -188,34 +188,37 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     Ok(scored.into_iter().take(k).map(|(_, t)| t).collect())
 }
 
+/// The columns a serving query selects, in the order `Hit::from_served_row` expects. They
+/// exist on `served_record` and are aliased `r` there by convention, so a query that reads
+/// `record` instead has to say so in its own text.
+pub const SERVED_COLS: &str =
+    "r.id, r.kind, r.subject, r.object, r.body, r.origin, r.trust, r.created_at, r.session_id";
+
+/// One record on its way to the agent. It carries no `invalid` flag because it cannot hold a
+/// retired record: the only constructor reads from the `served_record` view (`schema.sql`),
+/// and the private fields make a struct literal outside this crate impossible. That is F1's
+/// guarantee in the type system rather than in every `WHERE` clause.
 #[derive(Debug, Clone, Serialize)]
 pub struct Hit {
     pub id: i64,
+    /// Public because the read path appends `:conflict with #n` before rendering.
     pub kind: String,
-    pub subject: String,
-    pub object: String,
-    pub body: String,
-    pub origin: String,
-    pub trust: i64,
-    pub created_at: i64,
-    pub session_id: String,
-    pub score: f64,
+    pub(crate) subject: String,
+    pub(crate) object: String,
+    pub(crate) body: String,
+    pub(crate) origin: String,
+    pub(crate) trust: i64,
+    pub(crate) created_at: i64,
+    pub(crate) session_id: String,
+    pub(crate) score: f64,
     /// `path:offset` into the raw transcript — the evidence a sceptical agent can open.
-    pub transcript_ref: Option<String>,
+    pub(crate) transcript_ref: Option<String>,
 }
 
-/// Lexical recall: BM25 over (subject, object, body) with column weights, active rows only.
-pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -> Result<Vec<Hit>> {
-    if terms.is_empty() {
-        return Ok(vec![]);
-    }
-    let q = fts_match_or(terms);
-    let mut stmt = db.conn.prepare(
-        "SELECT r.id, r.kind, r.subject, r.object, r.body, r.origin, r.trust, r.created_at, r.session_id, bm25(record_fts, 3.0, 2.0, 1.0) AS score, r.transcript_ref \
-         FROM record_fts JOIN record r ON r.id = record_fts.rowid \
-         WHERE record_fts MATCH ?1 AND r.invalid = 0 ORDER BY score LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![q, (limit + exclude.len()) as i64], |r| {
+impl Hit {
+    /// Build a hit from a row of `served_record`, selected as `SERVED_COLS` (+ `score` and
+    /// `transcript_ref`, which some callers supply themselves). The only way to make a `Hit`.
+    pub fn from_served_row(r: &rusqlite::Row<'_>, score: f64) -> rusqlite::Result<Hit> {
         Ok(Hit {
             id: r.get(0)?,
             kind: r.get(1)?,
@@ -226,9 +229,27 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
             trust: r.get(6)?,
             created_at: r.get(7)?,
             session_id: r.get(8)?,
-            score: r.get(9)?,
-            transcript_ref: r.get(10)?,
+            score,
+            transcript_ref: r.get(9).unwrap_or(None),
         })
+    }
+}
+
+/// Lexical recall: BM25 over (subject, object, body) with column weights. Retired records are
+/// absent twice over: they leave `record_fts` on invalidation (trigger, `schema.sql`) and the
+/// join is against `served_record`.
+pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -> Result<Vec<Hit>> {
+    if terms.is_empty() {
+        return Ok(vec![]);
+    }
+    let q = fts_match_or(terms);
+    let mut stmt = db.conn.prepare(&format!(
+        "SELECT {SERVED_COLS}, r.transcript_ref, bm25(record_fts, 3.0, 2.0, 1.0) AS score \
+         FROM record_fts JOIN served_record r ON r.id = record_fts.rowid \
+         WHERE record_fts MATCH ?1 ORDER BY score LIMIT ?2"
+    ))?;
+    let rows = stmt.query_map(rusqlite::params![q, (limit + exclude.len()) as i64], |r| {
+        Hit::from_served_row(r, r.get("score")?)
     })?;
     Ok(rows
         .filter_map(|r| r.ok())

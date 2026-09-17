@@ -219,6 +219,14 @@ pub fn run(
                 Some("restore from `.muninn/records/` with `muninn import --from-records`"),
             ),
         },
+        Some(db) if !db.has_served_view() => check(
+            3,
+            "integrity",
+            Status::Red,
+            "the `served_record` view is missing: this store predates F1's serving gate, \
+             and read hooks stay silent until it is applied",
+            Some("run `muninn maintain`"),
+        ),
         Some(db) => {
             // A store that cannot even answer a meta query is broken regardless of what was recorded.
             match db.meta_get("quick_check_result") {

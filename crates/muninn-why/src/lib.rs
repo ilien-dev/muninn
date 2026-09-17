@@ -5,7 +5,7 @@
 //! no synthesis. A sufficiency marker says whether a trust ≥ 2 record answers directly.
 
 use muninn_core::filter::{conflicts_of, lineage};
-use muninn_core::project::{load, RecordRow};
+use muninn_core::project::{load_all, RecordRow};
 use muninn_core::recall::select_terms;
 use muninn_core::sanitize::fts_match_or;
 use muninn_core::tokens::estimate;
@@ -216,7 +216,7 @@ pub fn answer(
         if records.len() >= limit {
             break;
         }
-        let Some(row) = load(db, &format!("id = {id}"))?.pop() else {
+        let Some(row) = load_all(db, &format!("id = {id}"))?.pop() else {
             continue;
         };
         if row.invalid && !include_invalid {

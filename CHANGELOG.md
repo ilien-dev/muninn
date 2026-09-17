@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **The serving gate is in the schema and in the type system, not in every query.** A new
+  `served_record` view is the only source a serving path reads from, and `recall::Hit` — the
+  type both hook renderers accept — has a single constructor, which reads from that view. A
+  query that forgets to exclude retired records no longer serves them silently: it fails to
+  prepare. `project::load` is split into `load_served` and `load_all`, `cue::evaluate` drops
+  retired candidates before they reach the delivery log, and a test refuses any new read of
+  `record` from a file that has not declared itself. Two fault-injection scenarios (`s16`,
+  `s17`, 200 repetitions each in CI) assert on real hook stdout that a retired record's text
+  never appears — including under a corrupt store, an unknown schema version and a clock moved
+  backwards — and that the record which replaced it does. The assertion was shown to fail when
+  the filter is reverted. A store written by an earlier version is migrated on its next write;
+  until then the health gate reports RED rather than staying quiet.
 - **License: GNU AGPL-3.0-only with attribution terms.** Muninn is © ilien. Anyone may use, modify,
   host and sell it. Modified versions, including ones offered over a network, must publish their
   source, keep the notice "Based on Muninn by ilien" (`NOTICE`, AGPL section 7(b)), and be marked
