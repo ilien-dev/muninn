@@ -192,6 +192,7 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             }
         }
     }
+    st.ingested += crate::sessions::ingest_pending(paths, &db);
     match muninn_core::filter::validate_anchors(paths, &db) {
         Ok(n) => st.anchors_retired = n,
         Err(e) => output::err(&format!("muninn maintain: anchors: {e}")),

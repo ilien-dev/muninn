@@ -8,6 +8,7 @@ mod maintain;
 mod output;
 mod pretooluse;
 mod scan;
+mod sessions;
 
 use clap::{Parser, Subcommand};
 use muninn_core::{health, Db, Mode, ProjectPaths};

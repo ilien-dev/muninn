@@ -129,6 +129,12 @@ pub fn run(event: &str, cwd_override: Option<PathBuf>) -> i32 {
     } else {
         input.session_id.clone()
     };
+    if matches!(
+        event,
+        "SessionStart" | "UserPromptSubmit" | "Stop" | "SessionEnd" | "PreCompact"
+    ) {
+        crate::sessions::note(&paths, &session, input.transcript_path.as_deref());
+    }
     let (hb, hb_err) = Heartbeat::start(&paths, event, &session);
     if let Some(e) = hb_err {
         output::err(&format!("muninn: heartbeat: {e}"));
@@ -759,6 +765,8 @@ fn write_path(
             }
         }
     }
+    // sessions whose own write hook was cut short (headless sessions end first)
+    crate::sessions::ingest_pending(paths, &db);
     if let Err(e) = crate::maintain::capture_git(paths, &db) {
         output::err(&format!("muninn: git capture: {e}"));
     }
