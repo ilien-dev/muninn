@@ -24,7 +24,7 @@ grid, its pre-registration and its raw data are indexed in
 
 | question | grid | what changes the public wording |
 |---|---|---|
-| Does Muninn detect, from ordinary conversation and with no labels, that a decision was replaced — and do claude-mem and agentmemory? | head-to-head, same live seeding sessions for every tool (pre-registered). v1 (seed wording, 3 runs) measured: Muninn as registered 12/27 vs claude-mem 26/27 (p = 4.6 × 10⁻⁵, claude-mem better); the loop-5 build 27/27 vs 26/27 (tie, p = 1), agentmemory 12/27, no memory 1/27 — but the loops were checked on that wording. v2 (held-out wording) running | only v2 can support a public comparison; a tie is reported as a tie |
+| Does Muninn detect, from ordinary conversation and with no labels, that a decision was replaced — and do claude-mem and agentmemory? | head-to-head, same live seeding sessions for every tool (pre-registered). v1 (seed wording, 3 runs) measured: Muninn as registered 12/27 vs claude-mem 26/27 (p = 4.6 × 10⁻⁵, claude-mem better); the loop-5 build 27/27 vs 26/27 (tie, p = 1), agentmemory 12/27, no memory 1/27 — but the loops were checked on that wording. v2 (held-out wording, 3 runs): the loop-5 build 17/27, claude-mem 14/27 (tie, Holm p = 0.58), agentmemory 9/27 (tie, Holm p = 0.11), agentmemory with injection 1/27 (Muninn better, Holm p = 1.4 × 10⁻⁵), no memory 0/27 | only v2 supports a public comparison, and on it Muninn ties claude-mem; Muninn's answers mention the retired value more often (11/27 vs 2/27, secondary figure, not the registered outcome) |
 
 ## Not claimed
 

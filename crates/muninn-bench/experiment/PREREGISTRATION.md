@@ -1315,3 +1315,31 @@ injects into every session's `session_context` was replaced by `[account e-mail 
 transcripts (here and in `results/h2h-pilot/`); nothing else was changed. `run_h2h.py` gained the additive
 `--seed-phrasings` option while this grid ran; the running process had loaded the earlier file (its hash is
 in `FROZEN.jsonl`).
+
+## Head-to-head v2 — full grid result (recorded 2026-09-17, after the grid finished)
+
+150/150 cells, 0 errors, 240/240 seeding sessions without error. Seeding text: the held-out phrasings
+registered above. Replacement scenarios, pass by the Gate 3 oracle (27 cells per arm): `off` 0/27,
+`agentmemory` 9/27, `agentmemory-inject` 1/27, `claude-mem` 14/27, `muninn-latest` (`1356069a`) 17/27.
+Revocation scenario: 3/3 in every arm. Secondary (not the registered outcome): retired value anywhere in
+the diff — off 1, agentmemory 2, inject 2, claude-mem 2, muninn-latest 11 (of 27).
+
+Fisher two-sided, `analyze_h2h.py results/h2h-v2 --muninn-arms muninn-latest`, unchanged:
+- every arm against `off`: agentmemory p = 0.00176, inject p = 1, claude-mem p = 1.24 × 10⁻⁵,
+  muninn-latest p = 3.58 × 10⁻⁷;
+- `muninn-latest`, Holm within its family: vs claude-mem 17/27 vs 14/27, Δ +0.111, p = 0.583
+  (Holm 0.583) — **a tie**; vs agentmemory Δ +0.296, p = 0.0556 (Holm 0.111) — a tie; vs inject
+  Δ +0.593, Holm 1.44 × 10⁻⁵ — Muninn better.
+
+Per scenario, `muninn-latest` passes: cache-eviction, license, tls-backend, wire-format 3/3;
+internal-http, password-hashing 2/3; compression 1/3; async-runtime and version-scheme 0/3
+(claude-mem 3/3 and 0/3 on those two).
+
+**How to read it.** The loop's stopping rule is met on held-out wording: `muninn-latest` 17/27 ≥ the best
+competitor, claude-mem, 14/27. Under this registration that is a tie, not an advantage: no Holm-adjusted
+p is below 0.05 against claude-mem or agentmemory, so "better than claude-mem" is not claimed. The
+secondary figure goes the other way: Muninn's answers mention the retired value in 11 of 27 cells against
+2 of 27 for claude-mem. Pass is judged by the registered oracle, which that figure does not replace; it is
+reported so the tie is not read as cleaner than it is. Raw data `results/h2h-v2/`; the account e-mail
+that Claude Code injects into `session_context` was replaced by `[account e-mail redacted]` in the copied
+transcripts (240 files); nothing else was changed.
