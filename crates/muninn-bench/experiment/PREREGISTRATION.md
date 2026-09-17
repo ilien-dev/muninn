@@ -1291,3 +1291,27 @@ arm), the revocation scenario reported separately; exact two-sided Fisher, Holm 
 competitor contrasts; `analyze_h2h.py` unchanged. The loop's stopping rule (above) is read on this grid:
 `muninn-latest` replacement passes ≥ the best competitor arm's. A tie is reported as a tie, not as an
 advantage; "better" is claimed in public only with Holm-adjusted p < 0.05 against that arm.
+
+## Head-to-head v1 — full grid result (recorded 2026-09-17, while v2 seeds)
+
+210/210 cells, 0 errors, 360/360 seeding sessions. Replacement scenarios, pass by the Gate 3 oracle (27
+cells per arm): `off` 1/27, `agentmemory` 12/27, `agentmemory-inject` 1/27, `claude-mem` 26/27, `muninn`
+(frozen `973ef470`, the confirmatory arm of the original registration) 12/27, `muninn-fixed` 13/27,
+`muninn-latest` (`1356069a`) 27/27. Revocation scenario: 3/3 in every arm except `muninn` 1/3.
+Secondary (not the registered outcome): retired value anywhere in the diff — off 1, agentmemory 3, inject 2,
+claude-mem 4, muninn 4, muninn-fixed 5, muninn-latest 2 (of 27).
+
+Fisher two-sided, Holm within each Muninn arm's family:
+- `muninn` (confirmatory): vs claude-mem 12/27 vs 26/27, p = 4.6 × 10⁻⁵ (Holm 1.4 × 10⁻⁴) — **claude-mem is
+  better than Muninn as registered on 2026-09-14**; vs agentmemory p = 1; vs inject Holm 0.0018.
+- `muninn-latest`: vs claude-mem 27/27 vs 26/27, Δ +0.037, p = 1 — a tie; vs agentmemory Holm 8.0 × 10⁻⁶;
+  vs inject Holm 8.6 × 10⁻¹⁴.
+
+**How to read it.** `muninn-latest` is the product of loops 1–5, and those loops checked themselves on this
+grid's seed wording (loop 5: 10/10 on the seed wording through the mechanism evaluator), so v1 is not
+held-out for that arm. The maintainer's stopping rule is met on v1 (tie), and is read for public use only
+on v2, whose seeding text no loop has seen. Raw data `results/h2h-v1/`. The account e-mail that Claude Code
+injects into every session's `session_context` was replaced by `[account e-mail redacted]` in the copied
+transcripts (here and in `results/h2h-pilot/`); nothing else was changed. `run_h2h.py` gained the additive
+`--seed-phrasings` option while this grid ran; the running process had loaded the earlier file (its hash is
+in `FROZEN.jsonl`).
