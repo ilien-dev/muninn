@@ -8,6 +8,11 @@
   as changed. The MIT declaration was never published: the repository was private, and its history
   was rewritten before the first public release so that no commit carries it
   (`crates/muninn-bench/experiment/HISTORY-REWRITE.md`).
+- **Head-to-head v2 (held-out wording, three runs, 27 replacement cells per arm).** 0.2.0: 17/27;
+  claude-mem 14/27 (tie, Holm p = 0.58); agentmemory 9/27 (tie, Holm p = 0.11); agentmemory with
+  injection 1/27; no memory 0/27. Secondary figure: 0.2.0's answers mention the retired value in 11/27
+  cells, claude-mem's in 2/27.
+- **Logo** replaced: raven in a broken ring, with light, dark, symbol and social-preview cuts.
 - **Contributor License Agreement** (`CLA.md`, `CONTRIBUTING.md`), checked on every pull request
   by `.github/workflows/cla.yml`.
 

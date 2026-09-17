@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/muninn-dark.png">
-    <img src="assets/muninn-light.png" alt="Muninn: What still holds, returns." width="480">
+    <img src="assets/muninn-light.png" alt="Muninn" width="480">
   </picture>
 </p>
 
@@ -49,13 +49,12 @@ Some results were weaker, and they are published too. The same fact test on Code
 against 5 of 25, which is not a clear difference. Two features did not help and were removed or
 turned off by default.
 
-The comparison with other memory tools (claude-mem and agentmemory) is still running. In it,
-every tool learns the same decisions from the same real sessions, and nobody tells it which
-decisions were replaced. Version 0.1.0 lost that comparison to claude-mem (12 of 27 against
-26 of 27). Version 0.2.0 tied it (27 of 27 against 26 of 27) on the same sessions, but those
-sessions were used while improving it, so that result is not taken as proof. A second round with
-new wording that no version has seen is the one that counts, and its results will be published
-whatever they are.
+The comparison with other memory tools (claude-mem and agentmemory) gives every tool the same
+decisions from the same real sessions, and nobody tells it which decisions were replaced.
+Version 0.1.0 lost it to claude-mem (12 of 27 against 26 of 27). Version 0.2.0 was then tested on
+new wording that no version had seen: it got 17 of 27, claude-mem 14 of 27 and agentmemory 9 of 27.
+That difference is too small to call Muninn better, so it counts as a tie with both. Muninn's
+answers also mentioned the replaced value more often (11 of 27 against 2 of 27 for claude-mem).
 
 The full list of what is claimed, what is not, and the limits of each result is in
 [`docs/claims.md`](docs/claims.md). The commands to reproduce every number are in
