@@ -1213,3 +1213,16 @@ Spanish 2/10. Loop 4 (`cd6fe32a`): retired 20/30, kept 29/30 (one current statem
 current-only English 8/20, Spanish 2/10. The first loop whose gain holds on unseen phrasings; the served
 side remains the weak part. `loop4/mechanism_*.json`. (The loop-3 binary was not re-run here: its pinned
 copy lives only inside the head-to-head arm.)
+
+## Improvement loop 5 frozen (recorded 2026-09-17, binary `1356069a691304c9…`, before its held-out set is generated)
+
+**Change.** Generic reconsideration and withdrawal cues (on second thought, reconsider, on reflection,
+changing my mind, withdraw, never mind, pensándolo bien, …); a word in a value slot ("use X", "go with X",
+"switch to X") counts as a name; a message whose change cue and named value sit in different sentences, or
+that withdraws what came before, becomes one candidate for the whole message; an implicit (anaphoric)
+change fires only when its name is new to the store, or when it withdraws with no name. Development data
+(adjacent): seed wording 10/10, loop-2 dev 7/8, loop-1 set current-only 22/60 (15/60 in loop 4), loop-2
+set 11/30 (8/30), loop-3 set 13/30 (11/30), loop-4 set 13/30 (10/30); retired 41/60, 21/30, 22/30, 24/30;
+change kept 60/60, 30/30, 29/30, 29/30. 82 tests, clippy, perf --strict green.
+
+**Held-out.** Ten new topics (`loop5/scenarios.json`), the unchanged prompt, generated after this commit.

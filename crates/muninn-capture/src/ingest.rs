@@ -173,7 +173,27 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
     }
     // loop 3: a short change that names no topic of its own and introduces a new name refers to
     // the most recent earlier short user statement that named something, within three hours
-    if change && !matched_any && !new_names.is_empty() && crate::extract::is_anaphoric(&new_text) {
+    // loop 5: the named value must be new to the store (a name already recorded is a
+    // follow-up about it, not a replacement), or the message must withdraw what came before
+    let novel: Vec<&String> = new_names
+        .iter()
+        .filter(|w| {
+            let like = format!("%{w}%");
+            tx.query_row(
+                "SELECT count(*) FROM record WHERE id<>?1 AND (transcript_ref IS NULL OR transcript_ref<>?2) AND lower(body) LIKE ?3",
+                rusqlite::params![new_id, own_ref.clone().unwrap_or_default(), like],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(1)
+                == 0
+        })
+        .collect();
+    let withdrawal = crate::extract::is_withdrawal(&new_text);
+    if change
+        && !matched_any
+        && (!novel.is_empty() || (withdrawal && new_names.is_empty()))
+        && crate::extract::is_anaphoric(&new_text)
+    {
         let prev: Option<(i64, String)> = tx
             .query_row(
                 "SELECT id, body FROM record WHERE invalid=0 AND kind='episode' AND length(body) <= 700 \
@@ -192,8 +212,8 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
                 .unwrap_or("");
             let old_names = crate::extract::name_tokens(user_part);
             if !user_part.contains('?')
-                && !old_names.is_empty()
-                && new_names.iter().any(|w| !old_names.contains(w))
+                && (withdrawal && new_names.is_empty()
+                    || (!old_names.is_empty() && novel.iter().any(|w| !old_names.contains(w))))
             {
                 n += tx.execute(
                     "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 WHERE id=?2 AND invalid=0",
