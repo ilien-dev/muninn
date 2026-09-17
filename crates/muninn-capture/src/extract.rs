@@ -181,7 +181,7 @@ fn change_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch|\bswap|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bahora\b|\bcambi|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz|\bsustitu|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
+            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch|\bswap|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bon second thoughts?\b|\bsecond thoughts\b|\breconsider|\bon reflection\b|\brethink|\bchang(?:ed|ing) (?:my|our) minds?\b|\bchanging course\b|\bwithdraw|\bretract|\bnever ?mind\b|\bforget (?:it|that|this|about)\b|\bcancel\b|\bpensándolo bien\b|\bpensandolo bien\b|\bme retracto\b|\bolvida (?:eso|lo)\b|\bahora\b|\bcambi|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz|\bsustitu|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
         )
         .unwrap()
     })
@@ -444,6 +444,7 @@ pub fn topic_words(s: &str) -> Vec<String> {
 /// sentence. Lowercased.
 pub fn name_tokens(s: &str) -> Vec<String> {
     let mut out = Vec::new();
+    let mut prev = String::new();
     for (i, raw) in s
         .split(|c: char| {
             c.is_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '"' | '`' | '!' | '?')
@@ -452,6 +453,7 @@ pub fn name_tokens(s: &str) -> Vec<String> {
     {
         let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
         if w.chars().count() < 2 {
+            prev = w.to_lowercase();
             continue;
         }
         let mut chars = w.chars();
@@ -461,7 +463,15 @@ pub fn name_tokens(s: &str) -> Vec<String> {
         let digit = w.chars().any(|c| c.is_ascii_digit()) && w.chars().any(|c| c.is_alphabetic());
         let joined = w.contains('.') || w.contains('-') || w.contains('_');
         let cap_mid = first.is_uppercase() && i > 0 && !STOP.contains(&w.to_lowercase().as_str());
-        if inner_cap || digit || joined || cap_mid {
+        let slot = i > 0
+            && matches!(
+                prev.as_str(),
+                "use" | "using" | "with" | "to" | "adopt" | "try" | "usar" | "usa" | "con" | "a"
+            )
+            && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && !STOP.contains(&w.to_lowercase().as_str());
+        prev = w.to_lowercase();
+        if inner_cap || digit || joined || cap_mid || slot {
             let l = w.to_lowercase();
             if !out.contains(&l) {
                 out.push(l);
@@ -469,6 +479,15 @@ pub fn name_tokens(s: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// A message that takes back what was said before, with nothing in its place.
+pub fn is_withdrawal(s: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    let r = R.get_or_init(|| {
+        Regex::new(r"(?i)\b(withdraw|retract|never ?mind|forget (?:it|that|this|about)|drop (?:it|that|this|the idea)|scrap (?:it|that|this)|remove (?:it|that|this)|cancel (?:it|that|this)|not (?:do|doing) (?:it|that|this)|no (?:vamos|lo hagas)|me retracto|olvida (?:eso|lo)|mejor no|quita(?:lo|r) (?:eso)?)\b").unwrap()
+    });
+    r.is_match(s)
 }
 
 /// A short change that names no topic of its own ("actually switch to ECharts", "mejor
@@ -533,12 +552,15 @@ pub fn replaces(old: &[String], new: &[String], announces_change: bool) -> bool 
 }
 
 fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
+    let before = out.len();
+    let mut sentence_change = false;
     for sent in split_sentences(up) {
         let n = sent.chars().count();
         if !(6..=300).contains(&n) || sent.contains('?') {
             continue;
         }
         let change = change_re().is_match(sent);
+        sentence_change |= change && !name_tokens(sent).is_empty();
         if !(change || decision_re().is_match(sent) || choice_re().is_match(sent)) {
             continue;
         }
@@ -564,6 +586,30 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
             turn_index: t.index,
             end_offset: t.end_offset,
         });
+    }
+    // loop 5: a message whose change cue and named value sit in different sentences ("I think
+    // Atlas is the better choice. Let's switch to that instead."), or that withdraws what came
+    // before, is one candidate for the whole message
+    let n = up.chars().count();
+    if !sentence_change && (8..=700).contains(&n) && !up.trim_end().ends_with('?') {
+        let names = name_tokens(up);
+        let msg_change = change_re().is_match(up);
+        if msg_change && (!names.is_empty() || is_withdrawal(up)) {
+            let words = topic_words(up);
+            let object = truncate_chars(up, 300).to_string();
+            out.truncate(before);
+            out.push(Candidate {
+                kind: "decision",
+                subject: format!("said:change:{}", words.join(" ")),
+                relation: "user_decision".into(),
+                object: redact(&object),
+                body: redact(&format!("user: {}\n", object)),
+                origin: "user_said",
+                anchor_path: None,
+                turn_index: t.index,
+                end_offset: t.end_offset,
+            });
+        }
     }
 }
 
