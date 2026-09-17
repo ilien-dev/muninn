@@ -1246,3 +1246,20 @@ inherited them; after 900 s the harness killed the script and its cleanup stoppe
 now captures arm output through files, and a failed seeding of one arm no longer stops the other arms (its
 cells are skipped and listed). Muninn's and claude-mem's completed seeding snapshots are reused; nothing
 about any tool changed. The pilot resumes.
+
+## Head-to-head pilot result, and the full grid (recorded 2026-09-17, before the full grid's first session)
+
+**Pilot (one run, not a claim).** Replacement scenarios (nine per arm; the tenth scenario is a revocation
+without replacement), pass by the Gate 3 oracle: `muninn-loop3` 9/9, `claude-mem` 7/9, `agentmemory` 2/9,
+`agentmemory-inject` 1/9, `off` 1/9. Fisher two-sided: `muninn-loop3` vs `agentmemory` p = 0.0023 (Holm
+0.0045), vs `agentmemory-inject` p = 0.0004, vs `claude-mem` p = 0.47. Revocation scenario 1/1 in every arm.
+`analyze_h2h.py`'s "unsafe" counts the retired value anywhere in the diff, the oracle only in the policy
+file; the two can disagree and the oracle is the pre-registered outcome. Raw data `results/h2h-pilot/`.
+
+**Full grid (v1, three runs).** Arms: `off`, `muninn` (frozen `973ef470`, as registered), `muninn-fixed`
+(`fdcb4606`, as amended), `muninn-latest` = loop 5 with the capture fix (`1356069a`, the current build),
+`claude-mem`, `agentmemory`, `agentmemory-inject`. Everything else as pre-registered. The confirmatory
+comparison named in the original registration is the frozen `muninn` arm; the comparison that decides the
+maintainer's stopping rule is `muninn-latest` against the best competitor arm (tie or better on
+replacement-scenario passes). Loop-3 is not re-run (superseded by loop 5, which kept its seed-wording
+result 10/10). Afterwards: head-to-head v2 with held-out phrasings, pre-registered separately.
