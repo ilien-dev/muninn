@@ -32,3 +32,30 @@ Codex fix) are therefore publicly timestamped only from the rewrite date; their 
 the results remains visible in the commit sequence, which is not a proof.
 
 Backup bundle (private, not in the repository): sha256 `7f5d374db89e96e94e318a3aba50699e557e7291cabb7f86bce176c118bbb31c`.
+
+# History rewrite of 2026-09-17
+
+Before the repository was first pushed, the maintainer's e-mail address was removed from the
+head-to-head pilot transcripts (`results/h2h-pilot/logs/`): Claude Code writes the account's
+`session_context` into every session transcript, and the harness copies transcripts. The files had
+already been redacted in the working tree (commit "Head-to-head v1 full grid"); `git filter-repo
+--replace-text` then replaced the address with `[account e-mail redacted]` in every commit. Checked:
+141 commits before and after with identical messages, an identical tree at HEAD, 0 stored objects
+containing the address. Five commits changed (`history-rewrite-map-2026-09-17.json`), all after the
+pilot commit `a5e772a` → `b8ded74`.
+
+The backup bundle was not written before the rewrite (the command failed on a bad flag and the rewrite
+ran anyway). The original commits were rebuilt by applying the inverse replacement to a clone: the
+four rewritten commits that held the address came back with their original hashes
+(`a5e772a`, `456ab60`, `c72c3fd`, `931e1c1`), and those objects are kept, private, in a bundle
+(sha256 `b28d87525cdd8481f3ef09654af67b9f3d2799acaf826e6e1dd8577bdcec240d`)
+that can be shown to a reviewer.
+
+| proof | commit it names | after the rewrite |
+|---|---|---|
+| `h2h-full-a5e772a.txt.ots` | `a5e772a` (full v1 grid registration) | now `b8ded74`; re-stamped in `rewrite-2026-09-17.txt.ots` |
+| `h2h-v2-c72c3fd.txt.ots` | `c72c3fd` (v2 registration) | now `7b0d376`; re-stamped in `rewrite-2026-09-17.txt.ots` |
+
+Both old proofs were still waiting for Bitcoin confirmation at the rewrite; once confirmed they prove the
+old hashes existed at that time, and the bundle shows those hashes differ from the new ones only by the
+address.
