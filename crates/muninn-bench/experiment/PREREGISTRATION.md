@@ -1103,3 +1103,27 @@ once and passed the development set on the first run.
 replacement-scenario pass count is at least the best competitor's (tie or better), or when a change
 would need a model in the read or write path. Every loop iteration is a new commit recorded here before
 it is measured, and every iteration's result is published, including those that do not reach the rule.
+
+## Improvement loop 1 — result (2026-09-17)
+
+Mechanism evaluation on the held-out phrasings (60 scenario-styles, no model): identical to the
+binary before the change — the earlier statement retired in 0/60, the change kept in 60/60, the
+topic query served the current value without the old one in 5/60 (old value served in 39/60).
+Aggregate count only, read to check the instrument: the decision forms matched 4 of 60 messages in
+the terse store. The loop-1 extractor does not generalise to how people phrase decisions.
+`loop1/mechanism_before.json`, `loop1/mechanism_loop1.json`. The loop-1 held-out set has now been
+used and is not a held-out set for later loops (it stays as a secondary check, labelled as such).
+
+## Improvement loop 2 — change cue on the new message, topic overlap with any earlier short user statement (recorded 2026-09-17, before development starts)
+
+**Idea.** Do not require the *earlier* message to be recognised as a decision. A new user message that
+carries a change cue (a broad, generic list: switch, swap, instead, now, no longer, replace, move/migrate
+to, drop, ditch, scratch that, actually, go back to, cambia, ahora, en vez de, ya no, reemplaza, …) and
+shares at least two content words with an earlier short user statement retires that statement (its
+episode and any decision record from it). The new message is itself kept as a `user_decision` record.
+
+**Method.** A new development set, written for this loop (topics, phrasings and distractors disjoint from
+Gate 3, from the loop-1 set and from each other), including terse imperatives, chatty messages and
+Spanish. After the loop-2 freeze commit, a new held-out set (new topics, same fixed prompt, a different
+generation run) is generated and committed before the mechanism evaluation; the loop-1 set is reported
+beside it as a secondary check. Same metrics as loop 1.
