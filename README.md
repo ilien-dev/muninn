@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-# muninn
+# Muninn
 
 Muninn gives AI coding assistants (Claude Code and Codex) a memory that stays up to date.
 
@@ -101,7 +101,7 @@ The code is a Rust workspace. The storage layer is SQLite with full-text search.
 
 ```
 crates/muninn-core      storage, search, filtering
-crates/muninn-cli       the muninn program and its hooks
+crates/muninn-cli       the Muninn program and its hooks
 crates/muninn-capture   reads conversations and git history
 crates/muninn-compile   turns written rules into permission settings
 crates/muninn-embed     optional local similarity search (never used while answering the assistant)
