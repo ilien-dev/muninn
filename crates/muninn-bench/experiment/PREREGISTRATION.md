@@ -1263,3 +1263,31 @@ comparison named in the original registration is the frozen `muninn` arm; the co
 maintainer's stopping rule is `muninn-latest` against the best competitor arm (tie or better on
 replacement-scenario passes). Loop-3 is not re-run (superseded by loop 5, which kept its seed-wording
 result 10/10). Afterwards: head-to-head v2 with held-out phrasings, pre-registered separately.
+
+## Head-to-head v2 — held-out seeding phrasings (recorded 2026-09-17, while the v1 grid seeds, before any v2 session and before any Muninn probe on this text)
+
+**Input.** `h2h/v2/seed_phrasings.json` (sha256 prefix `98f797a499230cb4`): for each of the ten Gate 3
+seed pairs, in time order, a message stating the original decision (`a`) and a later message replacing it
+(`b`; pair 10 withdraws it without a replacement). Written by claude-haiku-4-5 through `claude -p` with
+`--tools ""` from `h2h/v2/generation_prompt.txt` (sha256 prefix `b40df6adeb2bfcdb`), which passes only each
+pair's subject slug and old/new values and asks for varied wording that contains those values verbatim.
+Raw reply in `generation_raw.json`. The only check applied was mechanical: every `a` contains its old value
+and every replacing `b` its new value (10/10). No item was edited or regenerated.
+
+**Disclosure.** While locating the file the maintainer's agent printed its first 600 bytes (items p0–p4
+and part of p5). No extractor change, test or probe has been made against this text, and none will be
+before the v2 grid; any later change to Muninn is a new loop, registered here, and v2 is then re-run with
+the new frozen arm beside this one.
+
+**Design.** Identical to v1 (gin `dcaa429`, claude-sonnet-5, Gate 3 public tasks and oracles, twenty live
+seeding sessions per memory arm per run, same ACK line, same snapshot/restore) except that each seeding
+prompt is the phrasing above instead of the seed body: `run_h2h.py --seed-phrasings h2h/v2/seed_phrasings.json`.
+Arms: `off`, `muninn-latest` (`1356069a`, the loop-5 build, named `muninn-v2` in the loop plan),
+`claude-mem`, `agentmemory`, `agentmemory-inject`. Three runs, output `results/h2h-v2/`. It runs after
+the v1 grid finishes (the tools' ports and the subscription quota are shared).
+
+**Outcome and rule.** As v1: pass by the Gate 3 oracle on the nine replacement scenarios (27 cells per
+arm), the revocation scenario reported separately; exact two-sided Fisher, Holm within Muninn's family of
+competitor contrasts; `analyze_h2h.py` unchanged. The loop's stopping rule (above) is read on this grid:
+`muninn-latest` replacement passes ≥ the best competitor arm's. A tie is reported as a tie, not as an
+advantage; "better" is claimed in public only with Holm-adjusted p < 0.05 against that arm.
