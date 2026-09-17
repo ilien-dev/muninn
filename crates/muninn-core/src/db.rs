@@ -121,6 +121,20 @@ impl Db {
         Ok(())
     }
 
+    /// Whether F1's serving gate (`served_record`, `schema.sql`) exists. A store written by
+    /// an older binary has not got it yet; `migrate()` adds it on the next write open, and
+    /// until then every serving query fails to prepare — silence, never a retired record.
+    pub fn has_served_view(&self) -> bool {
+        self.conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='view' AND name='served_record'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|n| n == 1)
+            .unwrap_or(false)
+    }
+
     pub fn schema_version(&self) -> Result<i64> {
         let has_meta: i64 = self.conn.query_row(
             "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='meta'",

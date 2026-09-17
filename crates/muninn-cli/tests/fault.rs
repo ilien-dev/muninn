@@ -600,3 +600,137 @@ fn s15_huge_single_turn() {
         );
     }
 }
+
+// ---- F1: the serving gate, asserted on real hook stdout ----
+
+/// A distinctive value that only ever appears in the retired record. If it turns up in a
+/// hook's stdout, F1 leaked: no accidental match is possible.
+const OLD_VALUE: &str = "ZQXOLDCODEC";
+const NEW_VALUE: &str = "ZQXNEWCODEC";
+
+/// Import one superseded pair on a shared subject: the old record arrives already retired
+/// (`muninn import` honours `invalid`), the new one active. Both carry an `event` cue on
+/// `session_start`, so the cue path and the lexical path both have something to find.
+fn seed_replaced_pair(root: &Path) {
+    let f = root.join("pair.jsonl");
+    let old = serde_json::json!({
+        "kind": "decision", "subject": "policy.faultcodec", "relation": "is",
+        "object": OLD_VALUE, "origin": "user_said", "session_id": "seed-f1",
+        "body": format!("user: the faultcodec transport codec is {OLD_VALUE}.\n"),
+        "created_at": 1789100000000i64, "invalid": true, "invalid_reason": "superseded",
+        "cues": [{"kind": "event", "key": "session_start", "grp": 0}],
+    });
+    let new = serde_json::json!({
+        "kind": "decision", "subject": "policy.faultcodec", "relation": "is",
+        "object": NEW_VALUE, "origin": "user_said", "session_id": "seed-f1",
+        "body": format!("user: change of plan — the faultcodec transport codec is {NEW_VALUE}.\n"),
+        "created_at": 1789101800000i64, "invalid": false,
+        "cues": [{"kind": "event", "key": "session_start", "grp": 0}],
+    });
+    std::fs::write(&f, format!("{old}\n{new}\n")).unwrap();
+    let out = Command::new(BIN)
+        .args([
+            "--cwd",
+            root.to_str().unwrap(),
+            "import",
+            f.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "import failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        records(root, "SELECT count(*) FROM record WHERE invalid=1"),
+        1,
+        "the seed must arrive with exactly one retired record"
+    );
+}
+
+/// Every hook event that can carry record text, driven with a prompt that names the
+/// retired record's own words. Returns the concatenated stdout.
+fn drive_serving_hooks(root: &Path) -> String {
+    let prompt = "what is the faultcodec transport codec we decided on?";
+    let mut all = String::new();
+    for (ev, extra) in [
+        ("SessionStart", serde_json::json!({})),
+        ("UserPromptSubmit", serde_json::json!({ "prompt": prompt })),
+        (
+            "PostToolUse",
+            serde_json::json!({ "tool_name": "Read", "tool_input": {"file_path": "src/faultcodec.rs"} }),
+        ),
+        (
+            "PostCompact",
+            serde_json::json!({ "compact_summary": prompt }),
+        ),
+    ] {
+        let r = hook(root, ev, extra);
+        assert_clean_exit(&r, &format!("f1 {ev}"));
+        all.push_str(&r.stdout);
+    }
+    all
+}
+
+// 16. A retired record's text never reaches a hook's stdout, and the record that replaced
+//     it does. The second half matters: without it the assertion would pass on silence.
+#[test]
+fn s16_retired_never_reaches_stdout() {
+    for _ in 0..reps() {
+        let p = init_project();
+        seed_replaced_pair(p.path());
+        let out = drive_serving_hooks(p.path());
+        assert!(
+            !out.contains(OLD_VALUE),
+            "retired value served: {}",
+            out.replace('\n', " ")
+        );
+        assert!(
+            out.contains(NEW_VALUE),
+            "the replacement was never delivered, so the test proves nothing: {}",
+            out.replace('\n', " ")
+        );
+    }
+}
+
+// 17. The same property under the faults of scenarios 2, 3, 8 and 10: whatever breaks, the
+//     retired value stays out. A broken store may serve nothing; it may not serve that.
+#[test]
+fn s17_retired_never_reaches_stdout_under_fault() {
+    for _ in 0..reps() {
+        // unknown schema version (s10): the binary must not read a store it cannot vouch for
+        let p = init_project();
+        seed_replaced_pair(p.path());
+        {
+            let c = rusqlite::Connection::open(db_path(p.path())).unwrap();
+            c.execute("UPDATE meta SET value='99' WHERE key='schema_version'", [])
+                .unwrap();
+        }
+        let out = drive_serving_hooks(p.path());
+        assert!(!out.contains(OLD_VALUE), "schema-too-new: {out}");
+
+        // clock moved backwards (s8)
+        let p = init_project();
+        seed_replaced_pair(p.path());
+        let r = hook_with(
+            p.path(),
+            "UserPromptSubmit",
+            &payload(
+                p.path(),
+                serde_json::json!({ "prompt": "which faultcodec transport codec?" }),
+            ),
+            &[("MUNINN_FAKE_NOW_MS", "1000")],
+            Stdio::piped(),
+        );
+        assert_clean_exit(&r, "clock-back UserPromptSubmit");
+        assert!(!r.stdout.contains(OLD_VALUE), "clock back: {}", r.stdout);
+
+        // corrupt store (s2): silence is fine, the retired value is not
+        let p = init_project();
+        seed_replaced_pair(p.path());
+        std::fs::write(db_path(p.path()), b"not a database, but long enough\0\0\0").unwrap();
+        let out = drive_serving_hooks(p.path());
+        assert!(!out.contains(OLD_VALUE), "corrupt store: {out}");
+    }
+}

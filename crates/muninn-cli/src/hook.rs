@@ -294,23 +294,12 @@ fn user_prompt(
             return Ok(None);
         }
         let seed = (blake3::hash(prompt.as_bytes()).as_bytes()[0] as i64) % 97;
-        let mut stmt = cdb.conn.prepare("SELECT id, kind, subject, object, body, origin, trust, created_at, session_id FROM record WHERE invalid=0 AND kind='episode' ORDER BY (id + ?1) % 101, id LIMIT 40")?;
+        let mut stmt = cdb.conn.prepare(&format!(
+            "SELECT {} FROM served_record r WHERE r.kind='episode' ORDER BY (r.id + ?1) % 101, r.id LIMIT 40",
+            recall::SERVED_COLS
+        ))?;
         let hits: Vec<recall::Hit> = stmt
-            .query_map([seed], |r| {
-                Ok(recall::Hit {
-                    id: r.get(0)?,
-                    kind: r.get(1)?,
-                    subject: r.get(2)?,
-                    object: r.get(3)?,
-                    body: r.get(4)?,
-                    origin: r.get(5)?,
-                    trust: r.get(6)?,
-                    created_at: r.get(7)?,
-                    session_id: r.get(8)?,
-                    score: 0.0,
-                    transcript_ref: None,
-                })
-            })?
+            .query_map([seed], |r| recall::Hit::from_served_row(r, 0.0))?
             .filter_map(|r| r.ok())
             .collect();
         let d = recall::render(&hits, target, &[]);
@@ -641,9 +630,9 @@ fn pre_compact(
     session: &str,
 ) -> muninn_core::Result<Option<serde_json::Value>> {
     let db = Db::open(&paths.db_path(), Mode::ReadOnly)?;
-    let rows = muninn_core::project::load(
+    let rows = muninn_core::project::load_served(
         &db,
-        "invalid = 0 AND kind IN ('invariant','correction') ORDER BY created_at DESC LIMIT 80",
+        "kind IN ('invariant','correction') ORDER BY created_at DESC LIMIT 80",
     )?;
     let epoch = crate::delivery::epoch(paths, session);
     let _ = std::fs::create_dir_all(paths.compact_dir());

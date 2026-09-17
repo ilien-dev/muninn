@@ -422,9 +422,18 @@ pub fn evaluate(db: &Db, ctx: &TurnContext, exclude: &HashSet<i64>) -> Result<Ve
     let mut st_grp = db
         .conn
         .prepare_cached("SELECT kind, key FROM cue WHERE record_id = ?1 AND grp = ?2")?;
+    // a `cue` row outlives the retirement of its record, so candidates are checked against
+    // the serving view here: without this, retired ids reach the delivery log and the
+    // fire_ledger before `hits_for` drops them, and `served_invalid` measures the wrong thing
+    let mut st_served = db
+        .conn
+        .prepare_cached("SELECT 1 FROM served_record WHERE id = ?1")?;
     let mut out: HashMap<i64, Vec<String>> = HashMap::new();
     for ((rid, grp), reasons) in matched {
         if exclude.contains(&rid) {
+            continue;
+        }
+        if st_served.query_row([rid], |_| Ok(())).is_err() {
             continue;
         }
         let cues: Vec<(String, String)> = st_grp
@@ -468,26 +477,16 @@ fn priority(kind: &str) -> u8 {
     }
 }
 
-/// Load active records by id as hits (score = 0), for rendering.
+/// Load records by id as hits (score = 0), for rendering. Reads `served_record`, so an id
+/// whose record has been retired simply yields nothing.
 pub fn hits_for(db: &Db, ids: &[i64]) -> Result<Vec<Hit>> {
     let mut out = Vec::new();
-    let mut st = db.conn.prepare_cached("SELECT id, kind, subject, object, body, origin, trust, created_at, session_id, transcript_ref FROM record WHERE id = ?1 AND invalid = 0")?;
+    let mut st = db.conn.prepare_cached(&format!(
+        "SELECT {}, r.transcript_ref FROM served_record r WHERE r.id = ?1",
+        crate::recall::SERVED_COLS
+    ))?;
     for id in ids {
-        if let Ok(h) = st.query_row([id], |r| {
-            Ok(Hit {
-                id: r.get(0)?,
-                kind: r.get(1)?,
-                subject: r.get(2)?,
-                object: r.get(3)?,
-                body: r.get(4)?,
-                origin: r.get(5)?,
-                trust: r.get(6)?,
-                created_at: r.get(7)?,
-                session_id: r.get(8)?,
-                score: 0.0,
-                transcript_ref: r.get(9)?,
-            })
-        }) {
+        if let Ok(h) = st.query_row([id], |r| Hit::from_served_row(r, 0.0)) {
             out.push(h);
         }
     }

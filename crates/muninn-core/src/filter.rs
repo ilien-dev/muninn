@@ -2,6 +2,26 @@
 //! active or retired; retired rows stay on disk, leave the index, and are never served
 //! unless asked for with `--all`. Three deterministic triggers: supersession (write
 //! path), anchor change (here), revert (git capture). Plus an explicit revocation.
+//!
+//! **Where the filter lives.** Not in this module: in the `served_record` view
+//! (`schema.sql`) and in `recall::Hit`, whose only constructor reads from it. A serving
+//! path cannot express a retired record, so the guarantee does not depend on any query
+//! remembering `WHERE invalid = 0`. `crates/muninn-cli/tests/fault.rs` (s16, s17) asserts
+//! it end to end against real hook stdout.
+//!
+//! The paths that read retired rows on purpose, and must keep doing so:
+//!
+//! - `muninn why --all` and `muninn export --all` — a person asked, and the row is printed
+//!   with `· RETIRED (reason)`;
+//! - `lineage` below — ids and `invalid_reason` only, never a body, so `muninn why` can
+//!   show what replaced what;
+//! - `project::load_all` — the Markdown mirror under `.muninn/records/`, which keeps every
+//!   record with `invalid:` in its frontmatter (`MUNINN_NO_PROJECT` switches it off);
+//! - the write path: supersession and dedup in `muninn-capture`, `maintain`, and the
+//!   anchor validator here;
+//! - `capture::inherit_topic`, which copies topic words — never names or values — from a
+//!   retired record onto the one that replaced it, so the replacement is findable by the
+//!   words it omits.
 
 use crate::db::now_ms;
 use crate::paths::ProjectPaths;
@@ -198,5 +218,113 @@ mod tests {
         assert!(revoke(&db, d, "user said so").unwrap());
         assert!(conflicts_of(&db, c).unwrap().is_empty());
         assert!(!revoke(&db, d, "again").unwrap());
+    }
+
+    /// Every file that may read `record` directly, with the reason. A serving path is not on
+    /// this list: it reads `served_record`, so it cannot express a retired record (F1).
+    /// Adding a file here is a deliberate act — say why, or point the query at the view.
+    const MAY_READ_RECORD: &[(&str, &str)] = &[
+        (
+            "muninn-core/src/db.rs",
+            "schema and the FTS-follows-invalid test",
+        ),
+        (
+            "muninn-core/src/filter.rs",
+            "writes the invalid bit; lineage walks retired rows",
+        ),
+        ("muninn-core/src/health.rs", "counts, never text"),
+        (
+            "muninn-core/src/project.rs",
+            "load_all: the Markdown mirror and export --all",
+        ),
+        (
+            "muninn-core/src/cue.rs",
+            "derive_missing: ids of active records, no body",
+        ),
+        ("muninn-core/src/recall.rs", "the IDF denominator: a count"),
+        (
+            "muninn-embed/src/lib.rs",
+            "write path: backfill, dedup and variant retirement",
+        ),
+        (
+            "muninn-capture/src/ingest.rs",
+            "write path: dedup, supersession, topic inheritance",
+        ),
+        ("muninn-cli/src/main.rs", "status counters"),
+        ("muninn-cli/src/maintain.rs", "write path: revert detection"),
+        (
+            "muninn-cli/src/compile_cmd.rs",
+            "one rationale id, never expanded to text",
+        ),
+        (
+            "muninn-why/src/lib.rs",
+            "muninn why --all, which prints RETIRED rows on purpose",
+        ),
+        ("muninn-bench/src/main.rs", "offline harness"),
+        (
+            "muninn-bench/src/experiment.rs",
+            "offline harness; audits retired deliveries",
+        ),
+    ];
+
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if p.file_name()
+                    .is_some_and(|n| n == "target" || n == "fixtures")
+                {
+                    continue;
+                }
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+
+    /// A new query against `record` in a file that is not on the list fails here rather
+    /// than in production. Crude on purpose: it does not need to be clever to be useful.
+    #[test]
+    fn no_undeclared_reads_of_record() {
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let mut files = Vec::new();
+        walk(&crates, &mut files);
+        assert!(files.len() > 20, "found no sources to scan");
+        let mut offenders: Vec<String> = Vec::new();
+        for f in files {
+            let rel = f
+                .strip_prefix(&crates)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if rel.contains("/tests/") || MAY_READ_RECORD.iter().any(|(a, _)| rel == *a) {
+                continue;
+            }
+            let src = std::fs::read_to_string(&f).unwrap_or_default();
+            for pat in [
+                "FROM record ",
+                "JOIN record ",
+                "FROM record\\",
+                "JOIN record\\",
+            ] {
+                if src.contains(pat) {
+                    offenders.push(format!("{rel}: {pat:?}"));
+                    break;
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "these files read `record` directly but are not declared in MAY_READ_RECORD; \
+             a serving path must read `served_record` instead:\n  {}",
+            offenders.join("\n  ")
+        );
     }
 }
