@@ -1,13 +1,8 @@
 /target
-/.muninn/muninn.db*
-/.muninn/log/
-/.muninn/compact/
+/.muninn/
 *.jsonl.folding
+__pycache__/
 plugin/bin/
 crates/muninn-bench/experiment/out/
-.muninn/muninn.db*
-.muninn/log/
-.muninn/compact/
 crates/muninn-bench/experiment/out-*/
 crates/muninn-bench/experiment/run-gate2.log
-.muninn/init.json
