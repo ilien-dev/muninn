@@ -219,32 +219,42 @@ Tres disparadores, todos deterministas, ninguno por similitud:
    nuevo**: se retira `[K11]`.
 3. **Revert detectado:** el commit enlazado fue revertido → `deadend` se mantiene,
    `decision` pasa a `invalid=1, reason=reverted`.
-4. **El código dejó de usar el valor:** un commit sacó del código un valor que una decisión
-   activa nombraba, y ningún archivo versionado lo contiene ya → esa decisión se retira y
-   apunta al registro que las líneas añadidas del mismo commit corroboran, que hereda sus
-   palabras de tema (nunca el valor retirado). No se inventa nada desde el diff: una palabra
-   borrada solo cuenta si un registro ya la nombraba, y el reemplazo es siempre un registro
-   que ya existe. Una decisión que nunca tocó el código (una cadencia de release, una política
-   de revisión) no se ve afectada, porque su valor no está en el diff.
+4. **El código dejó de usar el valor.** `maintain` lee los diffs de los commits que captura.
+   Dos evidencias, cualquiera basta:
+   - **Intercambio:** un hunk donde una línea se convirtió en otra, con el valor de una
+     decisión activa en la primera y no en la segunda. El hunk dice qué reemplazó a qué, así
+     que el resto del repositorio no tiene que estar de acuerdo — un CHANGELOG mantiene viva
+     una palabra mucho después de que el proyecto deje de usarla. Medido: con el valor viejo
+     en un archivo que ningún commit toca, la regla de desaparición sola no retira **nada**.
+   - **Desaparición:** un commit sacó la palabra y ningún archivo versionado la contiene ya.
+     Evidencia más débil sobre un hecho más fuerte; alcanza a un valor borrado, no reemplazado.
+     Acotada a 32 consultas por ejecución (cada una es un `git grep`, 36 ms aquí).
+   Una cantidad se lee como un tercer caso dentro del intercambio: la unidad está en las dos
+   líneas y el número no es una palabra, así que `3 attempts` → `7 attempts` no deja nada que
+   se haya ido; la ranura es la unidad y el valor es el número, igual que en la regla
+   conversacional.
+
+   Guardas: una palabra que el repositorio usa en más de tres archivos versionados es su
+   vocabulario, no un valor, salvo que el registro la escriba como un nombre (mayúscula
+   interior, dígito, punto o guion) — sin esto la regla retiró un registro real de este
+   proyecto porque un commit tocó una línea que contenía la palabra `delivered`. Y una palabra
+   borrada solo cuenta si un registro ya la nombraba: del diff no sale ningún tema.
+
+   Lo que el commit deja en su lugar: si algún registro activo nombra una palabra que el mismo
+   hunk añadió, ese hereda las palabras de tema del retirado (en la clave indexada, nunca en el
+   cuerpo). Y en todo caso se escribe lo que la línea pasó a decir, como `decision`
+   `commit_linked` de confianza 2 anclada al archivo y fechada por el commit — **solo cuando
+   un intercambio retiró algo**, así que el churn ordinario no crea nada.
 
    Es el único disparador que no depende de las palabras, y es el que rompe el techo léxico:
    23 de 30 reemplazos retenidos no comparten ninguna palabra de contenido con el mensaje que
    los reemplaza `[Z5]`, y ni el coseno `[Z3]` `[Z4]` ni un stemmer llegan ahí. Medido en dos
    conjuntos retenidos independientes, sin modelo y con el asunto del commit deliberadamente
-   mudo: retirada 17/30 → 23/30 y 17/30 → 29/30; respuesta entregada 9/30 → 15/30 y 8/30 →
-   16/30; y cuando la revisión no es adyacente a la decisión, 0/30 → 11/30 y 1/30 → 15/30.
-   Control de precisión: commits de la misma forma que cambian un valor que ninguna decisión
-   menciona retiran **0 de 30**, en ocho condiciones distintas (`experiment/loop9/README.md`).
+   mudo: retirada 17/30 → 29-30/30, y 5-6/30 → 29/30 cuando la revisión no es adyacente;
+   respuesta entregada 8-11/30 → 19-21/30, y 21-29/30 cuando la conversación nunca nombra el
+   valor nuevo. Control de precisión: commits de la misma forma sobre un valor que ninguna
+   decisión menciona retiran **0 de 30** en ocho condiciones (`experiment/loop9/README.md`).
    Ruta de escritura únicamente; ningún hook de lectura ejecuta git.
-
-Regla de la lectura: `invalid=1` **nunca** se sirve por defecto; existe `muninn why --all`
-para verlo. Si dos registros activos entran en conflicto y no hay orden establecible, se
-sirven ambos marcados como conflicto — nunca se elige por orden de ranking, que fue lo
-que convirtió un 0 % de acciones inseguras en 100 % en el guard publicado `[N4]`.
-
-Coste medido de la alternativa: memorias inseguras suben el código vulnerable 2,7–50,3 pp;
-el filtrado a nivel de memoria detecta el 100 % y restaura el baseline sin coste de
-corrección `[W1]`.
 
 ## 6. Formato de entrega (lo único que el modelo ve)
 
