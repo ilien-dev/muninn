@@ -784,10 +784,11 @@ dependencies = [
 
 [[package]]
 name = "muninn-bench"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "muninn-capture",
  "muninn-compile",
  "muninn-core",
  "muninn-embed",
@@ -799,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "muninn-capture"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "muninn-core",
@@ -812,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "muninn-cli"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -832,7 +833,7 @@ dependencies = [
 
 [[package]]
 name = "muninn-compile"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "muninn-core",
@@ -844,7 +845,7 @@ dependencies = [
 
 [[package]]
 name = "muninn-core"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -857,7 +858,7 @@ dependencies = [
 
 [[package]]
 name = "muninn-embed"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "model2vec-rs",
  "muninn-core",
@@ -870,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "muninn-symbols"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "muninn-core",
@@ -889,7 +890,7 @@ dependencies = [
 
 [[package]]
 name = "muninn-why"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "muninn-core",
  "muninn-embed",
