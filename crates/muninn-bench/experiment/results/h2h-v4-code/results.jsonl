@@ -37,3 +37,10 @@
 {"run": 1, "task": "revoke-internal-http", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 5, "cost_usd": 0.0843692, "duration_ms": 16655, "error": null}
 {"run": 1, "task": "revoke-internal-http", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 10, "cost_usd": 0.15210859999999998, "duration_ms": 46491, "error": null}
 {"run": 1, "task": "revoke-version-scheme", "arm": "claude-mem", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 6, "cost_usd": 0.08993400000000001, "duration_ms": 32877, "error": null}
+{"run": 1, "task": "revoke-compression", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 8, "cost_usd": 0.12911200000000003, "duration_ms": 25598, "error": null}
+{"run": 2, "task": "revoke-wire-format", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 7, "cost_usd": 0.1236842, "duration_ms": 32864, "error": null}
+{"run": 2, "task": "revoke-cache-eviction", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 5, "cost_usd": 0.0806004, "duration_ms": 15629, "error": null}
+{"run": 2, "task": "revoke-wire-format", "arm": "muninn-loop8", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 10, "cost_usd": 0.158753, "duration_ms": 40132, "error": null}
+{"run": 2, "task": "revoke-compression", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 16, "cost_usd": 0.1941974, "duration_ms": 49098, "error": null}
+{"run": 2, "task": "revoke-password-hashing", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 8, "cost_usd": 0.16251079999999998, "duration_ms": 37449, "error": null}
+{"run": 2, "task": "revoke-tls-backend", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 7, "cost_usd": 0.1089288, "duration_ms": 26402, "error": null}

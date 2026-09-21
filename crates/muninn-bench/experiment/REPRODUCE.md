@@ -257,3 +257,42 @@ python3 analyze_v4.py ../results/h2h-v4-code ../results/h2h-v4-nocode
 checkout and a commit with an uninformative subject when the decision changes. Task cells get
 the base checkout, as in every other head-to-head: a cell whose repository held the current
 value would be answerable by `grep`.
+
+## Loop 10 — precision: what a later message must not take with it (no model)
+
+```sh
+for p in pairs pairs2 pairs3; do
+  python3 crates/muninn-bench/experiment/loop10/eval_precision.py \
+      --muninn target/release/muninn \
+      --pairs crates/muninn-bench/experiment/loop10/$p.json --out /tmp/$p.json
+done
+```
+
+`pairs3.json` is the one that carries the failure mode on purpose — the later message using
+*migration*, *replacement*, *cambios*, *swap*, *switch* or *rollback* as an ordinary noun.
+
+## Loop 11 — the value that is a number (no model)
+
+```sh
+for arm in talk code both noise; do
+  python3 crates/muninn-bench/experiment/loop8/eval_all.py --muninn target/release/muninn \
+      --arm $arm --order adjacent --commit-msg opaque \
+      --phrasings crates/muninn-bench/experiment/loop11/heldout_phrasings.json \
+      --scenarios crates/muninn-bench/experiment/loop11/scenarios.json --out /tmp/l11-$arm.json
+done
+```
+
+## The same input, the same store (no model)
+
+```sh
+python3 crates/muninn-bench/experiment/loop8/same_input_same_store.py \
+    --muninn target/release/muninn --stores 3
+python3 crates/muninn-bench/experiment/h2h/reproducible.py /tmp/muninn-h2h/<grid>   # per arm
+```
+
+## Reading a head-to-head for something other than the pass rate
+
+```sh
+python3 crates/muninn-bench/experiment/h2h/delivered_vs_used.py <results dir>   # memory or agent
+python3 crates/muninn-bench/experiment/h2h/context_cost.py     <results dir>   # window taken
+```
