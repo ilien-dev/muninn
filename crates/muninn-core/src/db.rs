@@ -7,7 +7,9 @@ use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 use std::time::Duration;
 
-pub const SCHEMA_VERSION: i64 = 1;
+/// 2: the FTS index is stemmed (`porter`), so an index built by a v1 binary holds raw
+/// tokens the v2 read path no longer asks for and has to be rebuilt once.
+pub const SCHEMA_VERSION: i64 = 2;
 pub const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +93,18 @@ impl Db {
 
     /// Apply the schema and record its version. Idempotent.
     pub fn migrate(&self) -> Result<()> {
+        // The version has to be read before the schema is applied: every statement in it is
+        // `IF NOT EXISTS`, so a table whose *definition* changed survives its own schema.
+        let before = self.schema_version()?;
+        if before > SCHEMA_VERSION {
+            return Err(Error::SchemaTooNew {
+                found: before,
+                supported: SCHEMA_VERSION,
+            });
+        }
+        if before > 0 && before < 2 {
+            self.rebuild_fts_for_v2()?;
+        }
         self.conn.execute_batch(SCHEMA_SQL)?;
         let found = self.schema_version()?;
         if found > SCHEMA_VERSION {
@@ -100,6 +114,9 @@ impl Db {
             });
         }
         if found < SCHEMA_VERSION {
+            if found < 2 {
+                self.fill_fts_from_record()?;
+            }
             // Future migrations go here, ordered by version.
             self.conn.execute(
                 "INSERT INTO meta(key, value) VALUES ('schema_version', ?1) \
@@ -107,6 +124,41 @@ impl Db {
                 [SCHEMA_VERSION.to_string()],
             )?;
         }
+        Ok(())
+    }
+
+    /// v1 → v2: the tokenizer changed, so the index has to go. Dropping it is safe — the
+    /// text lives in `record`, the index is external-content — and cheaper than reasoning
+    /// about a half-stemmed index. `record_vocab` reads the index and goes with it.
+    fn rebuild_fts_for_v2(&self) -> Result<()> {
+        self.conn
+            .execute_batch("DROP TABLE IF EXISTS record_vocab; DROP TABLE IF EXISTS record_fts;")?;
+        Ok(())
+    }
+
+    /// Repopulate the index from the records that may be served. Only `invalid = 0` rows
+    /// go in: an FTS5 `rebuild` would take every row, retired ones included, and the whole
+    /// point of the triggers is that a retired record leaves the index.
+    fn fill_fts_from_record(&self) -> Result<()> {
+        let n: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM record_fts", [], |r| r.get(0))?;
+        if n > 0 {
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO record_fts(rowid, subject, object, body) \
+             SELECT id, subject, object, body FROM record WHERE invalid = 0",
+            [],
+        )?;
+        let rows: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM record_fts", [], |r| r.get(0))?;
+        self.conn.execute(
+            "INSERT INTO meta(key, value) VALUES ('fts_rows', ?1) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [rows.to_string()],
+        )?;
         Ok(())
     }
 

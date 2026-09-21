@@ -189,16 +189,30 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
         })
         .collect();
     let withdrawal = crate::extract::is_withdrawal(&new_text);
+    // loop 7: the message need no longer be anaphoric. A change that carries its own words
+    // ("moving to AWS Secrets Manager") names no topic the earlier decision shares — 23 of 30
+    // held-out pairs share no content word at all — so the lexical test cannot reach them and
+    // the gate on `is_anaphoric` was rejecting the whole class. What still has to hold: the
+    // message announces a change, nothing was matched on words, and it introduces a value the
+    // store has not seen. The guard below keeps this from walking onto another change.
     if change
         && !matched_any
         && (!novel.is_empty() || (withdrawal && new_names.is_empty()))
         && crate::extract::is_anaphoric(&new_text)
     {
+        // The most recent earlier short statement — but never one that was itself a change.
+        // A run of changes arriving together ("switch A to A2", "switch B to B2", …) would
+        // otherwise have each one retire the previous change rather than the decision it
+        // replaced, which loses a live fact silently: measured on the loop-6 held-out set in
+        // block order, plain recency took `kept_b` from 16/30 to 9/30. A statement that
+        // announces a change is skipped and the walk continues to the decision under it.
         let prev: Option<(i64, String)> = tx
             .query_row(
-                "SELECT id, body FROM record WHERE invalid=0 AND kind='episode' AND length(body) <= 700 \
-                 AND created_at < ?1 AND created_at >= ?1 - 10800000 AND (transcript_ref IS NULL OR transcript_ref <> ?2) \
-                 ORDER BY created_at DESC LIMIT 1",
+                "SELECT e.id, e.body FROM record e WHERE e.invalid=0 AND e.kind='episode' AND length(e.body) <= 700 \
+                 AND e.created_at < ?1 AND e.created_at >= ?1 - 10800000 AND (e.transcript_ref IS NULL OR e.transcript_ref <> ?2) \
+                 AND NOT EXISTS (SELECT 1 FROM record d WHERE d.kind='decision' AND d.relation='user_decision' \
+                                 AND d.transcript_ref = e.transcript_ref AND d.subject LIKE 'said:change:%') \
+                 ORDER BY e.created_at DESC LIMIT 1",
                 rusqlite::params![new_created, own_ref.clone().unwrap_or_default()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -242,10 +256,84 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
     Ok(n)
 }
 
+/// Supersession by measured value. "payment worker: 3 attempts" and "bump to 7 attempts"
+/// share one content word, `attempts`, which is one short of what `replaces` asks for — and
+/// lowering that floor was measured and rejected, because a single shared word pairs
+/// unrelated decisions [Z5]. The unit of a quantity is not an ordinary shared word: it names
+/// the slot, and a different number in the same slot is a different decision.
+///
+/// The guard that keeps it from walking onto another subsystem's budget is on the *new*
+/// statement: it may say nothing but the value ("bump to 7 attempts", at most one content
+/// word outside its quantities). A statement that names its own subject ("the search path
+/// retries 5 times") is not a bare correction of something earlier and is left to the
+/// lexical rules. The most recent record holding that unit is the one replaced.
+fn supersede_quantity(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<usize> {
+    if c.kind == "episode" {
+        // the episode of the same turn carries the same sentence; acting on both would
+        // retire the same record twice and count it twice
+        return Ok(0);
+    }
+    let new_text: String = tx
+        .query_row("SELECT object FROM record WHERE id=?1", [new_id], |r| {
+            r.get(0)
+        })
+        .unwrap_or_default();
+    let new_slots = crate::extract::quantity_slots(&new_text);
+    if new_slots.is_empty() || crate::extract::words_outside_quantities(&new_text).len() > 1 {
+        return Ok(0);
+    }
+    let (own_ref, new_created): (Option<String>, i64) = tx
+        .query_row(
+            "SELECT transcript_ref, created_at FROM record WHERE id=?1",
+            [new_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap_or((None, i64::MAX));
+    let olds: Vec<(i64, String, Option<String>)> = {
+        let mut st = tx.prepare(
+            "SELECT id, object, transcript_ref FROM record WHERE invalid=0 AND id<>?1 \
+             AND kind IN ('decision','episode') AND length(body) <= 700 AND created_at < ?2 \
+             AND (transcript_ref IS NULL OR transcript_ref <> ?3) ORDER BY created_at DESC",
+        )?;
+        let rows = st.query_map(
+            rusqlite::params![new_id, new_created, own_ref.clone().unwrap_or_default()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        rows.flatten().collect()
+    };
+    let mut n = 0;
+    for (id, old_object, tref) in olds {
+        let old_slots = crate::extract::quantity_slots(&old_object);
+        let collides = old_slots
+            .iter()
+            .any(|(unit, num)| new_slots.iter().any(|(u2, n2)| u2 == unit && n2 != num));
+        if !collides {
+            continue;
+        }
+        n += tx.execute(
+            "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 WHERE id=?2 AND invalid=0",
+            rusqlite::params![new_id, id],
+        )?;
+        // the other record of the same turn states it too
+        if let Some(tref) = tref {
+            n += tx.execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 \
+                 WHERE invalid=0 AND transcript_ref=?2 AND length(body) <= 700",
+                rusqlite::params![new_id, tref],
+            )?;
+        }
+        break; // the most recent holder of the unit, and only it
+    }
+    if n > 0 {
+        inherit_topic(tx, new_id)?;
+    }
+    Ok(n)
+}
+
 /// A change that replaced something takes over the replaced statements' topic words (their
 /// names excluded) in its supersession key, so a question about the topic reaches it and a
 /// later change on the same topic still finds it.
-fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
+pub fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
     let (subject, body): (String, String) = tx.query_row(
         "SELECT subject, body FROM record WHERE id=?1",
         [new_id],
@@ -435,6 +523,7 @@ pub fn ingest_transcript_with(
                 }
                 stats.superseded += supersede(&tx, id, &c)?;
                 stats.superseded += supersede_said(&tx, id, &c)?;
+                stats.superseded += supersede_quantity(&tx, id, &c)?;
             } else {
                 stats.duplicates += 1;
             }

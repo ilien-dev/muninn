@@ -77,7 +77,7 @@ fn exact_count(_s: &str) -> Option<usize> {
     None
 }
 
-fn set_config(dir: &Path, key: &str, value: serde_json::Value) -> Result<()> {
+pub fn set_config(dir: &Path, key: &str, value: serde_json::Value) -> Result<()> {
     let p = dir.join("config.json");
     let mut v: serde_json::Value = std::fs::read_to_string(&p)
         .ok()
@@ -240,11 +240,35 @@ fn ensure_gitignore(root: &Path) -> Result<Vec<String>> {
     Ok(added)
 }
 
-pub fn codex_hooks_json(binary: &Path) -> serde_json::Value {
-    let bin = binary.display().to_string();
+/// Quote the binary path for a Codex hook command string.
+///
+/// Codex hooks are shell-form by the harness's own design [X2], so this path is
+/// parsed by a shell. Single quotes make every metacharacter literal. What they
+/// cannot make safe is a single quote itself, and a control character would split
+/// or truncate the command line — those are refused rather than escaped, because a
+/// path is not worth a second escaping layer at a trust boundary.
+fn shell_quote_binary(binary: &Path) -> Result<String> {
+    let s = binary.to_str().with_context(|| {
+        format!(
+            "the muninn binary path is not valid UTF-8: {}",
+            binary.display()
+        )
+    })?;
+    if let Some(bad) = s.chars().find(|c| *c == '\'' || c.is_control()) {
+        bail!(
+            "refusing to write .codex/hooks.json: the muninn binary path contains {bad:?}, \
+             which cannot be quoted safely for a shell-form hook ({s}). Install the binary \
+             somewhere without it (scripts/install.sh) and re-run `muninn init --codex`."
+        );
+    }
+    Ok(format!("'{s}'"))
+}
+
+pub fn codex_hooks_json(binary: &Path) -> Result<serde_json::Value> {
+    let bin = shell_quote_binary(binary)?;
     let cmd = |ev: &str| serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": 5 });
     let cmd_async = |ev: &str| serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": 30, "async": true });
-    serde_json::json!({
+    Ok(serde_json::json!({
         "description": "Muninn memory engine hooks (Codex). Same binary as the Claude Code plugin.",
         "hooks": {
             "SessionStart":     [{ "matcher": "startup|resume|compact", "hooks": [cmd("SessionStart")] }],
@@ -257,7 +281,7 @@ pub fn codex_hooks_json(binary: &Path) -> serde_json::Value {
             "Stop":             [{ "hooks": [cmd_async("Stop")] }],
             "SessionEnd":       [{ "hooks": [{ "type": "command", "command": format!("{bin} hook SessionEnd"), "timeout": 1 }] }]
         }
-    })
+    }))
 }
 
 pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
@@ -335,7 +359,7 @@ pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
         let file = dir.join("hooks.json");
         std::fs::write(
             &file,
-            serde_json::to_string_pretty(&codex_hooks_json(&bin))? + "\n",
+            serde_json::to_string_pretty(&codex_hooks_json(&bin)?)? + "\n",
         )?;
         st.codex_hooks_written = true;
         touched.push(".codex/hooks.json".into());
@@ -468,5 +492,43 @@ mod tests {
             "chars={} est_tokens={} exact={:?}",
             b.chars, b.est_tokens, b.exact_tokens
         );
+    }
+
+    /// Codex hooks are shell-form, so the binary path reaches a shell. A path with a
+    /// space or a metacharacter is quoted, not refused; one that quoting cannot make
+    /// safe is refused, and the command never carries the raw character.
+    #[test]
+    fn codex_hook_path_is_quoted_and_dangerous_paths_refused() {
+        let quoted = codex_hooks_json(Path::new("/opt/Application Support/muninn"))
+            .expect("a space is quotable");
+        let cmd = quoted["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .expect("a command string");
+        assert_eq!(cmd, "'/opt/Application Support/muninn' hook SessionStart");
+
+        for bad in [
+            "/tmp/a;rm -rf ~/muninn",
+            "/tmp/$(id)/muninn",
+            "/tmp/a`id`/muninn",
+            "/tmp/a|id/muninn",
+        ] {
+            let cmd = codex_hooks_json(Path::new(bad))
+                .unwrap_or_else(|e| panic!("{bad} is quotable, not refused: {e}"))["hooks"]
+                ["SessionStart"][0]["hooks"][0]["command"]
+                .as_str()
+                .expect("a command string")
+                .to_string();
+            assert!(
+                cmd.starts_with(&format!("'{bad}' hook")),
+                "{bad} must reach the shell inside quotes, got {cmd}"
+            );
+        }
+
+        for bad in ["/tmp/it's/muninn", "/tmp/a\nrm -rf ~/muninn"] {
+            assert!(
+                codex_hooks_json(Path::new(bad)).is_err(),
+                "{bad:?} cannot be quoted safely and must be refused"
+            );
+        }
     }
 }

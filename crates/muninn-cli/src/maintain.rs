@@ -20,6 +20,8 @@ pub struct MaintainStats {
     pub symbols_indexed: usize,
     pub cues_derived: usize,
     pub variants_retired: usize,
+    /// Records retired because the repository stopped holding the value they named.
+    pub values_retired: usize,
     pub ms: u128,
 }
 
@@ -138,6 +140,160 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
     Ok((commits, reverts))
 }
 
+/// Identifier-like tokens of one diff line, lowercased: the words a manifest, an import
+/// or a configuration key is made of. Deliberately generous — the set is only ever used
+/// to *look up* values the store already holds, never to create one.
+fn code_tokens(line: &str, out: &mut Vec<String>) {
+    for raw in line.split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '/'))) {
+        let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
+        if w.chars().count() >= 3 && w.chars().any(|c| c.is_alphabetic()) {
+            let w = w.to_lowercase();
+            if !out.contains(&w) {
+                out.push(w);
+            }
+        }
+    }
+}
+
+/// How many diff lines one `maintain` reads. A commit that rewrites a lock file must not
+/// turn the write path into a linear scan of the repository's history.
+const MAX_DIFF_LINES: usize = 4_000;
+
+/// The decisions the code itself left behind (ENGINE.md §5.2).
+///
+/// Every lexical rule for noticing that a decision was replaced runs out at the same
+/// place: 23 of 30 held-out replacements share no content word with the decision they
+/// replace [Z5], and neither embeddings nor a stemmer reach them [Z3] [Z4]. "HashiCorp
+/// Vault" and "AWS Secrets Manager" have nothing in common *as text*. They have something
+/// in common as facts about a repository: one of them is in it, and then it is not.
+///
+/// So this reads the commits instead of the sentences. A value that the new commits took
+/// out of the code, and that no tracked file holds any more, is a value the project has
+/// stopped using; the record that named it is retired and points at the record the
+/// same commit corroborates. Nothing is invented from the diff: a removed word only
+/// matters when an active record already named it, and the replacement is only ever an
+/// *existing* record that the same commit's added lines corroborate. A decision that
+/// never touched the code — a release cadence, a review policy — is never affected,
+/// because its value is not in the diff.
+///
+/// Write path only. Read hooks never run git.
+pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<usize> {
+    let since_ms: i64 = db
+        .meta_get("values_watermark_ms")?
+        .and_then(|s| s.parse().ok())
+        // its own watermark: `capture_git` has already moved its one to now by the time
+        // this runs, and borrowing it would make the range empty on every call
+        .unwrap_or(0);
+    let now = now_ms();
+    let Some(diff) = git(
+        &paths.root,
+        &[
+            "log",
+            &format!("--since=@{}", since_ms / 1000),
+            "--no-merges",
+            "-U0",
+            "-p",
+            "--no-color",
+            "--format=%x1e%h",
+            "-n",
+            "50",
+        ],
+    ) else {
+        return Ok(0);
+    };
+    db.meta_set("values_watermark_ms", &now.to_string())?;
+    // one entry per commit, newest first: what it took out and what it put in. Keeping the
+    // two together is what makes the replacement specific — a range of commits pooled into
+    // one bag pairs a value dropped here with a value added over there.
+    let mut commits: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    for line in diff.lines().take(MAX_DIFF_LINES) {
+        if line.starts_with('\u{1e}') {
+            commits.push((Vec::new(), Vec::new()));
+            continue;
+        }
+        let Some((removed, added)) = commits.last_mut() else {
+            continue;
+        };
+        if line.starts_with("+++") || line.starts_with("---") {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix('-') {
+            code_tokens(rest, removed);
+        } else if let Some(rest) = line.strip_prefix('+') {
+            code_tokens(rest, added);
+        }
+    }
+    commits.retain(|(removed, _)| !removed.is_empty());
+    if commits.is_empty() {
+        return Ok(0);
+    }
+    // the values the store actually holds, so the diff's vocabulary is never the subject
+    let live: Vec<(i64, String)> = {
+        let mut st = db.conn.prepare(
+            "SELECT id, object FROM record WHERE invalid=0 AND length(body) <= 700 AND ( \
+                 (kind='decision' AND origin IN ('user_said','review_accepted')) \
+                 OR kind='episode') \
+             ORDER BY created_at DESC LIMIT 400",
+        )?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.flatten().collect()
+    };
+    let words_of: Vec<(i64, Vec<String>)> = live
+        .iter()
+        // every content word of the statement, not only the ones that look like a product
+        // name: `nock` and `bash` are values too, and nothing about their spelling says so
+        .map(|(id, obj)| (*id, muninn_capture::extract::topic_words(obj)))
+        .collect();
+    let mut n = 0;
+    let mut gone_cache: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    let tx = db.write_tx()?;
+    for (id, words) in &words_of {
+        let Some((commit, gone)) = commits.iter().find_map(|c| {
+            let w = words.iter().find(|w| c.0.contains(w))?;
+            Some((c, w))
+        }) else {
+            continue;
+        };
+        // still somewhere in the tree? then the project has not dropped it
+        let absent = *gone_cache
+            .entry(gone.to_string())
+            .or_insert_with(|| git(&paths.root, &["grep", "-F", "-q", "-i", "--", gone]).is_none());
+        if !absent {
+            continue;
+        }
+        // the replacement is an existing record that *this* commit's added lines corroborate
+        let heir: Option<i64> = words_of
+            .iter()
+            .find(|(other, w)| other != id && w.iter().any(|w| commit.1.contains(w)))
+            .map(|(i, _)| *i);
+        n += tx.execute(
+            "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
+             WHERE id=?1 AND invalid=0",
+            rusqlite::params![id, heir],
+        )?;
+        // the same turn's literal episode states it too, and serving that would put the
+        // dropped value back in front of the agent
+        let tref: Option<String> = tx
+            .query_row("SELECT transcript_ref FROM record WHERE id=?1", [id], |r| {
+                r.get(0)
+            })
+            .ok()
+            .flatten();
+        if let Some(tref) = tref {
+            tx.execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
+                 WHERE invalid=0 AND transcript_ref=?1 AND length(body) <= 700",
+                rusqlite::params![tref, heir],
+            )?;
+        }
+        if let Some(h) = heir {
+            muninn_capture::ingest::inherit_topic(&tx, h)?;
+        }
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
 /// One writer at a time: a second `maintain` finds the lock held and exits at once.
 fn lock(paths: &ProjectPaths) -> Option<std::fs::File> {
     let p = paths.log_dir().join("maintain.lock");
@@ -204,7 +360,11 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         }
         Err(e) => output::err(&format!("muninn maintain: git: {e}")),
     }
-    if st.commits + st.reverts > 0
+    match capture_dropped_values(paths, &db) {
+        Ok(n) => st.values_retired = n,
+        Err(e) => output::err(&format!("muninn maintain: dropped values: {e}")),
+    }
+    if st.commits + st.reverts + st.values_retired > 0
         || db
             .meta_get("records_changed_since_render")
             .ok()
