@@ -2724,3 +2724,45 @@ it ran, each carries its predecessor's changes, and every one of them was prompt
 the previous one's transcripts rather than by a hunch — but a sequence like this cannot be
 read as four independent tests, and no number from it is a replication of another. What would
 settle it is a fresh grid on wording none of these builds has seen.
+
+---
+
+# Pre-registration — v4 sixth arm: the commit log stays out of the hook
+
+Registered 2026-09-21, before the arm was seeded and before any of its cells ran; the fifth
+arm was still running its cells.
+
+## What the registered `nocode` arm changed
+
+It finished, and it reframes the grid. **Muninn scores 18/27 without the commits and 6/27
+with them.** claude-mem scores 20/27 and 22/27 — the registered control, satisfied at
+p = 0.74. So in the plain condition the two are not distinguishable at this size, and the
+condition added to *show* the new mechanism is what sank the arm.
+
+The cause is visible in the seeded stores: `--code` adds ten commits, each captured as a
+`commit_linked` decision, to a store of twenty-eight records. A third of it becomes entries
+whose text is a subject line and a file list. Those file names are what a task's question
+matches on; "update dependencies" is what they say. They crowd a 700-token budget, and they
+are what `muninn why` was reporting as the answer.
+
+## The arm
+
+`muninn-quiet`, pinned to `e1f547d6f47ae31f`: the fifth arm plus one change — a record whose subject is
+`commit:<hash>` is not served by the read hooks. It stays in the store, `muninn why` still
+reaches it, and the record the *diff* produced (the value the file now holds, subject
+`said:change:…`) is not a log entry and is still served.
+
+## Decision rule, fixed before the data
+
+Two contrasts, outside the registered family and labelled so: `pass(muninn-quiet) −
+pass(muninn-why)` and `pass(muninn-quiet) − pass(muninn-loop8 | nocode)`, exact Fisher, on
+the same replacement cells. The second is the one that matters: it asks whether the code
+condition, with the log out of the way, costs anything against the plain condition that
+scored 18/27. Reported whatever it shows.
+
+## Threat
+
+This is the fifth build measured on one grid of 27 cells, each prompted by reading the
+previous one's transcripts. The sequence is honest — every arm pinned and registered before
+it ran, every result published including three that went the wrong way — and it is still one
+grid. A figure from it is a reading of these 27 cells, not a replication.
