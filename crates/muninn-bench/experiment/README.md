@@ -21,6 +21,9 @@ of the pre-registration commits; `docs/claims.md` lists what is and is not claim
 | 5a | does the compiled control refuse the call its rule forbids, and nothing else? | `../corpora/claude-md/GATE5A.md` — PASS on the third held-out set (0.920 / 0.000); the two that failed are reported there | `results/gate5a-holdout{1,2,3}/` |
 | 5b | does compiling a written rule change what the agent does? | `PREREGISTRATION.md` — **not run**; grid built and its plan verified (48 cells) | `rules/scenarios.py`, `rules/tasks-rules.json` |
 | h2h, native | how does the harness's own automatic memory score on the same grid? | `PREREGISTRATION.md` — **not run**; arm built and smoke-tested | `h2h/competitors/native/arm.sh` |
+| 8 | does reading the repository find the replacements the words cannot? | `loop8/README.md` | `loop8/v3_*.json` |
+| 9 | the same grid, a second held-out set, the same binary | `loop9/README.md` | `loop9/v3_*.json` |
+| h2h v4 | the same head-to-head with the decisions also implemented in the code | `PREREGISTRATION.md` | `results/h2h-v4-code/`, `results/h2h-v4-nocode/` |
 | — | DreamBench-SWE [K2]: not runnable — hidden oracles and 6 of 11 fixture commits are not public; a `MemoryPolicy` port and the request to the authors are in `dreambench/` | `dreambench/STATUS.md` | — |
 
 ## Runner
