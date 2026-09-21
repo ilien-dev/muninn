@@ -14,13 +14,19 @@ published attack succeeds 92.5 % of the time and endpoint defenders recalled 0 %
 
 **Defence.**
 - Claude Code hooks are exec-form only: `command` plus an `args` array, no shell.
-- The binary is pinned by version in `plugin.json` and verified by checksum on
-  install (`scripts/install.sh`).
+- Each release publishes one plugin bundle per platform with the binary built from
+  that tag already in `plugin/bin/`, and stamps the tag's version into
+  `plugin.json` and `marketplace.json`, so the plugin version names the binary it
+  ships with. Every asset carries a published sha256 and a keyless Sigstore
+  signature; `scripts/install.sh` verifies the checksum always and the signature
+  whenever `cosign` is installed.
 - No `${...}` other than `${CLAUDE_PLUGIN_ROOT}`, which Claude Code substitutes
   as a plain string in exec form.
-- Codex hooks are shell-form by the harness's own design; `muninn init --codex`
-  writes the absolute binary path and refuses paths with spaces or shell
-  metacharacters.
+- Codex hooks are shell-form by the harness's own design. `muninn init --codex`
+  writes the absolute binary path **single-quoted**, so a space or a metacharacter
+  in it is literal, and refuses outright a path carrying a single quote or a
+  control character, which quoting cannot make safe
+  (`init::shell_quote_binary`, tested in `init::tests`).
 
 ## 2. Cross-context prompt injection through memory (X-CPE / M-CPE) [W2]
 
@@ -68,6 +74,28 @@ The read hooks (`SessionStart`, `UserPromptSubmit`, `PreCompact`,
 `SQLITE_OPEN_READ_ONLY`. They cannot write the database even if compromised.
 Heartbeats go to an append-only log file. Only `Stop`, `SessionEnd` and
 `PostToolUse` open the store read-write.
+
+## 6. The repository as an input to invalidation
+
+**Threat.** Since the fourth invalidation trigger (ENGINE.md §5), `maintain` reads the diffs
+of the commits it captures and retires a decision whose value a commit took out of the code.
+Anyone who can land a commit can therefore retire a record: a one-line change that swaps a
+value is enough, and a repository with untrusted contributors has a path to making the
+assistant forget a decision it should have kept.
+
+**What bounds it.** Retirement is not deletion and never was: the record stays on disk, leaves
+the index, and `muninn why --all` shows it with `invalidated_by` pointing at the record the
+commit corroborated. Nothing is created from a diff — a removed word only matters when an
+active record already named it, and the replacement is always a record that already exists —
+so a commit cannot *insert* a belief, only withdraw one. The write path runs outside every
+hook, and no read hook executes git.
+
+**What does not bound it.** There is no signature check and no notion of a trusted author:
+`git log` is read as the repository presents it. A repository whose commits you do not control
+is a repository whose memory you do not fully control either. That is the same trust boundary
+as the code itself — an attacker who can land a commit can change what the code does, which is
+strictly worse than changing what the memory serves — and it is stated here rather than
+defended, because nothing in the MVP defends it.
 
 ## Out of scope for the MVP
 
