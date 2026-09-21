@@ -228,3 +228,18 @@ fn a_number_that_changed_is_read_from_the_diff_too() {
         "the same unit with a different number is a different decision"
     );
 }
+
+#[test]
+fn a_hyphenated_value_matches_the_decision_that_named_it() {
+    let tmp = project("async-std");
+    let root = tmp.path();
+    decision(root, "for the async runtime we are using async-std");
+    std::fs::write(root.join("config/stack.json"), "{\"value\": \"tokio\"}\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        !active(root, "using async-std"),
+        "a record's words come from text with the hyphen removed; the diff keeps it"
+    );
+}
