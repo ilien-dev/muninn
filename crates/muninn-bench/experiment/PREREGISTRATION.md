@@ -2240,7 +2240,17 @@ figure is the opaque one.
 # Pre-registration — head-to-head v4: the decisions are also in the code
 
 Registered 2026-09-21, before any cell ran. Engine frozen at the binary pinned in
-`h2h/competitors/muninn-loop8/arm.sh` (`eed80ea34cc55f48`).
+`h2h/competitors/muninn-loop8/arm.sh`.
+
+*Amended 2026-09-21, before any cell ran* (seeding had begun and was discarded; `results.jsonl`
+never existed). The pin was `eed80ea34cc55f48`, whose rule required a replaced value to be gone
+from every tracked file. The `--survivor` control run afterwards showed that rule retires
+nothing at all when the old value survives in one untouched file — which is the position three
+of this grid's nine scenarios are already in, since the `gin` checkout contains `gzip`,
+`msgpack` and `GPL`. Running the grid on that binary would have measured a rule that had
+already been superseded by a measurement. The pin is now `e1f757590b2c63fb`, which also accepts a
+one-for-one hunk as evidence, and the three-scenario caveat below is correspondingly weaker:
+those scenarios can now fire, through the swap rather than the disappearance.
 
 ## The question
 
