@@ -7,10 +7,13 @@ first is a memory result; the second is a statement about how an agent treats in
 context, and counting it against the memory makes a grid that improving the memory cannot
 move.
 
-For every cell, this reads the cell's own transcript for what the arm injected — the
-`hook_additional_context` and `hook_system_message` attachments, which is everything a hook
-put in front of the model — and asks whether the scenario's **new** value is in it, before
-the agent's first answer. Crossed with the oracle:
+For every cell, this reads the cell's own transcript for what the memory put in front of the
+model: the `hook_additional_context` and `hook_system_message` attachments, **and the results
+of the memory's own tools** — claude-mem ships an MCP search server and Muninn allows
+`muninn why` / `muninn status`, so either agent can ask for more. Counting only the injection
+would have scored a cell where the agent searched claude-mem's store and found the answer as
+"passed without memory", which it plainly did not; four cells of the first grid were exactly
+that. Crossed with the oracle:
 
     used                        delivered and the oracle passed
     delivered and not used      delivered and the oracle failed
@@ -27,24 +30,40 @@ import json
 import pathlib
 
 INJECTED = ("hook_additional_context", "hook_system_message")
+# a tool call is the memory's own if its name or its command names the memory
+MEMORY_TOOL = ("claude-mem", "agentmemory", "mem0")
+MEMORY_CMD = ("muninn why", "muninn status", "muninn recall")
 
 
 def injected_text(path: pathlib.Path) -> str:
+    """Everything the memory put in front of the model: what its hooks injected, and what its
+    own tools returned when the agent asked."""
     if not path.exists():
         return ""
-    out = []
+    out, memory_calls = [], set()
     for line in path.open(errors="replace"):
         try:
             r = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if r.get("type") != "attachment":
-            continue
         at = r.get("attachment") or {}
-        if at.get("type") not in INJECTED:
+        if r.get("type") == "attachment" and at.get("type") in INJECTED:
+            c = at.get("content")
+            out.append(" ".join(c) if isinstance(c, list) else str(c))
             continue
-        c = at.get("content")
-        out.append(" ".join(c) if isinstance(c, list) else str(c))
+        content = (r.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for x in content:
+            if not isinstance(x, dict):
+                continue
+            if x.get("type") == "tool_use":
+                name = str(x.get("name", "")).lower()
+                cmd = str((x.get("input") or {}).get("command", "")).lower()
+                if any(t in name for t in MEMORY_TOOL) or any(c in cmd for c in MEMORY_CMD):
+                    memory_calls.add(x.get("id"))
+            elif x.get("type") == "tool_result" and x.get("tool_use_id") in memory_calls:
+                out.append(json.dumps(x.get("content")))
     return " ".join(out).lower()
 
 
