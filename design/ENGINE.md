@@ -258,18 +258,31 @@ Tres disparadores, todos deterministas, ninguno por similitud:
 
 ## 6. Formato de entrega (lo único que el modelo ve)
 
-Tres tipos de bloque y solo tres `[G3]` `[D5]`:
+Cinco tipos de bloque, uno por tipo de registro, más dos marcas. **Esta sección se corrigió
+contra lo que el motor emite** (2026-09-21): la versión anterior describía `no-rebuild`,
+`stale` y `lineage`, que nunca se emitieron, y decía "referencia, no contenido" cuando lo que
+se construyó y se midió es la entrega **literal** — el texto tal como se dijo, que es lo que
+Gate 2 comparó contra no tener memoria (19/25 contra 2/25) y contra un control de la misma
+longitud.
 
 ```
-[muninn:no-rebuild] src/webhooks/retry.rs ya implementa backoff exponencial.
-  decisión #142 · commit a1b2c3d · origen: review_accepted · verificar antes de actuar
-[muninn:stale] "el endpoint /v1/sync es idempotente" — src/api/sync.rs cambió desde que se
-  registró (2026-08-30). Retirado, no reemplazado.
-[muninn:lineage] #142 ← #98 ← #61 · `muninn why 142`
+[muninn:decision] 2026-09-14 · session 586574a9 · origin: user_said · trust 3
+user: for the transport compression codec we go with zstd.
+  evidence: ~/.claude/projects/-home-ilien-Projects-muninn/586574a9.jsonl:8549213
+[muninn:invariant] … una regla que sigue en pie
+[muninn:deadend] … algo que se intentó y falló; no repetirlo a ciegas
+[muninn:correction] … un sitio donde te corrigieron
+[muninn:episode] … un extracto literal de una sesión anterior
 ```
 
-Cada bloque lleva **referencia, no contenido** `[A2]`; **procedencia y nivel de
-confianza** siempre `[K1]` `[W2]`; y va enmarcado como evidencia, nunca como instrucción:
+Dos marcas sobre esos tipos: `[muninn:decision:conflict with #n]` cuando dos registros activos
+con la misma clave se contradicen —se sirven los dos, nunca se elige por ranking `[N4]`— y
+`[muninn:unverified]` para una afirmación de un resumen de compactación que ningún código de
+salida respalda.
+
+Cada bloque lleva **el texto literal y su referencia** —la línea `evidence:` dice en qué
+transcripción y en qué byte abrirlo `[A2]`—; **procedencia y nivel de confianza** siempre
+`[K1]` `[W2]`; y va enmarcado como evidencia, nunca como instrucción:
 la memoria es la superficie epistémica y las instrucciones la imperativa. Ningún bloque
 puede contener texto que se parezca a un rol de sistema o de usuario — es la defensa
 contra M-CPE `[W2]`.
