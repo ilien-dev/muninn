@@ -183,20 +183,28 @@ replacement is always a record that already exists.
 Measured on two held-out sets that the code had never seen, with the commit subject
 deliberately uninformative ("update dependencies") so the commit contributes only its diff:
 
-| | from the conversation alone | with the commits |
-|---|---|---|
-| the replaced decision is retired | 17 of 30 | 23 and 29 of 30 |
-| …when ten other decisions were taken in between | 5-6 of 30 | 23 and 29 of 30 |
-| the current answer is delivered | 8-9 of 30 | 15-16 of 30 |
-| …when ten other decisions were taken in between | 0-1 of 30 | 11-15 of 30 |
-| a commit that changes something unrelated retires a decision | — | 0 of 30, in all eight conditions |
+| | from the conversation alone | with the commits | from the commits alone |
+|---|---|---|---|
+| the replaced decision is retired | 17 of 30 | 29 and 30 of 30 | 29 of 30 |
+| …when ten other decisions were taken in between | 5-6 of 30 | 29 of 30 | 29 of 30 |
+| the current answer is delivered | 8 and 11 of 30 | 19 and 21 of 30 | 21 and 29 of 30 |
+| …when ten other decisions were taken in between | 0 and 1 of 30 | 17 and 25 of 30 | 21 and 29 of 30 |
+| a commit that changes something unrelated retires a decision | — | 0 of 30, every condition | 0 of 30 |
+
+The third column is the one worth reading twice: it is the arm where the user states a
+decision **once and never mentions it again**, and where the commit subject says only "update
+dependencies". Everything the memory knows about the change, it read from the diff.
 
 The second row is the point. Every word-matching rule needs the two messages to be near each
 other, because that is the only thing relating them when they share no words; a commit relates
 them by value, and does not care how long ago you said it.
 
 The limits travel with it. A decision that never reaches a file leaves nothing to read, and
-there the first column is all you get. Where the old value still appears somewhere in the
+there the first column is all you get. A word your repository uses everywhere is not treated
+as a value at all — the first real store this was run against, built from this project's own
+transcripts, retired one record wrongly because a commit touched a line containing the word
+"delivered", and the rule now ignores any word living in more than three tracked files unless
+the record spells it like a name. Where the old value still appears somewhere in the
 repository, nothing is retired — deliberately. And in the Spanish half of those sets the
 retirement is 10 of 10 while the answer is delivered 2 of 10, because the question is in
 English and the record is in Spanish; that gap is retrieval, not detection, and it is not fixed.
