@@ -2309,6 +2309,38 @@ scenarios whose value cannot leave the tree because the `gin` checkout already c
 (`gzip`, `msgpack`, `GPL`) — the code mechanism cannot fire on 3 of the 9 tasks by
 construction, and those cells are counted as failures like any other.
 
+## Result of the registered arms
+
+**Muninn lost, and not narrowly: 6/27 against claude-mem's 22/27, exact Fisher
+p = 2.7 × 10⁻⁵.** The `--code` condition is the one registered here; the `nocode` contrast
+follows when its cells finish.
+
+The decomposition registered above says what that number is and is not:
+
+| arm | used | delivered, not used | passed without memory | not delivered | memory asks / cell | repository looks / cell |
+|---|---|---|---|---|---|---|
+| claude-mem | 19 | 5 | 3 | 0 | 1.5 | 2.1 |
+| muninn-loop8 | 6 | 21 | 0 | 0 | 1.3 | 6.0 |
+
+**Muninn put the current decision in front of the agent in 27 cells out of 27, and the agent
+acted on it in 6.** claude-mem delivered in 24 and the agent acted on it in 19. The gap is not
+retrieval. Muninn's agent also searched the checkout nearly three times as often, which is
+what an agent does when it does not believe what it was told.
+
+Reading those cells found three causes, all Muninn's own and none of them the engine's
+ability to find the decision:
+
+1. The boot summary Muninn injects said **"Do not … paste blocks into files"**, and the task
+   is to write the current decision into a file.
+2. A hyphen hid a value from its own decision: `async-std` in the diff, `async std` in the
+   record, so the commit that replaced it with tokio retired nothing and **both values were
+   served**. The agent wrote that the decision had been revoked.
+3. The `topic:` line under a block restated the retired value when that value was an ordinary
+   lowercase word: `topic: backend openssl`, printed under "Let's use rustls instead".
+
+All three are fixed, and the third arm registered above measures them on these same cells.
+None of the fixes touches the pass rate above, which stands as the registered result.
+
 ## Threats this design does not remove
 
 - 27 cells per arm-condition is the size that could not separate a +0.13 difference [Z7]. It
