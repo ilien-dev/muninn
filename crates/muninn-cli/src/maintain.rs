@@ -414,10 +414,11 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         // A **disappearance**: a commit took the word out and no tracked file holds it any
         // more. Weaker evidence about a stronger fact, and it catches a value that was deleted
         // rather than replaced.
-        // A quantity is the one value a diff cannot be read for by words: the unit stays on
-        // both lines and the number is not a word at all, so `3 attempts` → `7 attempts`
-        // leaves nothing that went away. The slot is the unit and the value is the number,
-        // exactly as in the conversational rule, and the hunk holds both lines.
+        //
+        // A quantity is read as a third case inside the swap: the unit stays on both lines and
+        // the number is not a word at all, so `3 attempts` → `7 attempts` leaves nothing that
+        // went away. The slot is the unit and the value is the number, exactly as in the
+        // conversational rule, and the hunk holds both lines.
         let quantities = muninn_capture::extract::quantity_slots(&object_of(*id));
         let swap = commits.iter().find_map(|c| {
             let sw = c.swaps.iter().find(|sw| {
@@ -438,16 +439,18 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             Some((c, sw))
         });
         let (commit, gone) = match &swap {
-            Some((c, sw)) => (
-                *c,
-                // the word that went — or, on the quantity path where nothing went, the unit,
-                // which is the slot and is what the heir must not restate as a value
-                words
+            // the word that went — or, on the quantity path where nothing went, the unit,
+            // which is the slot. `unwrap_or(&words[0])` would have been an eager index into a
+            // vector that can be empty.
+            Some((c, sw)) => {
+                let w = words
                     .iter()
                     .find(|w| sw.out.contains(w) && !sw.inn.contains(w))
                     .or_else(|| words.iter().find(|w| sw.out.contains(w)))
-                    .unwrap_or(&words[0]),
-            ),
+                    .or_else(|| words.first());
+                let Some(w) = w else { continue };
+                (*c, w)
+            }
             None => {
                 let Some((c, gone)) = commits.iter().find_map(|c| {
                     let w = words.iter().find(|w| c.removed.contains(w))?;
