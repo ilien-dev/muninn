@@ -2652,3 +2652,51 @@ Two arms differing by one edit to an instruction is a clean contrast only if not
 moved, and nothing else did: the binaries differ in that edit and in nothing else that reaches
 a hook. But it is still one grid of 27 cells per arm, and 27 cells cannot separate a small
 effect [Z7].
+
+---
+
+# Pre-registration — v4 fifth arm: what `muninn why` tells the agent
+
+Registered 2026-09-21, before the arm was seeded and before any of its cells ran. The third
+arm was still running; at 17 of its 27 replacement cells it stood at 1 pass, *below* the arm
+it was meant to improve on, which is what sent me back into its transcripts.
+
+## What those transcripts show
+
+Both Muninn arms' agents ask `muninn why` constantly — 22 and 13 calls across their cells —
+and its one-line verdict is what they act on. It was wrong in a systematic way. Asked what the
+cache eviction policy is, on a real seeded store:
+
+    sufficient: #11 (commit_linked, trust 2) answers directly
+    [muninn:decision] #11 · commit c9249e6: update dependencies
+      files: config/decisions/revoke-cache-eviction.json
+
+The decision itself — `Actually LRU with a 300-second TTL would be better`, trust 3 — was
+three lines below. The agent wrote that the project had no current recorded decision. A commit
+log entry is corroboration, and `why` was reporting it as the answer because the rule was
+"first record of trust ≥ 2".
+
+The same output's other branch said, when nothing of trust 2 matched: "insufficient: only
+circumstantial records (trust < 2); **do not fill the gap**" — which an agent reads as "say
+nothing is recorded", and did, in a cell where a trust-3 decision was in the same output.
+
+## The arm
+
+`muninn-why`, pinned to `166230fbc6a84db9`: arm 4 plus two changes to the responder — a
+`commit:<hash>` log entry sinks below the records that carry a value and never decides
+sufficiency on its own, and the insufficiency line says what it means (say what the records do
+show, name their trust, do not invent a value).
+
+## Decision rule, fixed before the data
+
+One contrast, outside the registered family and labelled so: `pass(muninn-why) −
+pass(muninn-kinds)`, exact Fisher, on the same replacement cells. Reported whatever it shows.
+The registered arms of this grid are closed.
+
+## What this run is, and is not
+
+It is the fourth build measured on one grid of 27 cells. Each was pinned and registered before
+it ran, each carries its predecessor's changes, and every one of them was prompted by reading
+the previous one's transcripts rather than by a hunch — but a sequence like this cannot be
+read as four independent tests, and no number from it is a replication of another. What would
+settle it is a fresh grid on wording none of these builds has seen.
