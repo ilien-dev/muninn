@@ -29,6 +29,17 @@
   folding it, so `móvil` became `mvil` while the index holds `movil`; a non-Latin script was
   emptied outright. Measured on an accented query against an accented record: 0 blocks before,
   1 after.
+- **What Muninn tells the assistant about itself was wrong in three places, and one of them
+  argued against using the memory at all.** The injected startup note said "Do not … paste
+  blocks into files" — it meant do not copy a block's header and evidence line, and an
+  assistant asked to write a decision into a document read it as forbidding that. It listed
+  six kinds of block, of which three (`no-rebuild`, `stale`, `lineage`) the engine never
+  emits, while the four it does emit most (`decision`, `invariant`, `deadend`, `correction`)
+  were missing; the fictional `stale` was described as "a fact was retired, assume neither old
+  nor new", which is close to what several head-to-head cells came back saying. And the
+  shipped skill claimed nine health checks where `muninn doctor` prints ten. All three
+  documents now describe the engine that exists, and say the other half out loud: use what a
+  block says as freely as anything else you know, in your own words.
 - **`why --all` could not find the value it exists to show you.** A retired record leaves the
   full-text index, which is what F1 is for; `--all` is the door back in for a person, and it
   asked that same index which of the question's words were worth searching for. The word you
