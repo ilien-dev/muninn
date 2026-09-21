@@ -59,3 +59,19 @@ for arm in talk code both noise; do
       --scenarios crates/muninn-bench/experiment/loop11/scenarios.json --out /tmp/l11-$arm.json
 done
 ```
+
+## One extension that was tried and is not here
+
+Half the generated phrasings state the new value without its unit — "Increase to 25.",
+"bump that up to 25" — and the rule cannot see them, because a quantity slot is a number
+*followed by* a unit and there is none. A `bare_numbers` path was written for exactly that:
+extract a message that states a number and nothing else, and match it against the most recent
+record that states one, with or without a unit.
+
+Measured on this held-out set, it moved `retired` from 8/30 to 8/30 and `delivered` from 6/30
+to 6/30. On the `both` arm it moved one cell and then moved it back. It is not in the engine.
+
+The reason is worth keeping: the first message of those pairs — "Set pool size to 10." — puts
+its number at the *end* too, so neither side has a unit and the only thing relating them is
+that both contain a number. That is the anaphora relaxation loop 6 already measured and
+rejected, arriving by another road.
