@@ -52,12 +52,35 @@ often, which is what you do when you do not believe what you were told.
    line only knows values spelled like products. The line is gone; the key still inherits
    every word and is indexed.
 
-## The third arm
+## The third arm: the fixes did not help
 
-`muninn-now`, pre-registered before it was seeded, runs the same cells with all three fixed
-and five measured engine changes besides. Its result is appended here when it finishes,
-whatever it is, with the note that cause 1 was found while diagnosing this grid — whose task
-is exactly the shape that sentence collided with.
+`muninn-now` — the three causes above fixed, plus five measured engine changes — scored
+**4/27** against `muninn-loop8`'s 6/27, exact Fisher p = 0.73. Delivered in 27 cells of 27,
+used in 4.
+
+The hypothesis was registered before the arm ran and it is wrong. The three defects were
+real and the store the arm seeds is measurably more correct; none of it reaches the answer
+the cell writes.
+
+Reading *those* transcripts found something the earlier pass had missed, and it is the first
+thing that plausibly explains the size of the gap. Both Muninn arms' agents ask
+`muninn why` constantly — 22 and 13 calls across their cells — and act on its one-line
+verdict. On a real seeded store that verdict read:
+
+```
+sufficient: #11 (commit_linked, trust 2) answers directly
+[muninn:decision] #11 · commit c9249e6: update dependencies
+  files: config/decisions/revoke-cache-eviction.json
+```
+
+The decision itself — `Actually LRU with a 300-second TTL would be better`, trust 3 — was
+three lines below. A commit log entry was being reported as the answer because the rule was
+"first record of trust ≥ 2". And when nothing of trust 2 matched, the same line said
+"insufficient: only circumstantial records (trust < 2); **do not fill the gap**", which an
+agent reads as "say nothing is recorded" — and did, with a trust-3 decision in the same
+output.
+
+That is the fifth arm, pre-registered before seeding.
 
 ## Raw data
 

@@ -2602,6 +2602,19 @@ contrast: `pass(muninn-now) − pass(muninn-loop8)`, exact Fisher, on the replac
 It is reported whatever it shows, and it is **not** a claim about the head-to-head — the
 comparison that matters there stays `muninn-* vs claude-mem`, reported for both pins.
 
+## Result
+
+**4/27, against 6/27 for the arm it was meant to improve on** (exact Fisher p = 0.73). The
+three fixes did not help; the difference from `muninn-loop8` is nothing, and the direction is
+not in our favour. The decomposition is the same shape as before and slightly worse: delivered
+in **27 cells of 27**, used in 4, with 5.5 repository searches per cell.
+
+So the boot-summary sentence was not what was stopping the agent, or not the only thing. The
+hypothesis was written down before the arm ran and is wrong, and it stays here rather than
+being quietly replaced by the next one. What the arm did buy is not nothing — the hyphen and
+the `topic:` line were real defects, and the store it seeds is measurably more correct — but
+none of that reaches the cell's answer.
+
 ## What travels with any improvement this shows
 
 The boot-summary sentence was found while diagnosing a cell of this grid, and the grid's task
