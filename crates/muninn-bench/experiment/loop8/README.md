@@ -36,6 +36,14 @@ them by value.
 **The precision control is clean twice.** Commits of the same shape that swap a value the
 decisions never mention retire nothing, in either order.
 
+## The opaque-commit control
+
+`--commit-msg opaque` replaces the subject `use vitest` with `update dependencies`, so the
+commit contributes its diff and nothing else: `both` is 15/30 adjacent and 11/30 in blocks
+(against 9/30 and 0/30 for the conversation alone), and `code` keeps its 23/30 retirements
+while `served_ok` falls to 0/30 — the old decision is known to be dead and nothing in the
+store names what replaced it. The replication and the full table are in `../loop9/README.md`.
+
 ## Development numbers, for the drop
 
 The same grid on the loop-7 set, which the engine was written while reading, is in
