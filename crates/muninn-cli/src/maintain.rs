@@ -160,12 +160,24 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
 /// or a configuration key is made of. Deliberately generous — the set is only ever used
 /// to *look up* values the store already holds, never to create one.
 fn code_tokens(line: &str, out: &mut Vec<String>) {
-    for raw in line.split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '/'))) {
-        let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
+    let mut push = |w: &str, out: &mut Vec<String>| {
         if w.chars().count() >= 3 && w.chars().any(|c| c.is_alphabetic()) {
             let w = w.to_lowercase();
             if !out.contains(&w) {
                 out.push(w);
+            }
+        }
+    };
+    for raw in line.split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '/'))) {
+        let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
+        push(w, out);
+        // A record's words come from `topic_words`, which keeps only alphanumerics, so it
+        // holds `async std` where the manifest line holds `async-std`. Keeping the joined
+        // form alone meant a hyphenated value — `async-std`, `axe-core`, `date-fns` — never
+        // matched the decision that named it, in either direction. Both forms go in.
+        if w.contains(['-', '.', '_', '/']) {
+            for part in w.split(['-', '.', '_', '/']) {
+                push(part, out);
             }
         }
     }
