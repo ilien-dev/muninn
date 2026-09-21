@@ -4,8 +4,8 @@
  "model": "claude-haiku-4-5",
  "runs": 3,
  "arms": [
-  "written",
-  "compiled"
+  "norule",
+  "control-only"
  ],
  "max_turns": 25,
  "timeout_s": 600,
