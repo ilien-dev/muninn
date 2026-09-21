@@ -139,27 +139,24 @@ impl Db {
     /// Repopulate the index from the records that may be served. Only `invalid = 0` rows
     /// go in: an FTS5 `rebuild` would take every row, retired ones included, and the whole
     /// point of the triggers is that a retired record leaves the index.
-    fn fill_fts_from_record(&self) -> Result<()> {
-        let n: i64 = self
-            .conn
-            .query_row("SELECT count(*) FROM record_fts", [], |r| r.get(0))?;
-        if n > 0 {
-            return Ok(());
-        }
-        self.conn.execute(
+    ///
+    /// Only ever called with an empty index — either the table was just dropped for the
+    /// tokenizer change, or the store is new — because there is no cheap way to ask an
+    /// external-content FTS5 table how many rows its *index* holds: `count(*)` is answered
+    /// from the content table, which is `record`, retired rows included. A guard written
+    /// against that count skipped the fill on every migration and left the index empty.
+    fn fill_fts_from_record(&self) -> Result<usize> {
+        let rows = self.conn.execute(
             "INSERT INTO record_fts(rowid, subject, object, body) \
              SELECT id, subject, object, body FROM record WHERE invalid = 0",
             [],
         )?;
-        let rows: i64 = self
-            .conn
-            .query_row("SELECT count(*) FROM record_fts", [], |r| r.get(0))?;
         self.conn.execute(
             "INSERT INTO meta(key, value) VALUES ('fts_rows', ?1) \
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [rows.to_string()],
         )?;
-        Ok(())
+        Ok(rows)
     }
 
     fn check_schema_not_newer(&self) -> Result<()> {
@@ -292,6 +289,69 @@ mod tests {
             .conn
             .execute("INSERT INTO meta(key,value) VALUES('x','y')", []);
         assert!(err.is_err(), "read-only handle must not write");
+    }
+
+    /// A store written by a v1 binary carries an unstemmed index. Opening it with this one
+    /// must rebuild the index — with the *servable* rows only, never the retired ones — and
+    /// leave every counter coherent. Existing installs take this path exactly once.
+    #[test]
+    fn a_v1_store_is_migrated_and_keeps_only_servable_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("m.db");
+        {
+            // a v1 store: the schema as it was, with the unstemmed tokenizer
+            let db = Db::open(&p, Mode::ReadWrite).unwrap();
+            db.conn
+                .execute_batch("DROP TABLE record_vocab; DROP TABLE record_fts;")
+                .unwrap();
+            db.conn
+                .execute_batch(
+                    "CREATE VIRTUAL TABLE record_fts USING fts5(subject, object, body, \
+                     content='record', content_rowid='id', tokenize='unicode61 remove_diacritics 2'); \
+                     CREATE VIRTUAL TABLE record_vocab USING fts5vocab('record_fts','col');",
+                )
+                .unwrap();
+            for (obj, invalid) in [("we are pooling connections", 0), ("we used PgBouncer", 1)] {
+                db.conn
+                    .execute(
+                        "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,created_at) \
+                         VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,?3,1)",
+                        rusqlite::params![obj, obj, invalid],
+                    )
+                    .unwrap();
+            }
+            // the insert triggers have already indexed the servable row and skipped the
+            // retired one, exactly as they do in the real write path
+            db.conn
+                .execute("UPDATE meta SET value='1' WHERE key='schema_version'", [])
+                .unwrap();
+        }
+        let db = Db::open(&p, Mode::ReadWrite).unwrap();
+        assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
+        let matches = |q: &str| -> i64 {
+            db.conn
+                .query_row(
+                    "SELECT count(*) FROM record_fts WHERE record_fts MATCH ?1",
+                    [q],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(
+            matches("\"pgbouncer\""),
+            0,
+            "the retired record does not come back into the index"
+        );
+        // stemmed now: the plural reaches the singular
+        assert_eq!(matches("\"connection\""), 1, "the rebuilt index is stemmed");
+        let rows: String = db
+            .conn
+            .query_row("SELECT value FROM meta WHERE key='fts_rows'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, "1", "the row counter matches the index");
+        db.quick_check().unwrap();
     }
 
     #[test]
