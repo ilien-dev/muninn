@@ -181,7 +181,7 @@ fn change_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch|\bswap|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bon second thoughts?\b|\bsecond thoughts\b|\breconsider|\bon reflection\b|\brethink|\bchang(?:ed|ing) (?:my|our) minds?\b|\bchanging course\b|\bwithdraw|\bretract|\bnever ?mind\b|\bforget (?:it|that|this|about)\b|\bcancel\b|\bpensándolo bien\b|\bpensandolo bien\b|\bme retracto\b|\bolvida (?:eso|lo)\b|\bahora\b|\bcambi|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz|\bsustitu|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
+            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch|\bswap|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat(?:e|ed|es|ing)\b|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac(?:e|ed|es|ing)\b|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bon second thoughts?\b|\bsecond thoughts\b|\breconsider|\bon reflection\b|\brethink|\bchang(?:ed|ing) (?:my|our) minds?\b|\bchanging course\b|\bwithdraw|\bretract|\bnever ?mind\b|\bforget (?:it|that|this|about)\b|\bcancel\b|\bpensándolo bien\b|\bpensandolo bien\b|\bme retracto\b|\bolvida (?:eso|lo)\b|\bahora\b|\bcambi(?:a|an|amos|ar|aron|ado|ando|é|e)\b|\bcambio (?:a|de|al)\b|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra(?:mos|r|ron|ndo|do)\b|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz(?:a|an|amos|ar|ado|ando)\b|\bsustitu(?:ye|yen|imos|ir|ido|yendo)\b|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
         )
         .unwrap()
     })
@@ -845,6 +845,33 @@ mod tests {
         let inv = c.iter().find(|x| x.kind == "invariant").unwrap();
         assert_eq!(inv.subject, "nunca uses pkill en bash");
         assert_eq!(trust_of(inv.origin), 3);
+    }
+
+    /// A prefix that also matches a very common *noun* turns every sentence containing that
+    /// noun into an announced change. `\bmigrat` matched "migrations"; `\bcambi` matched
+    /// "los cambios fueron…". Both retired decisions that were still true: 14/15 on the
+    /// loop-10 precision set and three of four sampled retirements in a real store.
+    #[test]
+    fn a_noun_is_not_an_announced_change() {
+        let is_change = |s: &str| change_re().is_match(s);
+        for s in [
+            "user data migrations run in CI",
+            "los cambios fueron la correccion de un bug",
+            "the replacement parts arrive on Tuesday",
+            "la migracion de datos tarda dos horas",
+        ] {
+            assert!(!is_change(s), "not a change: {s}");
+        }
+        for s in [
+            "migrating to Postgres next week",
+            "we migrate to Postgres next week",
+            "cambio a Zustand, es mas simple",
+            "mejor cambiamos a Fastify",
+            "replacing gzip with zstd",
+            "reemplazamos gzip por zstd",
+        ] {
+            assert!(is_change(s), "is a change: {s}");
+        }
     }
 
     /// Development set: topics and phrasings that no benchmark in this repository uses.
