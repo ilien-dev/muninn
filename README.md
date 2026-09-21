@@ -249,11 +249,12 @@ enforced at the tool boundary at all: they are about style, judgement or process
 but the assistant reading them can honour them. Muninn tells you which of your rules are in
 which half, and that is the honest limit of the feature.
 
-Noticing that you changed your mind is the weak half of the job. Everything above about retired
-decisions assumes the decision got marked as retired in the first place, and that marking is a set
-of rules over the words you typed. On wording no version of Muninn had seen, it caught 17 of 27
-replacements against claude-mem's 14, which is a tie. The guarantee protects what happens after
-the mark; getting the mark right is ordinary work, and ours is ordinary.
+Noticing that you changed your mind used to be the weak half of the job, and for a decision
+that never reaches a file it still is. Everything above about retired decisions assumes the
+decision got marked as retired in the first place. Where the decision is in the code, the code
+now says when it stopped being true. Where it is not — a release cadence, a review policy — the
+marking is a set of rules over the words you typed, and on wording no version of Muninn had
+seen those rules caught 17 of 27 replacements against claude-mem's 14, which is a tie.
 
 Inside the words, that gap is closed as far as it goes. Of 30 held-out cases, 23 have no word
 in common between the old decision and the message replacing it — "HashiCorp Vault for
@@ -278,6 +279,21 @@ is keyword search.
 Retired records stay on disk in plain sight. Muninn mirrors every record to `.muninn/records/` as
 Markdown, retired ones included and labelled as retired. Nothing hands them to the assistant, but
 an assistant that greps the folder will find them. `MUNINN_NO_PROJECT` turns the mirror off.
+
+Muninn takes more of your context window than the tool it was measured against. On the part
+that is certainly the assistant's context, three comparisons agree: 1.6 to 2.1 times
+claude-mem's room. Per turn it is about 1 400 characters when a session starts and 860 more on
+each prompt, against claude-mem's 1 380 once and nothing after. That is the design — memory
+arrives when you ask something, not only at the start — and it is a cost, not a saving. The
+first version of this measurement said the opposite, and it was wrong: it counted our own
+injection twice, because Muninn returns its context on standard output and the hook record
+repeats it.
+
+A question in one language does not reach a record in another. On the Spanish half of the
+held-out sets the replaced decision is retired 10 times out of 10 and the new answer is
+delivered 2 to 8 times out of 10, because the question's words are English and the record's
+are Spanish, and the only bridge between them is a product name. Detection is not the problem
+there; retrieval is, and nothing here fixes it.
 
 The speed figures were measured on one machine. CI enforces the same limits on every run, so a
 regression fails the build, but the figures are not a promise about your hardware.
