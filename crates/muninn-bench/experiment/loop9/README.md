@@ -67,9 +67,9 @@ the commit contributes its diff and nothing else. Read the two columns together:
   reported as a miss.
 - **The 30/30 is a commit subject doing half the work.** Where the subject names the value,
   it answers the question by itself. Real subjects often do name it; often they do not. The
-  honest number for the mechanism is the opaque column: **15-16/30 against 8-9/30 for the
-  conversation alone, and 11-15/30 against 0-1/30 when the revision is not adjacent to the
-  decision.**
+  honest number for the mechanism is the opaque column, which is the table at the top of this
+  file: **19/30 and 21/30 against 11/30 and 8/30 for the conversation alone, and 17/30 and
+  25/30 against 0/30 and 1/30 when the revision is not adjacent to the decision.**
 
 ## The precision control
 
