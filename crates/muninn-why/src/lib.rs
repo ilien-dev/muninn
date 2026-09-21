@@ -189,6 +189,22 @@ pub fn answer(
         ranked.push((id, 1.0));
     } else {
         terms = select_terms(db, query, 8)?;
+        // `select_terms` drops a word no *servable* record holds, because the index it asks
+        // holds only those. Under `--all` that is exactly backwards: the word you are asking
+        // about — the value that was dropped — is the one word guaranteed to be missing from
+        // it, so "why --all PgBouncer" found nothing about PgBouncer. Ask with the words as
+        // typed instead; the query below is a LIKE over `record`, which does not need them to
+        // be in any index.
+        if include_invalid {
+            let raw: Vec<String> = query
+                .split_whitespace()
+                .filter_map(muninn_core::sanitize::fts_term)
+                .filter(|t| t.chars().count() >= 3)
+                .collect();
+            if !raw.is_empty() {
+                terms = raw;
+            }
+        }
         let lex = lexical(db, &terms, kinds, include_invalid, 20)?;
         let mut fused: HashMap<i64, f64> = HashMap::new();
         for (rank, (id, _)) in lex.iter().enumerate() {
@@ -355,5 +371,44 @@ mod tests {
         assert_eq!(route("history of src/auth/jwt.rs"), Route::File);
         assert_eq!(route("why is force push forbidden"), Route::Rule);
         assert_eq!(route("tell me about caching"), Route::All);
+    }
+
+    /// `--all` exists so a person can see what was retired. It asked the full-text index which
+    /// words were worth searching for — and a retired record is not in that index, so the one
+    /// word that would find it was always dropped as unknown: `why --all PgBouncer` returned
+    /// everything except PgBouncer.
+    #[test]
+    fn all_finds_the_value_that_was_retired() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        let ins = |object: &str, invalid: i64| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,invalid_reason,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,?3,CASE ?3 WHEN 1 THEN 'superseded' END,1)",
+                    rusqlite::params![object, object, invalid],
+                )
+                .unwrap();
+        };
+        ins("we go with PgBouncer for the pooling layer", 1);
+        ins("we go with Supavisor for the pooling layer", 0);
+
+        let seen = |all: bool| -> Vec<String> {
+            answer(&db, "PgBouncer", all, 20, 1_500)
+                .unwrap()
+                .records
+                .into_iter()
+                .map(|f| f.record.object)
+                .collect()
+        };
+        assert!(
+            seen(true).iter().any(|o| o.contains("PgBouncer")),
+            "--all must reach the retired value: {:?}",
+            seen(true)
+        );
+        assert!(
+            !seen(false).iter().any(|o| o.contains("PgBouncer")),
+            "and without --all it must not be served at all"
+        );
     }
 }
