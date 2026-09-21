@@ -37,6 +37,17 @@ fn git(root: &std::path::Path, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// `--since` for a watermark, or `None` when there is not one yet.
+///
+/// git parses `@0` as *now*, not as the epoch — an invalid approxidate falls back to the
+/// current time — so a fresh store asked for `--since=@0` was told the repository had no
+/// history at all, and only ever captured commits made after its first `maintain`. With no
+/// watermark the range is simply left open and `-n` bounds it.
+fn since_arg(since_ms: i64) -> Option<String> {
+    let secs = since_ms / 1000;
+    (secs > 0).then(|| format!("--since=@{}", secs.saturating_sub(1)))
+}
+
 /// Commits since the watermark become `decision` records (commit_linked, trust 2);
 /// reverts retire the decision they undo and leave a `deadend`.
 pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize, usize)> {
@@ -44,20 +55,21 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
         .meta_get("git_watermark_ms")?
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    let since = format!("--since=@{}", since_ms / 1000);
     let now = now_ms();
-    let Some(log) = git(
-        &paths.root,
-        &[
-            "log",
-            &since,
+    let mut args: Vec<String> = vec!["log".into()];
+    args.extend(since_arg(since_ms));
+    args.extend(
+        [
             "--format=%x1e%h%x1f%s%x1f%ct%x1f%an",
             "--name-only",
             "--no-merges",
             "-n",
             "500",
-        ],
-    ) else {
+        ]
+        .map(String::from),
+    );
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let Some(log) = git(&paths.root, &argv) else {
         return Ok((0, 0));
     };
     let mut commits = 0usize;
@@ -185,11 +197,13 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         // this runs, and borrowing it would make the range empty on every call
         .unwrap_or(0);
     let now = now_ms();
-    let Some(diff) = git(
-        &paths.root,
-        &[
-            "log",
-            &format!("--since=@{}", since_ms / 1000),
+    // one second of overlap (`since_arg`): `--since` has second granularity, so a commit
+    // made in the same second as the last run would otherwise fall between two windows.
+    // Re-reading a commit is free — a record already retired is not retired twice.
+    let mut args: Vec<String> = vec!["log".into()];
+    args.extend(since_arg(since_ms));
+    args.extend(
+        [
             "--no-merges",
             "-U0",
             "-p",
@@ -197,8 +211,11 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             "--format=%x1e%h",
             "-n",
             "50",
-        ],
-    ) else {
+        ]
+        .map(String::from),
+    );
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let Some(diff) = git(&paths.root, &argv) else {
         return Ok(0);
     };
     db.meta_set("values_watermark_ms", &now.to_string())?;
@@ -233,7 +250,7 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             "SELECT id, object FROM record WHERE invalid=0 AND length(body) <= 700 AND ( \
                  (kind='decision' AND origin IN ('user_said','review_accepted')) \
                  OR kind='episode') \
-             ORDER BY created_at DESC LIMIT 400",
+             ORDER BY created_at DESC, id DESC LIMIT 400",
         )?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.flatten().collect()
@@ -287,7 +304,8 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             )?;
         }
         if let Some(h) = heir {
-            muninn_capture::ingest::inherit_topic(&tx, h)?;
+            // the dropped value is the one word the heir must not restate
+            muninn_capture::ingest::inherit_topic_hiding(&tx, h, std::slice::from_ref(gone))?;
         }
     }
     tx.commit()?;
@@ -445,4 +463,29 @@ pub fn spawn_detached(paths: &ProjectPaths) {
         .stderr(std::process::Stdio::null())
         .process_group(0);
     let _ = cmd.spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// git reads `@0` as *now*, not as the epoch, so a fresh store — watermark 0 — was told
+    /// its repository had no history and captured nothing until its second `maintain`.
+    #[test]
+    fn no_watermark_means_no_since_at_all() {
+        assert_eq!(since_arg(0), None);
+        assert_eq!(since_arg(999), None); // under a second is still no watermark
+        assert_eq!(since_arg(10_000), Some("--since=@9".into())); // one second of overlap
+    }
+
+    #[test]
+    fn code_tokens_are_the_words_a_manifest_is_made_of() {
+        let mut out = Vec::new();
+        code_tokens("  \"nock\": \"^13.5.1\",", &mut out);
+        assert!(out.contains(&"nock".to_string()));
+        code_tokens("import { setupServer } from 'msw/node'", &mut out);
+        assert!(out.contains(&"msw".to_string()) || out.contains(&"msw/node".to_string()));
+        // no single letters, no pure punctuation
+        assert!(out.iter().all(|w| w.chars().count() >= 3));
+    }
 }

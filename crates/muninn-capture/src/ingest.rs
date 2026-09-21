@@ -334,6 +334,20 @@ fn supersede_quantity(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> 
 /// names excluded) in its supersession key, so a question about the topic reaches it and a
 /// later change on the same topic still finds it.
 pub fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
+    inherit_topic_hiding(tx, new_id, &[])
+}
+
+/// As `inherit_topic`, with words the caller knows to be the replaced *value* rather than
+/// its topic. `name_tokens` catches a value that is spelled like a product — `PgBouncer`,
+/// `AG Grid` — and misses one that is not: `sequelize`, `winston`, `bash` are ordinary
+/// lowercase words, and inheriting them put the retired value back in front of the agent on
+/// the `topic:` line of the record that replaced it. The caller that retired the record
+/// knows which word it was, so it says so.
+pub fn inherit_topic_hiding(
+    tx: &rusqlite::Connection,
+    new_id: i64,
+    hidden: &[String],
+) -> Result<()> {
     let (subject, body): (String, String) = tx.query_row(
         "SELECT subject, body FROM record WHERE id=?1",
         [new_id],
@@ -367,7 +381,7 @@ pub fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
             if !set.contains(&w) {
                 set.push(w.clone());
                 added.push(w.clone());
-                if !names.contains(&w) && !shown.contains(&w) {
+                if !names.contains(&w) && !hidden.contains(&w) && !shown.contains(&w) {
                     shown.push(w);
                 }
             }
@@ -654,6 +668,60 @@ mod tests {
     }
     fn tool_result(id: &str, out: &str, code: i64) -> serde_json::Value {
         serde_json::json!({"type":"user","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":id,"content":out,"is_error":code!=0}]},"toolUseResult":{"exitCode":code}})
+    }
+
+    /// The record that replaces another inherits its topic so a question about the topic
+    /// reaches it — and must not inherit the *value*, or the retired value is back in front
+    /// of the agent on the `topic:` line. `name_tokens` hides a value spelled like a product
+    /// and misses `sequelize`, so the caller that knows which word was the value says so.
+    #[test]
+    fn an_inherited_topic_never_restates_the_value_it_replaced() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let ins = |body: &str, hash: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'user_decision',?2,?3,'user_said',3,'s',?4,1)",
+                    rusqlite::params![format!("said:state:{hash}"), body, format!("user: {body}\n"), hash],
+                )
+                .unwrap();
+            db.conn.last_insert_rowid()
+        };
+        let old = ins("sequelize for the orm layer", "old");
+        let new = ins("moving to typeorm", "new");
+        db.conn
+            .execute(
+                "UPDATE record SET invalid=1, invalidated_by=?1 WHERE id=?2",
+                rusqlite::params![new, old],
+            )
+            .unwrap();
+        inherit_topic_hiding(&db.conn, new, &["sequelize".to_string()]).unwrap();
+        let body: String = db
+            .conn
+            .query_row("SELECT body FROM record WHERE id=?1", [new], |r| r.get(0))
+            .unwrap();
+        assert!(body.contains("topic:"), "the topic is inherited: {body}");
+        assert!(body.contains("layer"), "the topic words are kept: {body}");
+        assert!(
+            !body.contains("sequelize"),
+            "the replaced value is not restated: {body}"
+        );
+        // it is still *findable* by the old value: the key is indexed and never shown
+        let subject: String = db
+            .conn
+            .query_row("SELECT subject FROM record WHERE id=?1", [new], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(
+            subject.contains("sequelize"),
+            "still reachable by the old value: {subject}"
+        );
     }
 
     #[test]
