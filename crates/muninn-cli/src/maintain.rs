@@ -171,13 +171,32 @@ fn code_tokens(line: &str, out: &mut Vec<String>) {
     }
 }
 
+#[derive(Default)]
+struct Hunk {
+    out: Vec<String>,
+    inn: Vec<String>,
+    line: String,
+    outs: usize,
+    ins: usize,
+}
+
+/// A hunk where one line became one line — what a changed value looks like in a diff.
+struct Swap {
+    out: Vec<String>,
+    inn: Vec<String>,
+    /// the line that replaced it, trimmed: the literal the project now holds
+    line: String,
+    file: String,
+}
+
 /// What one commit did to the words of the code.
 #[derive(Default)]
 struct Commit {
+    hash: String,
+    created_at: i64,
     removed: Vec<String>,
     added: Vec<String>,
-    /// hunks where one line became one line: (words out, words in)
-    swaps: Vec<(Vec<String>, Vec<String>)>,
+    swaps: Vec<Swap>,
 }
 
 /// How many diff lines one `maintain` reads once it is caught up. A commit that rewrites a
@@ -231,7 +250,7 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             "-U0",
             "-p",
             "--no-color",
-            "--format=%x1e%h",
+            "--format=%x1e%h%x1f%ct",
             "-n",
         ]
         .map(String::from),
@@ -247,31 +266,46 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
     // additions per commit is what makes the replacement specific: a range of commits pooled
     // into one bag pairs a value dropped here with a value added over there.
     let mut commits: Vec<Commit> = Vec::new();
-    let mut hunk: (Vec<String>, Vec<String>, usize, usize) = (Vec::new(), Vec::new(), 0, 0);
+    let mut hunk = Hunk::default();
+    let mut file = String::new();
     let max_lines = if first_pass {
         FIRST_PASS_DIFF_LINES
     } else {
         MAX_DIFF_LINES
     };
-    let close_hunk = |commits: &mut Vec<Commit>,
-                      hunk: &mut (Vec<String>, Vec<String>, usize, usize)| {
+    let close_hunk = |commits: &mut Vec<Commit>, hunk: &mut Hunk, file: &str| {
         // a one-for-one hunk is what a changed value looks like: one line became one line.
         // Anything larger is a rewrite, and pairing across it would be guessing.
-        if hunk.2 == 1 && hunk.3 == 1 {
+        if hunk.outs == 1 && hunk.ins == 1 {
             if let Some(c) = commits.last_mut() {
-                c.swaps
-                    .push((std::mem::take(&mut hunk.0), std::mem::take(&mut hunk.1)));
+                c.swaps.push(Swap {
+                    out: std::mem::take(&mut hunk.out),
+                    inn: std::mem::take(&mut hunk.inn),
+                    line: std::mem::take(&mut hunk.line),
+                    file: file.to_string(),
+                });
             }
         }
-        *hunk = (Vec::new(), Vec::new(), 0, 0);
+        *hunk = Hunk::default();
     };
     for line in diff.lines().take(max_lines) {
-        if line.starts_with('\u{1e}') {
-            close_hunk(&mut commits, &mut hunk);
-            commits.push(Commit::default());
+        if let Some(h) = line.strip_prefix('\u{1e}') {
+            close_hunk(&mut commits, &mut hunk, &file);
+            let (hash, ct) = h.trim().split_once('\u{1f}').unwrap_or((h.trim(), ""));
+            commits.push(Commit {
+                hash: hash.chars().take(7).collect(),
+                // the record is dated when the code changed, not when Muninn noticed
+                created_at: ct.parse::<i64>().map(|s| s * 1000).unwrap_or(now),
+                ..Commit::default()
+            });
             continue;
         }
         if commits.is_empty() {
+            continue;
+        }
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            close_hunk(&mut commits, &mut hunk, &file);
+            file = path.trim().to_string();
             continue;
         }
         if line.starts_with("@@")
@@ -279,20 +313,21 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             || line.starts_with("---")
             || line.starts_with("diff --git")
         {
-            close_hunk(&mut commits, &mut hunk);
+            close_hunk(&mut commits, &mut hunk, &file);
             continue;
         }
         if let Some(rest) = line.strip_prefix('-') {
             code_tokens(rest, &mut commits.last_mut().unwrap().removed);
-            code_tokens(rest, &mut hunk.0);
-            hunk.2 += 1;
+            code_tokens(rest, &mut hunk.out);
+            hunk.outs += 1;
         } else if let Some(rest) = line.strip_prefix('+') {
             code_tokens(rest, &mut commits.last_mut().unwrap().added);
-            code_tokens(rest, &mut hunk.1);
-            hunk.3 += 1;
+            code_tokens(rest, &mut hunk.inn);
+            hunk.line = rest.trim().to_string();
+            hunk.ins += 1;
         }
     }
-    close_hunk(&mut commits, &mut hunk);
+    close_hunk(&mut commits, &mut hunk, &file);
     commits.retain(|c| !c.removed.is_empty());
     if commits.is_empty() {
         return Ok(0);
@@ -331,14 +366,15 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         // more. Weaker evidence about a stronger fact, and it catches a value that was deleted
         // rather than replaced.
         let swap = commits.iter().find_map(|c| {
-            let sw = c
-                .swaps
-                .iter()
-                .find(|(out, inn)| words.iter().any(|w| out.contains(w) && !inn.contains(w)))?;
+            let sw = c.swaps.iter().find(|sw| {
+                words
+                    .iter()
+                    .any(|w| sw.out.contains(w) && !sw.inn.contains(w))
+            })?;
             Some((c, sw))
         });
         let (commit, gone) = match &swap {
-            Some((c, (out, _))) => (*c, words.iter().find(|w| out.contains(w)).unwrap()),
+            Some((c, sw)) => (*c, words.iter().find(|w| sw.out.contains(w)).unwrap()),
             None => {
                 let Some((c, gone)) = commits.iter().find_map(|c| {
                     let w = words.iter().find(|w| c.removed.contains(w))?;
@@ -359,7 +395,7 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         // the replacement is an existing record that this commit's added lines corroborate —
         // the added line of the swap itself where there was one
         let added: &[String] = match &swap {
-            Some((_, (_, inn))) => inn,
+            Some((_, sw)) => &sw.inn,
             None => &commit.added,
         };
         let heir: Option<i64> = words_of
@@ -389,6 +425,46 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         if let Some(h) = heir {
             // the dropped value is the one word the heir must not restate
             muninn_capture::ingest::inherit_topic_hiding(&tx, h, std::slice::from_ref(gone))?;
+        }
+        {
+            // What the file now holds, whether or not anyone said it: it now holds this line, and that is
+            // an observation with a commit behind it, not a guess — `commit_linked`, trust 2,
+            // anchored to the file, keyed on the retired decision's own topic words so the
+            // question that used to reach the old answer reaches this one. Written only when a
+            // swap actually retired something, so a repository's ordinary churn creates
+            // nothing: at most one record per retirement.
+            {
+                if let Some((_, sw)) = &swap {
+                    let topic: Vec<&str> = words
+                        .iter()
+                        .filter(|w| *w != gone)
+                        .map(String::as_str)
+                        .collect();
+                    let object = muninn_core::sanitize::truncate_chars(&sw.line, 160).to_string();
+                    let body = muninn_capture::redact::redact(&format!(
+                        "commit {}: {} now reads {}\n",
+                        commit.hash, sw.file, object
+                    ));
+                    let subject = format!("said:change:{}", topic.join(" "));
+                    let hash =
+                        blake3::hash(format!("decision|{subject}|is|{object}|{body}").as_bytes())
+                            .to_hex()
+                            .to_string();
+                    tx.execute(
+                        "INSERT OR IGNORE INTO record(kind, subject, relation, object, body, origin, trust, anchor_path, session_id, transcript_ref, dedup_hash, created_at) \
+                         VALUES('decision', ?1, 'is', ?2, ?3, 'commit_linked', 2, ?4, 'git', ?5, ?6, ?7)",
+                        rusqlite::params![
+                            subject,
+                            object,
+                            body,
+                            sw.file,
+                            format!("git:{}", commit.hash),
+                            hash,
+                            commit.created_at
+                        ],
+                    )?;
+                }
+            }
         }
     }
     tx.commit()?;

@@ -13,19 +13,25 @@ model in any cell, every run deterministic.
 `v2_<arm>_<order>.json` in each loop's directory. Both sets, both orders, 30 cells per arm.
 
 | | retired_a | | | | served_ok | |
-| set / order | talk | code | both | noise | talk | both |
-|---|---|---|---|---|---|---|
-| loop 8 adjacent | 17/30 | 29/30 | **30/30** | 0/30 | 11/30 | **18/30** |
-| loop 8 blocks | 6/30 | 29/30 | **29/30** | 0/30 | 0/30 | **14/30** |
-| loop 9 adjacent | 17/30 | 29/30 | **29/30** | 0/30 | 8/30 | **16/30** |
-| loop 9 blocks | 5/30 | 29/30 | **29/30** | 0/30 | 1/30 | **15/30** |
+| set / order | talk | code | both | noise | talk | code | both |
+|---|---|---|---|---|---|---|---|
+| loop 8 adjacent | 17/30 | 29/30 | **30/30** | 0/30 | 11/30 | 21/30 | **19/30** |
+| loop 8 blocks | 6/30 | 29/30 | **29/30** | 0/30 | 0/30 | 21/30 | **17/30** |
+| loop 9 adjacent | 17/30 | 29/30 | **29/30** | 0/30 | 8/30 | 29/30 | **21/30** |
+| loop 9 blocks | 5/30 | 29/30 | **29/30** | 0/30 | 1/30 | 29/30 | **25/30** |
 
-(`v3_<arm>_<order>.json`; `v2_*` are the same grid before the term fall-back below, and differ
-only in the `served_ok` columns of loop 8.)
+(`v5_<arm>_<order>.json`. `v2_*` through `v4_*` are the same grid at earlier points in the
+loop and are kept so the effect of each change can be read off.)
 
-`code` gives the same 29/30 in every row: the commit does not care whether the revision
+`code` gives the same numbers in every row: the commit does not care whether the revision
 followed the decision or came ten decisions later, and the conversation alone falls from
 17/30 to 5-6/30 between those two orders.
+
+The `code` column is the one worth reading twice. Its arm has **no second message at all** —
+the user states a decision once and never mentions it again — and an opaque commit subject, so
+the only thing that says what the project uses now is the diff. It answers 21/30 and 29/30
+against the conversation's 11/30 and 8/30. That is the case where a memory built on
+transcripts has nothing to read.
 
 Retirement is, on these sets, no longer the weak half for a decision that reaches the code.
 What holds `served_ok` down is retrieval, which loop 8's README describes and which none of
