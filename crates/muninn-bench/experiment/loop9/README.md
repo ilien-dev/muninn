@@ -33,6 +33,23 @@ the only thing that says what the project uses now is the diff. It answers 21/30
 against the conversation's 11/30 and 8/30. That is the case where a memory built on
 transcripts has nothing to read.
 
+Split by the language of the message, because the two halves fail for different reasons
+(`v7_<arm>_<order>.json`, the numbers as the loop finished):
+
+| set / order | retired EN | retired ES | delivered EN | delivered ES |
+|---|---|---|---|---|
+| loop 8 adjacent | 20/20 (talk 7) | 10/10 (talk 10) | 13/20 (talk 5) | 6/10 (talk 6) |
+| loop 8 blocks | 20/20 (talk 3) | 9/10 (talk 3) | 12/20 (talk 0) | 5/10 (talk 0) |
+| loop 9 adjacent | 19/20 (talk 7) | 10/10 (talk 10) | **19/20** (talk 6) | 2/10 (talk 2) |
+| loop 9 blocks | 19/20 (talk 2) | 10/10 (talk 3) | 17/20 (talk 0) | 8/10 (talk 1) |
+
+**Retirement works in Spanish; retrieval does not.** The Spanish cells are 9-10/10 retired in
+every row and 2-8/10 delivered, because the question is in English and the record is in
+Spanish — the only bridge between them is a product name, and the topic phrase is not one.
+That is a retrieval limit, it is not addressed here, and it is why the English column is
+reported separately rather than averaged away. Four of loop 8's English cells are the
+`bull`→`bullmq` and `npm`→`pnpm` pairs, which the oracle cannot pass by construction.
+
 Retirement is, on these sets, no longer the weak half for a decision that reaches the code.
 What holds `served_ok` down is retrieval, which loop 8's README describes and which none of
 this addresses.
