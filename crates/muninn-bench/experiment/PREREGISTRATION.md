@@ -2391,18 +2391,36 @@ separately and reported beside it as a check.
 
 ## Decision rule, fixed before the data
 
-The claim "Muninn takes less of the window than claude-mem" is made iff the median ratio's
-95 % bootstrap interval excludes 1. Whatever the interval says is reported, including if it
-contains 1 or lies above it.
+Whatever the median ratio's 95 % bootstrap interval says is reported. On the prior below it
+lies **above** 1, so the registered expectation is that Muninn costs more window than
+claude-mem and the row in `docs/claims.md` says so. A claim in Muninn's favour would need the
+interval to fall below 1, which nothing so far suggests it will.
 
 ## Prior, stated so it cannot be presented as a discovery
 
-The same analysis on the **v2** grid — post-hoc, and exploratory for that reason — reads
-0.452 [0.441, 0.482] over 30 paired cells, with claude-mem at a median of 18 516 characters
-against Muninn's 8 427. v4 is the registered test of that number on cells that had not run
-when this was written. The v2 figure also shows claude-mem raising the *harness's* scaffolding
-(164 399 against 149 608 characters), which is its MCP server and tool listing rather than its
-memory, and which this analysis deliberately does not count against it.
+*Corrected 2026-09-21, before any cell of v4 ran.* The first version of this registration
+carried 0.452 [0.441, 0.482] as the prior, and it was wrong in Muninn's favour. That figure
+added `hook_success` — the hook *result record*, whose `stdout` field repeats the context for
+a tool that returns it on stdout, which Muninn does and claude-mem does not. It counted
+Muninn's own injection twice. The metric is now `hook_additional_context` alone.
+
+On the corrected metric, three existing grids agree and they do **not** favour Muninn:
+
+| grid | claude-mem | muninn-latest | ratio |
+|---|---|---|---|
+| v1 | 4 167 | 8 623 | 2.090 [2.061, 2.122] |
+| v2 | 3 817 | 6 165 | 1.612 [1.558, 1.751] |
+| v3 | 3 711 | 6 413 | 1.700 [1.555, 1.896] |
+
+Muninn takes **more** of the window, by about 1.6 to 2.1 times, and the oldest build measured
+(`muninn` in v1, 3 629 characters) was the only one under claude-mem. Broken down by hook on
+v2: Muninn 1 410 characters at SessionStart and 860 more on the prompt, claude-mem 1 380 at
+SessionStart and nothing on the prompt. The difference is a design decision — Muninn delivers
+on every prompt, not only at session start — and it is a cost, not a saving.
+
+The v2 figure also shows claude-mem raising the *harness's* scaffolding (164 399 against
+149 608 characters), which is its MCP server and tool listing rather than its memory, and
+which this analysis deliberately does not count against it.
 
 ## What this is not
 
