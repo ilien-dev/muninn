@@ -150,49 +150,6 @@ pub fn intent_gate(prompt: &str) -> bool {
 
 /// Top-`k` prompt terms by IDF over the store. Terms absent from the store are
 /// dropped: they cannot match anything.
-/// Shortest prefix a word may be reduced to before it stops naming the same thing.
-/// Four characters: `pool` still means the pool, `ser` would reach `service` as readily
-/// as `server`.
-const MIN_STEM: usize = 4;
-
-/// The store's own word for a query word it does not hold. A question uses one form of a
-/// word and the record another — "connection pooler" against "using PgBouncer for
-/// pooling" — and the two forms are not related by any stemmer: Porter leaves `pooler`
-/// alone because the stem is too short for its `-er` rule, so the term is dropped and the
-/// record is never reached, which is 8 of the 16 held-out misses [Z9].
-///
-/// So the word is cut back to a stem of at least [`MIN_STEM`] characters (at most two are
-/// removed, so `servers` cannot reach `service`) and the *vocabulary of this store* is
-/// asked which indexed term starts with it. Nothing is invented: the replacement is a word
-/// some record actually contains, chosen by document frequency with the term as the
-/// tiebreak, so the same store and the same question always give the same term. Only a
-/// term with no documents of its own is expanded, so an ordinary prompt never pays for it.
-fn vocab_prefix_match(db: &Db, term: &str) -> Result<Option<(String, f64)>> {
-    let n = term.chars().count();
-    if n <= MIN_STEM {
-        return Ok(None);
-    }
-    let cut = n.saturating_sub(2).max(MIN_STEM);
-    let stem: String = term.chars().take(cut).collect();
-    // `term >= stem AND term < stem++` is the prefix range, and it uses the index that
-    // `LIKE 'stem%'` would not
-    let mut hi = stem.clone();
-    match hi.pop() {
-        Some(last) => hi.push(char::from_u32(last as u32 + 1).unwrap_or(last)),
-        None => return Ok(None),
-    }
-    let row = db
-        .conn
-        .query_row(
-            "SELECT term, sum(doc) d FROM record_vocab WHERE term >= ?1 AND term < ?2 \
-             GROUP BY term HAVING d > 0 ORDER BY d DESC, term LIMIT 1",
-            rusqlite::params![stem, hi],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)),
-        )
-        .ok();
-    Ok(row)
-}
-
 pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     let mut terms: Vec<String> = prompt
         .split_whitespace()
@@ -218,7 +175,6 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
         .prepare("SELECT count(*) FROM record_fts WHERE record_fts MATCH ?1")?;
     let mut scored: Vec<(f64, String)> = Vec::new();
     for t in terms {
-        let mut t = t;
         let mut df: f64 = stmt
             .query_row([&t], |r| r.get::<_, Option<f64>>(0))?
             .unwrap_or(0.0);
@@ -226,12 +182,6 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
             df = matched
                 .query_row([format!("\"{t}\"")], |r| r.get::<_, i64>(0))
                 .unwrap_or(0) as f64;
-        }
-        if df <= 0.0 {
-            if let Some((alt, d)) = vocab_prefix_match(db, &t)? {
-                t = alt;
-                df = d;
-            }
         }
         if df <= 0.0 {
             continue;
