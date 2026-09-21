@@ -67,3 +67,6 @@
 {"run": 0, "task": "revoke-tls-backend", "arm": "muninn-now", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 6, "cost_usd": 0.10339759999999999, "duration_ms": 25110, "error": null}
 {"run": 0, "task": "revoke-wire-format", "arm": "muninn-now", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 7, "cost_usd": 0.1231556, "duration_ms": 48221, "error": null}
 {"run": 0, "task": "revoke-cache-eviction", "arm": "muninn-now", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 16, "cost_usd": 0.2722534, "duration_ms": 66678, "error": null}
+{"run": 0, "task": "revoke-async-runtime", "arm": "muninn-now", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 11, "cost_usd": 0.16010320000000003, "duration_ms": 38991, "error": null}
+{"run": 1, "task": "revoke-async-runtime", "arm": "muninn-now", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 14, "cost_usd": 0.2022464, "duration_ms": 52730, "error": null}
+{"run": 1, "task": "revoke-wire-format", "arm": "muninn-now", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 9, "cost_usd": 0.1974208, "duration_ms": 60630, "error": null}
