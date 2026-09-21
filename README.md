@@ -176,9 +176,12 @@ where else Muninn looks.
 
 When a decision reaches the code, the code says when it stops being true. Muninn reads the
 diffs of your commits: a value that a commit took out and that no tracked file holds any more
-is a value the project has stopped using, and the decision that named it is retired. Nothing is
-guessed from a diff — a removed word only counts if a record already named it, and the
-replacement is always a record that already exists.
+is a value the project has stopped using — and so is one that a single line of a commit
+replaced with another — and the decision that named it is retired. What the line became is
+recorded too, with the commit behind it, so the question that reached the old answer reaches
+the new one. Nothing is guessed: a removed word only counts if a record already named it, a
+word your repository uses in more than three files is not treated as a value at all, and a
+commit that retires nothing writes nothing.
 
 Measured on two held-out sets that the code had never seen, with the commit subject
 deliberately uninformative ("update dependencies") so the commit contributes only its diff:
