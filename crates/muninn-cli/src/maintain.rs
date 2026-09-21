@@ -514,8 +514,7 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             )?;
         }
         if let Some(h) = heir {
-            // the dropped value is the one word the heir must not restate
-            muninn_capture::ingest::inherit_topic_hiding(&tx, h, std::slice::from_ref(gone))?;
+            muninn_capture::ingest::inherit_topic(&tx, h)?;
         }
         {
             // What the file now holds, whether or not anyone said it: it now holds this line, and that is
