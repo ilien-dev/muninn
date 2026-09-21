@@ -2717,6 +2717,13 @@ One contrast, outside the registered family and labelled so: `pass(muninn-why) â
 pass(muninn-kinds)`, exact Fisher, on the same replacement cells. Reported whatever it shows.
 The registered arms of this grid are closed.
 
+## Result
+
+**9/27**, against 7/27 for the arm before it and 6/27 for the original â€” the first of the
+three instruction-and-responder arms to move in the right direction, and still nowhere near
+the 18/27 the same engine scores when the grid has no commits in it. Exact Fisher against
+`muninn-kinds` is 0.77: at 27 cells this is a direction, not a difference.
+
 ## What this run is, and is not
 
 It is the fourth build measured on one grid of 27 cells. Each was pinned and registered before

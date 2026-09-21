@@ -139,3 +139,12 @@
 {"run": 1, "task": "revoke-version-scheme", "arm": "muninn-why", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 16, "cost_usd": 0.20881400000000003, "duration_ms": 64336, "error": null}
 {"run": 1, "task": "revoke-compression", "arm": "muninn-why", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 9, "cost_usd": 0.1449478, "duration_ms": 37850, "error": null}
 {"run": 2, "task": "revoke-compression", "arm": "muninn-why", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 8, "cost_usd": 0.1024964, "duration_ms": 31181, "error": null}
+{"run": 2, "task": "revoke-wire-format", "arm": "muninn-why", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 10, "cost_usd": 0.1952432, "duration_ms": 65047, "error": null}
+{"run": 2, "task": "revoke-tls-backend", "arm": "muninn-why", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 19, "cost_usd": 0.2318364, "duration_ms": 102588, "error": null}
+{"run": 2, "task": "revoke-license", "arm": "muninn-why", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 10, "cost_usd": 0.1394362, "duration_ms": 48447, "error": null}
+{"run": 2, "task": "revoke-password-hashing", "arm": "muninn-why", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 12, "cost_usd": 0.1598028, "duration_ms": 35094, "error": null}
+{"run": 2, "task": "revoke-internal-http", "arm": "muninn-why", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 9, "cost_usd": 0.11943759999999999, "duration_ms": 26032, "error": null}
+{"run": 2, "task": "revoke-version-scheme", "arm": "muninn-why", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 11, "cost_usd": 0.1645902, "duration_ms": 55719, "error": null}
+{"run": 2, "task": "revoke-tls-verification", "arm": "muninn-why", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 11, "cost_usd": 0.15842720000000002, "duration_ms": 56692, "error": null}
+{"run": 2, "task": "revoke-async-runtime", "arm": "muninn-why", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 10, "cost_usd": 0.16205819999999999, "duration_ms": 53896, "error": null}
+{"run": 2, "task": "revoke-cache-eviction", "arm": "muninn-why", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 11, "cost_usd": 0.18030500000000002, "duration_ms": 57016, "error": null}
