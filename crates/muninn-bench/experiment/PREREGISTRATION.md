@@ -2422,8 +2422,16 @@ The v2 figure also shows claude-mem raising the *harness's* scaffolding (164 399
 149 608 characters), which is its MCP server and tool listing rather than its memory, and
 which this analysis deliberately does not count against it.
 
-## What this is not
+## What this is not, and the limit that travels with the number
 
 Not a measure of whether the memory helped. A memory that injects nothing scores best here and
 answers nothing. It is only worth reading beside the pass rate, which is the registered primary
 outcome of the same grid.
+
+**A cell is one prompt.** So this measures a session's fixed cost plus one delivery, and the
+two tools divide their cost differently: on v2, Muninn spends 1 410 characters at session
+start and 860 on the prompt, claude-mem 1 380 at session start and nothing on the prompt.
+Muninn's share grows with the number of turns and claude-mem's, in these cells, does not —
+but these cells cannot say whether claude-mem injects on later prompts of a longer session,
+because they have no later prompts. The ratio is therefore a statement about a one-prompt
+session and is not extrapolated to a long one in either direction.
