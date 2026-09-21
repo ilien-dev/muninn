@@ -2074,3 +2074,41 @@ algo *como hechos sobre un repositorio*: uno está en él, y después no.
      `name_tokens` (fuga de F1, 6 celdas); y el hash de un commit es parte del texto indexado,
      así que una rejilla con commits de fecha real no es determinista (una celda de treinta
      cambiaba entre corridas).
+
+[Z10] **Tres ejes que no son el acierto, medidos sobre la misma rejilla: uno en contra y dos a
+favor.** La comparación con claude-mem siempre se ha hecho sobre "¿nota que cambiaste de
+idea?" `[Z7]`. La siembra de la rejilla v4 permite leer otras tres cosas del mismo material,
+con el mismo modelo, las mismas veinte frases y sin instrumentar a nadie.
+  => **Contexto ocupado: perdemos.** Sobre `hook_additional_context` —la carga que con certeza
+     es contexto del modelo— tres rejillas coinciden: Muninn ocupa **1,6 a 2,1 veces** lo de
+     claude-mem (2,090 [2,061, 2,122] en v1; 1,612 [1,558, 1,751] en v2; 1,700 [1,555, 1,896]
+     en v3; 30 celdas emparejadas cada una). Por celda en v2: Muninn 1 410 caracteres al
+     arrancar la sesión y 860 más en el prompt; claude-mem 1 380 al arrancar y nada en el
+     prompt. Es una decisión de diseño —entregamos en cada prompt, no solo una vez— y es un
+     coste. **La primera versión de esta medición daba 0,452 a nuestro favor y era errónea:**
+     sumaba el registro del hook, cuyo `stdout` repite el contexto para una herramienta que lo
+     devuelve por stdout (Muninn) y no para una que no (claude-mem). Contaba nuestra propia
+     inyección dos veces. Una celda es un solo prompt, así que la razón describe una sesión de
+     un turno y no se extrapola.
+  => **Reproducibilidad: ganamos, y por construcción.** Mismos veinte mensajes, tres veces:
+     Muninn guarda 23, 23 y 23 registros con Jaccard 0,917 / 0,917 / 1,000 —y el único ítem que
+     difiere era **un defecto nuestro**, el id de sesión ordenado entre las palabras del tema,
+     encontrado por esta comprobación y corregido con una prueba que falla sin el arreglo.
+     claude-mem no comparte **ningún** texto entre dos corridas (Jaccard 0,000). Como el
+     Jaccard exacto es duro con una herramienta que escribe títulos en prosa, se mide también
+     la cobertura, que no depende de la redacción: de los 19 valores sembrados, Muninn tiene
+     17, 17 y 17 (los 2 que faltan son los que retiró bien) y claude-mem 7 y 10, **y no los
+     mismos**: una corrida se quedó con `async-std` y perdió `gzip`, `zstd`, `LRU` y `bcrypt`;
+     la otra al revés.
+  => **Latencia de la ruta de escritura: ganamos, con reserva.** El paso `settle` de la rejilla
+     espera a que la memoria termine de procesar el turno. claude-mem: mediana **24,5 s** por
+     mensaje, máximo 177 s, 53 minutos para 40 mensajes. Muninn: `maintain` completo, 1-2 s
+     sobre este repositorio, y el ingest en sí 6 ms `[perf --strict]`. **Reserva:** las celdas
+     corrieron con `--jobs 2`, y `[Z6]` demostró que una medida de reloj con concurrencia puede
+     ser un artefacto del planificador; además ambas rutas son asíncronas, así que lo que esto
+     describe es **cuánto tarda la memoria en estar lista**, no cuánto espera el usuario. Con
+     esa reserva, el orden de magnitud no lo explica el planificador: el propio registro de
+     claude-mem dice a qué espera ("Pool limit reached (2/2)"), que son sus llamadas al modelo.
+  => Peso: la primera fila es una medición nuestra en nuestra contra y está en `docs/claims.md`
+     como tal. La segunda está pre-registrada y leída después de escribir el lector. La tercera
+     es una observación con su reserva y no se cita como afirmación.
