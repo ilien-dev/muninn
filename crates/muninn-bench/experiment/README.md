@@ -23,6 +23,8 @@ of the pre-registration commits; `docs/claims.md` lists what is and is not claim
 | h2h, native | how does the harness's own automatic memory score on the same grid? | `PREREGISTRATION.md` — **not run**; arm built and smoke-tested | `h2h/competitors/native/arm.sh` |
 | 8 | does reading the repository find the replacements the words cannot? | `loop8/README.md` | `loop8/v3_*.json` |
 | 9 | the same grid, a second held-out set, the same binary | `loop9/README.md` | `loop9/v3_*.json` |
+| 10 | does a later message about something else take a true decision with it? | `loop10/README.md` | `loop10/pairs*.json`, `results*.json` |
+| 11 | the value that is a number: in conversation and in the diff | `loop11/README.md` | `loop11/v_*.json` |
 | h2h v4 | the same head-to-head with the decisions also implemented in the code | `PREREGISTRATION.md` | `results/h2h-v4-code/`, `results/h2h-v4-nocode/` |
 | — | DreamBench-SWE [K2]: not runnable — hidden oracles and 6 of 11 fixture commits are not public; a `MemoryPolicy` port and the request to the authors are in `dreambench/` | `dreambench/STATUS.md` | — |
 
