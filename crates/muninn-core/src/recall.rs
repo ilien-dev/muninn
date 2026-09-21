@@ -279,10 +279,17 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
         return Ok(vec![]);
     }
     let q = fts_match_or(terms);
+    // A commit *log* entry — subject `commit:<hash>`, text a subject line and a file list —
+    // is corroboration, and the hook has 700 tokens. Measured in a live grid: adding ten
+    // commits to a store of twenty-eight records took the same arm from 18/27 to 6/27, because
+    // the log entries match a question through their file names and say nothing when the
+    // subject is ordinary ("update dependencies"). They stay in the store, `muninn why`
+    // still reaches them, and what the *diff* observed — the record naming the value the file
+    // now holds — is not one of them and is still served.
     let mut stmt = db.conn.prepare(&format!(
         "SELECT {SERVED_COLS}, r.transcript_ref, bm25(record_fts, 3.0, 2.0, 1.0) AS score \
          FROM record_fts JOIN served_record r ON r.id = record_fts.rowid \
-         WHERE record_fts MATCH ?1 ORDER BY score LIMIT ?2"
+         WHERE record_fts MATCH ?1 AND r.subject NOT LIKE 'commit:%' ORDER BY score LIMIT ?2"
     ))?;
     let rows = stmt.query_map(rusqlite::params![q, (limit + exclude.len()) as i64], |r| {
         Hit::from_served_row(r, r.get("score")?)
@@ -468,6 +475,47 @@ pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A commit log entry matches a question through the file list in its body and says
+    /// nothing when the subject is ordinary. Ten of them in a store of twenty-eight took a
+    /// live grid's arm from 18/27 to 6/27. They stay in the store and out of the hook.
+    #[test]
+    fn a_commit_log_entry_is_not_served_by_the_hook() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |subject: &str, origin: &str, body: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?3,?3,?2,2,'s',?1,1)",
+                    rusqlite::params![subject, origin, body],
+                )
+                .unwrap();
+        };
+        for i in 0..8 {
+            ins(
+                &format!("commit:{i:07x}"),
+                "commit_linked",
+                "update dependencies\nfiles: config/decisions/cache-eviction.json\n",
+            );
+        }
+        ins(
+            "said:change:cache eviction",
+            "user_said",
+            "user: LRU with a 300-second TTL for cache eviction\n",
+        );
+        let terms = select_terms(&db, "the cache eviction policy", 8).unwrap();
+        let hits = recall(&db, &terms, 8, &HashSet::new()).unwrap();
+        assert!(
+            hits.iter().all(|h| !h.subject.starts_with("commit:")),
+            "the hook serves no commit log entry: {:?}",
+            hits.iter().map(|h| h.subject.clone()).collect::<Vec<_>>()
+        );
+        assert!(
+            hits.iter().any(|h| h.body.contains("LRU")),
+            "and the decision is still there"
+        );
+    }
 
     #[test]
     fn gate_and_dates() {
