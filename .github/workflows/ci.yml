@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
 jobs:
   test:
@@ -20,6 +20,21 @@ jobs:
         run: cargo run --release -p muninn-cli --features exact-tokens -- init --check-budget
       - name: performance regressions
         run: cargo run --release -p muninn-bench -- perf --strict
+      # Gate 1 (F2 rule classifier) was measured once and never guarded. A pattern change
+      # that drops precision below 0.90 or recall below 0.70 now fails the build.
+      - name: rule classifier (Gate 1, held-out set 2)
+        run: |
+          cargo build --release -p muninn-bench
+          ./target/release/muninn-bench rules --strict \
+            --holdout crates/muninn-bench/corpora/claude-md/holdout2.txt \
+            --labels  crates/muninn-bench/corpora/claude-md/labels2.jsonl
+      # Gate 5a: the compiled controls still refuse what their rules forbid, and still
+      # refuse nothing else. A narrowing that breaks enforcement, or a widening that
+      # starts refusing permitted calls, fails the build here.
+      - name: compiled controls (Gate 5a, held-out set 3)
+        run: |
+          ./target/release/muninn-bench enforce \
+            --cases crates/muninn-bench/corpora/claude-md/enforce_cases_holdout3.jsonl
   build:
     needs: test
     strategy:

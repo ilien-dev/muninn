@@ -128,6 +128,14 @@ struct Rx {
     deploy: Regex,
 }
 
+/// "The command ends here, with no further argument." A control that anchors on `$` alone is
+/// defeated by a redirection or a pipe: Gate 5b's mechanism grid caught an agent reaching the
+/// full test suite past a rule that forbids it, by chaining the call to something else.
+/// Redirecting output or piping it does not make a run targeted, so those endings count as
+/// the end of the command — while a real argument (`npm test -- test/parse.test.js`) still
+/// does not, because denying that would be a false block.
+const CMD_END: &str = r"\s*(?:$|[;&|]|[0-9]*>|<)";
+
 const NEG: &str = r"(?:never|do not|don'?t|must not|mustn'?t|should not|shouldn'?t|not allowed to|forbidden to|no)";
 const ADV: &str = r"(?:\s+(?:ever|directly|manually|automatically|proactively|silently|blindly|just|simply|casually|yourself|by hand))*";
 const VERBS: &str = r"(run|runs|running|use|using|execute|call|invoke|type|start|launch|spawn|edit|modify|touch|change|hand-edit|hand-?edit|overwrite|update|delete|remove|commit|push|read|open|cat|create|save|write|add|install|introduce|rebase|amend|kill|access|fetch|configure|compile|build|reset|checkout|restore|clean|stage|force-push)";
@@ -536,6 +544,31 @@ fn ticks_in(window: &str, max_gap: usize) -> Vec<String> {
         .collect()
 }
 
+/// A backticked command that carries its own arguments — "`pkill -f zellij`", not "`pkill`".
+///
+/// When a rule names a whole invocation, that invocation is what it forbids. Emitting a
+/// control for the command *head* instead refuses calls the rule permits: a rule about
+/// `rm -rf node_modules` does not forbid `rm -rf dist`. Gate 5a counts those as false
+/// blocks, and this is how they are avoided.
+fn ticked_invocation(sentence: &str, head: &str) -> Option<String> {
+    let head_re = re(&format!(r"(?i)^{}\b", regex::escape(head)));
+    rx().backtick
+        .captures_iter(sentence)
+        .map(|c| c[1].trim().to_string())
+        .find(|b| head_re.is_match(b) && b.split_whitespace().count() >= 2 && !b.contains('<'))
+}
+
+/// The regex that matches exactly that invocation at the start of a command or after a
+/// separator: each token escaped, whitespace flexible, nothing appended.
+fn invocation_regex(invocation: &str) -> String {
+    let body = invocation
+        .split_whitespace()
+        .map(regex::escape)
+        .collect::<Vec<_>>()
+        .join(r"\s+");
+    format!(r"(^|[;&|]\s*){body}(\s|$)")
+}
+
 fn truncate(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         s.to_string()
@@ -567,6 +600,43 @@ pub fn classify(c: &Candidate) -> Classification {
             || n.verb.starts_with("force-push")
         {
             let d = downgrade(Decision::Deny);
+            // A rule that names a branch ("never force-push to `main`") permits the same
+            // command elsewhere. Emitting a blanket deny would refuse a force-push to a
+            // feature branch, which the rule allows: Gate 5a counts that as a false block.
+            // A permission rule cannot express a branch, so this case is hook-only, with
+            // the target read from the command and the bare form read from the checkout.
+            let branch_scoped = r.branch_kw.is_match(w)
+                || re(r"(?i)\b(protected|long[- ]lived|default|release|shared)\s+branch(es)?\b")
+                    .is_match(n.sentence);
+            if branch_scoped {
+                return out(
+                    Class::EnforceableHook,
+                    "git.force_push",
+                    vec![],
+                    vec![
+                        hook(
+                            "^Bash$",
+                            Some(
+                                r"\bgit\s+push\b.*(\s--force(?:\s|$)|\s-f\b|\s--force-with-lease\b).*\b(main|master)\b",
+                            ),
+                            None,
+                            None,
+                            d,
+                            reason("force-push to a protected branch is not allowed"),
+                        ),
+                        hook(
+                            "^Bash$",
+                            Some(&format!(
+                                r"\bgit\s+push\s+(--force|-f|--force-with-lease){CMD_END}"
+                            )),
+                            None,
+                            Some("branch_in:main,master"),
+                            d,
+                            reason("force-push of a protected branch is not allowed"),
+                        ),
+                    ],
+                );
+            }
             let allows_lease = n.sentence.to_lowercase().contains("force-with-lease")
                 && !n.sentence.to_lowercase().contains("never plain");
             let hooks = if allows_lease {
@@ -638,10 +708,13 @@ pub fn classify(c: &Candidate) -> Classification {
                     perm("Bash", Some("git checkout -- .:*".into()), d),
                     perm("Bash", Some("git restore .:*".into()), d),
                     perm("Bash", Some("git clean:*".into()), d),
+                    perm("Bash", Some("git stash:*".into()), d),
                 ],
                 vec![hook(
                     "^Bash$",
-                    Some(r"\bgit\s+(reset\s+--hard|checkout\s+--\s+\.|restore\s+\.|clean\b)"),
+                    Some(
+                        r"\bgit\s+(reset\s+--hard|checkout\s+--\s+\.|restore\s+\.|clean\b|stash\b)",
+                    ),
                     None,
                     None,
                     d,
@@ -741,6 +814,27 @@ pub fn classify(c: &Candidate) -> Classification {
             if n.verb.starts_with("push") && !r.git_push_kw.is_match(n.sentence) {
                 continue; // "do not push them into a generic utility"
             }
+            // A named remote scopes the rule: "do not push to the upstream repo, always
+            // push to the personal fork" permits exactly the push a blanket rule refuses.
+            if let Some(m) =
+                re(r"(?i)\bpush(?:ing)?\s+(?:commits?\s+|changes\s+)?to\s+(?:the\s+)?`?(upstream|origin)`?\b")
+                    .captures(n.sentence)
+            {
+                let remote = m[1].to_lowercase();
+                return out(
+                    Class::EnforceableHook,
+                    "git.push",
+                    vec![],
+                    vec![hook(
+                        "^Bash$",
+                        Some(&format!(r"\bgit\s+push\b[^;&|]*\b{}\b", regex::escape(&remote))),
+                        None,
+                        None,
+                        Decision::Ask,
+                        reason(&format!("pushing to `{remote}` needs confirmation")),
+                    )],
+                );
+            }
             return out(
                 Class::EnforceablePermission,
                 "git.push",
@@ -771,11 +865,24 @@ pub fn classify(c: &Candidate) -> Classification {
             && w.to_lowercase().find("git config").is_some_and(|p| p < 40)
         {
             let d = downgrade(Decision::Deny);
+            // The rule says *modify*. `Bash(git config:*)` is a prefix, so it would also
+            // refuse `git config --get`, which reads. A permission rule cannot express
+            // "writes only", so this is hook-only, matching the writing forms positively:
+            // an explicit write flag, or a dotted key followed by a value.
             return out(
-                Class::EnforceablePermission,
+                Class::EnforceableHook,
                 "git.config",
-                vec![perm("Bash", Some("git config:*".into()), d)],
                 vec![],
+                vec![hook(
+                    "^Bash$",
+                    Some(
+                        r"\bgit\s+config\b.*\s(--unset|--unset-all|--add|--replace-all|--edit|--rename-section|--remove-section)\b|\bgit\s+config\b(?:\s+--(?:global|local|system|worktree))*\s+[A-Za-z][\w-]*\.[\w.-]+\s+\S",
+                    ),
+                    None,
+                    None,
+                    d,
+                    reason("git config writes are not allowed"),
+                )],
             );
         }
     }
@@ -811,6 +918,74 @@ pub fn classify(c: &Candidate) -> Classification {
             && near(&r.rm_rf)
         {
             let d = downgrade(Decision::Deny);
+            const RM_R: &str = r"(^|[;&|]\s*)rm\s+-[a-zA-Z]*[rR][a-zA-Z]*";
+            // A rule that names its targets ("never `rm -rf` on `/`, `~`, `.`") or that
+            // names the safe form ("must use an ABSOLUTE path") does not forbid every
+            // recursive delete. Scope to what it named; a blanket deny is a false block.
+            // read from the whole rule, not the one sentence the negation sits in: these
+            // rules state the scope in one clause and the prohibition in another
+            let dangerous_targets = re(r"(?i)`\s*(/|~|\$HOME|\.\.?|\*)\s*`").is_match(t);
+            let absolute_required =
+                re(r"(?i)\babsolute path\b").is_match(t) && re(r"(?i)\brelative\b").is_match(t);
+            if dangerous_targets {
+                return out(
+                    Class::EnforceableHook,
+                    "shell.rm_rf",
+                    vec![],
+                    vec![hook(
+                        "^Bash$",
+                        // The first non-flag argument is one of the roots the rule listed,
+                        // written any of the ways a shell accepts it: bare (`.`), with a
+                        // trailing slash (`~/`), or globbed (`./*`, `/*`). Requiring the
+                        // root to end the argument let `rm -rf ./*` — which targets both
+                        // `.` and `*` — through the control while the rule named both.
+                        // A deeper path (`./build`, `~/proj/dist`) is a different target
+                        // and stays allowed: denying it would be a false block.
+                        Some(&format!(
+                            r"{RM_R}\s+(?:-\S+\s+)*(?:(?:/|~|\$HOME|\.\.?)/?\*?|\*)(\s|$)"
+                        )),
+                        None,
+                        None,
+                        d,
+                        reason("recursive delete of a root the rule names"),
+                    )],
+                );
+            }
+            if absolute_required {
+                return out(
+                    Class::EnforceableHook,
+                    "shell.rm_rf",
+                    vec![],
+                    vec![hook(
+                        "^Bash$",
+                        // the first non-flag argument does not start with `/`
+                        Some(&format!(r"{RM_R}\s+(?:-\S+\s+)*[^/\s-]")),
+                        None,
+                        None,
+                        d,
+                        reason("recursive delete needs an absolute path"),
+                    )],
+                );
+            }
+            if let Some(inv) = ["rm"]
+                .iter()
+                .find_map(|h| ticked_invocation(n.sentence, h))
+                .filter(|inv| inv.split_whitespace().count() >= 3)
+            {
+                return out(
+                    Class::EnforceableHook,
+                    "shell.rm_rf",
+                    vec![],
+                    vec![hook(
+                        "^Bash$",
+                        Some(&invocation_regex(&inv)),
+                        None,
+                        None,
+                        d,
+                        reason(&format!("`{inv}` is not allowed")),
+                    )],
+                );
+            }
             return out(
                 Class::EnforceablePermission,
                 "shell.rm_rf",
@@ -853,6 +1028,26 @@ pub fn classify(c: &Candidate) -> Classification {
             && (n.verb.starts_with("kill") && proc_obj || near(&r.kill) && w.contains('`'))
         {
             let d = downgrade(Decision::Deny);
+            // "Do NOT use `kill -QUIT`", "NEVER run `pkill -f zellij`" — one signal, one
+            // process, not every kill the machine can issue.
+            if let Some(inv) = ["kill", "pkill", "killall"]
+                .iter()
+                .find_map(|h| ticked_invocation(n.sentence, h))
+            {
+                return out(
+                    Class::EnforceableHook,
+                    "shell.kill",
+                    vec![],
+                    vec![hook(
+                        "^Bash$",
+                        Some(&invocation_regex(&inv)),
+                        None,
+                        None,
+                        d,
+                        reason(&format!("`{inv}` is not allowed")),
+                    )],
+                );
+            }
             return out(
                 Class::EnforceablePermission,
                 "shell.kill",
@@ -916,22 +1111,39 @@ pub fn classify(c: &Candidate) -> Classification {
         };
         let (with_args, plain): (Vec<&String>, Vec<&String>) =
             cmds.iter().partition(|c| c.contains('<'));
-        let mut perms: Vec<PermissionRule> = plain
-            .iter()
-            .map(|c| perm("Bash", Some(cmd_spec(c)), d))
-            .collect();
+        // "root `bun test`", "the whole-repo `pnpm test`": the rule forbids the bare
+        // invocation and points at a narrower one. A prefix rule would refuse both.
+        let bare_only = re(r"(?i)\b(root|whole repo|entire repo|repo[- ]wide|top[- ]level)\b")
+            .is_match(n.sentence);
+        let mut perms: Vec<PermissionRule> = if bare_only {
+            Vec::new()
+        } else {
+            plain
+                .iter()
+                .map(|c| perm("Bash", Some(cmd_spec(c)), d))
+                .collect()
+        };
         perms.dedup();
         let mut hooks: Vec<HookRule> = plain
             .iter()
             .map(|c| {
                 let esc = regex::escape(cmd_spec(c).trim_end_matches(":*"));
+                let pat = if bare_only {
+                    format!(r"(^|[;&|]\s*){esc}{CMD_END}")
+                } else {
+                    format!(r"(^|[;&|]\s*){esc}(\s|$)")
+                };
                 hook(
                     "^Bash$",
-                    Some(&format!(r"(^|[;&|]\s*){esc}(\s|$)")),
+                    Some(&pat),
                     None,
                     None,
                     d,
-                    reason("this command is not allowed"),
+                    reason(if bare_only {
+                        "this command is not allowed from the repository root"
+                    } else {
+                        "this command is not allowed"
+                    }),
                 )
             })
             .collect();
@@ -975,14 +1187,36 @@ pub fn classify(c: &Candidate) -> Classification {
                 || w.to_lowercase().find("secret").is_some_and(|p| p < 30)
                 || w.to_lowercase().find("credential").is_some_and(|p| p < 30)
                 || w.to_lowercase().find("api key").is_some_and(|p| p < 30);
+            if re(r"(?i)\b(except|other than|apart from|excluding|besides)\b[^.]{0,80}`")
+                .is_match(n.sentence)
+            {
+                // the rule carves out named paths, and no control can subtract a path from
+                // another: an honest `interpretive_only` beats a control that refuses the
+                // exception the rule spells out
+                continue;
+            }
             if !paths.is_empty() || mentions_secret {
                 let d = downgrade(Decision::Deny);
+                // Each path ends at a boundary that is neither a word character nor a dot.
+                // Without it `.env` matches inside `.env.example`, and a rule against
+                // committing secrets refuses the very file projects are meant to commit.
+                const END: &str = r"([^.\w]|$)";
                 let mut pats: Vec<String> = paths
                     .iter()
-                    .map(|p| regex::escape(p.trim_end_matches('/').trim_start_matches("./")))
+                    .map(|p| {
+                        format!(
+                            "{}{END}",
+                            regex::escape(p.trim_end_matches('/').trim_start_matches("./"))
+                        )
+                    })
                     .collect();
                 if mentions_secret {
-                    pats.push(r"\.env(\.|\s|$)".into());
+                    // the dotted variants that really are secrets, by name; `.env.example`,
+                    // `.env.sample` and `.env.template` are not among them
+                    pats.push(format!(r"\.env{END}"));
+                    pats.push(
+                        r"\.env\.(local|production|prod|dev|development|staging|test)\b".into(),
+                    );
                     pats.push(r"\.(pem|key)(\s|$)".into());
                 }
                 pats.dedup();
@@ -1044,7 +1278,16 @@ pub fn classify(c: &Candidate) -> Classification {
                 for p in &paths {
                     let spec = path_spec(p);
                     perms.push(perm("Edit", Some(spec.clone()), d));
-                    perms.push(perm("Write", Some(spec), d));
+                    perms.push(perm("Write", Some(spec.clone()), d));
+                    // "do not edit `src/generated`" names a directory as often as a file,
+                    // and a spec without `/**` reaches neither the files inside it nor the
+                    // Gate 5a case that edits one
+                    if !spec.ends_with("**") && !spec.rsplit('/').next().unwrap_or("").contains('.')
+                    {
+                        let sub = format!("{}/**", spec.trim_end_matches('/'));
+                        perms.push(perm("Edit", Some(sub.clone()), d));
+                        perms.push(perm("Write", Some(sub), d));
+                    }
                 }
                 let mut c = out(
                     Class::EnforceablePermission,
@@ -1139,6 +1382,11 @@ pub fn classify(c: &Candidate) -> Classification {
         }
         if is_verb(n, &["add", "install", "introduce"])
             && r.deps.find(w).is_some_and(|m| m.start() < 40)
+            // "do not introduce dependency injection for every pure helper" is about code
+            // structure, not about installing a package. The word is the same; gating
+            // `pnpm add` on it refuses what the rule permits.
+            && !re(r"(?i)\bdependenc(?:y|ies)\s+(injection|objects?|graph|inversion)\b|\binject(?:ion|ing|ed)?\b")
+                .is_match(t)
         {
             return out(
                 Class::EnforceableHook,
@@ -1163,12 +1411,14 @@ pub fn classify(c: &Candidate) -> Classification {
                 vec![],
                 vec![hook(
                     "^Bash$",
-                    Some(
-                        r"(^|[;&|]\s*)(npm test|pnpm test|yarn test|bun test|cargo test|pytest|go test \./\.\.\.|make test)\s*$",
-                    ),
+                    Some(&format!(
+                        r"(^|[;&|]\s*)((npm|pnpm|yarn|bun|deno) (run )?test|cargo test|pytest|jest|(npx |pnpm exec |yarn )?vitest( run)?|go test \./\.\.\.|make test|tox|rspec){CMD_END}"
+                    )),
                     None,
                     None,
-                    Decision::Ask,
+                    // "Never run the full test suite" is absolute; only an exception in the
+                    // rule's own words softens it to a confirmation.
+                    downgrade(Decision::Deny),
                     reason("run targeted tests, not the whole suite"),
                 )],
             );
@@ -1451,6 +1701,84 @@ mod tests {
             "Never use a merge commit or rebase merge when integrating a PR into `development`.",
         ] {
             assert_eq!(classify(&cand(t)).class, Class::InterpretiveOnly, "{t}");
+        }
+    }
+
+    /// A rule that lists its roots must catch those roots however the shell spells them.
+    /// `rm -rf ./*` targets both `.` and `*`, and went through the control until the
+    /// target group stopped requiring the root to end the argument. The second half of
+    /// the test is the one that keeps the fix honest: a deeper path is a different
+    /// target, and denying it would be a false block (Gate 5a).
+    #[test]
+    fn rm_rf_named_roots_match_every_spelling() {
+        let c = classify(&cand(
+            "You MUST NEVER run `rm -rf` targeting `/`, `~`, `$HOME`, `.`, `..`, or `*`.",
+        ));
+        assert_eq!(c.pattern_id, "shell.rm_rf");
+        let re = regex::Regex::new(c.hooks[0].command_regex.as_deref().unwrap()).unwrap();
+        for denied in [
+            "rm -rf ./*",
+            "rm -rf .",
+            "rm -rf ./",
+            "rm -rf /",
+            "rm -rf /*",
+            "rm -rf ~",
+            "rm -rf ~/",
+            "rm -rf ~/*",
+            "rm -rf $HOME",
+            "rm -rf $HOME/",
+            "rm -rf ..",
+            "rm -rf ../*",
+            "rm -rf *",
+            "rm -rf -- .",
+            "cd /tmp; rm -rf ./*",
+        ] {
+            assert!(re.is_match(denied), "should be denied: {denied}");
+        }
+        for allowed in [
+            "rm -rf ./build",
+            "rm -rf ~/proj/dist",
+            "rm -rf $HOME/cache/tmp",
+            "rm -rf ../sibling/target",
+            "rm -rf node_modules",
+            "rm -f ./config.json",
+            "rm ./*",
+        ] {
+            assert!(!re.is_match(allowed), "should be allowed: {allowed}");
+        }
+    }
+
+    /// A rule about the full test suite must survive the ways a shell ends a command.
+    /// Gate 5b's mechanism grid found the control silent while the agent reached the suite:
+    /// the pattern anchored on `$`, and a redirection after `npm test` was enough. Piping or
+    /// redirecting output does not make a run targeted; passing a test path does, and that
+    /// half of the test is what keeps the fix from becoming a false block.
+    #[test]
+    fn full_suite_survives_redirection_and_chaining() {
+        let c = classify(&cand(
+            "Never run the full test suite — it takes hours. Run targeted tests only.",
+        ));
+        assert_eq!(c.pattern_id, "process.full_suite");
+        let re = regex::Regex::new(c.hooks[0].command_regex.as_deref().unwrap()).unwrap();
+        for denied in [
+            "npm test",
+            "npm test 2>&1 | head -20",
+            "npm test | tee out.log",
+            "npm test > out.log",
+            "cd web && npm test",
+            "pytest",
+            "pytest > report.txt",
+            "cargo test 2>&1",
+        ] {
+            assert!(re.is_match(denied), "should be denied: {denied}");
+        }
+        for allowed in [
+            "npm test -- test/parse.test.js",
+            "pytest tests/test_parse.py",
+            "cargo test recall::",
+            "npm run lint",
+        ] {
+            assert!(!re.is_match(allowed), "should be allowed: {allowed}");
         }
     }
 

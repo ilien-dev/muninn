@@ -12,6 +12,7 @@ path = "src/main.rs"
 muninn-core = { path = "../muninn-core" }
 muninn-embed = { path = "../muninn-embed" }
 muninn-compile = { path = "../muninn-compile" }
+muninn-capture = { path = "../muninn-capture" }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

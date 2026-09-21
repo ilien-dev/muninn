@@ -39,8 +39,42 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
+      # The plugin's hooks call ${CLAUDE_PLUGIN_ROOT}/bin/muninn by absolute path, and
+      # plugin/bin/ is gitignored, so a plugin installed from the repository alone has no
+      # binary. Ship one plugin tree per target with the binary already in place.
+      - name: plugin bundles
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # the manifests carry the version a user sees; stamp every field from the tag so
+          # none of them can drift from the binary they ship with
+          tmp=$(mktemp)
+          jq --arg v "$version" '.version = $v' plugin/.claude-plugin/plugin.json > "$tmp"
+          mv "$tmp" plugin/.claude-plugin/plugin.json
+          tmp=$(mktemp)
+          jq --arg v "$version" '.metadata.version = $v | .plugins[].version = $v' \
+             .claude-plugin/marketplace.json > "$tmp"
+          mv "$tmp" .claude-plugin/marketplace.json
+          for bin in dist/muninn-*; do
+            case "$bin" in *.sigstore.json|*.tar.gz) continue;; esac
+            base=$(basename "$bin"); target=${base#muninn-}; ext=""
+            case "$target" in *.exe) target=${target%.exe}; ext=".exe";; esac
+            stage=$(mktemp -d)
+            cp -r plugin "$stage/plugin"
+            mkdir -p "$stage/plugin/bin"
+            install -m 0755 "$bin" "$stage/plugin/bin/muninn$ext"
+            tar -czf "dist/muninn-plugin-$target.tar.gz" -C "$stage" plugin
+            rm -rf "$stage"
+          done
+          # the README points at install.sh as a release asset, with the tag's version
+          # already substituted, so the download matches the release it came from
+          sed "s|^VERSION=.*|VERSION=\"\${MUNINN_VERSION:-$version}\"|" \
+              scripts/install.sh > dist/install.sh
+          sh -n dist/install.sh
+          ls -l dist
       - name: checksums
         run: cd dist && sha256sum muninn-* > checksums.txt && cat checksums.txt
       - uses: sigstore/cosign-installer@v3

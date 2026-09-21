@@ -1,16 +1,29 @@
 {
   "name": "muninn",
-  "owner": { "name": "Muninn contributors", "url": "https://github.com/ilien-dev/muninn" },
-  "metadata": { "description": "Local deterministic memory engine for coding agents", "version": "0.2.0" },
+  "owner": {
+    "name": "Muninn contributors",
+    "url": "https://github.com/ilien-dev/muninn"
+  },
+  "metadata": {
+    "description": "Local deterministic memory engine for coding agents",
+    "version": "1.0.0"
+  },
   "plugins": [
     {
       "name": "muninn",
       "source": "./plugin",
       "description": "Filters stale facts, compiles CLAUDE.md rules into enforceable controls, delivers cue-anchored memory under a hard token budget. Single-digit-millisecond hooks, no server, no model in the read path.",
-      "version": "0.2.0",
-      "author": { "name": "Muninn contributors" },
+      "version": "1.0.0",
+      "author": {
+        "name": "Muninn contributors"
+      },
       "category": "productivity",
-      "keywords": ["memory", "hooks", "deterministic", "codex"]
+      "keywords": [
+        "memory",
+        "hooks",
+        "deterministic",
+        "codex"
+      ]
     }
   ]
 }

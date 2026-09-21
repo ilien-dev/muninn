@@ -6,6 +6,7 @@
 //! `--strict` when a contract is exceeded. Every number printed is measured here,
 //! on this machine, now.
 
+mod enforce;
 mod experiment;
 
 use anyhow::{Context, Result};
@@ -47,6 +48,24 @@ enum Cmd {
         /// Restrict to files listed (one name per line) — the held-out set for the gate
         #[arg(long)]
         holdout: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+        /// Exit non-zero when the Gate 1 contract is not met (precision >= 0.90, recall >= 0.70)
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Compiled controls against hand-labelled tool calls (Gate 5a): does the control
+    /// refuse what its rule forbids, and nothing else? No model.
+    Enforce {
+        /// Hand-labelled cases (JSONL): rule text, tool call, and the verdict the rule calls for
+        #[arg(
+            long,
+            default_value = "crates/muninn-bench/corpora/claude-md/enforce_cases.jsonl"
+        )]
+        cases: PathBuf,
+        /// muninn binary (default: next to this one)
+        #[arg(long)]
+        muninn: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
@@ -437,6 +456,7 @@ fn rules_cmd(
     list: bool,
     holdout: Option<PathBuf>,
     json: bool,
+    strict: bool,
 ) -> Result<()> {
     use muninn_compile::{classify::classify, parse::extract, Class};
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -606,6 +626,14 @@ fn rules_cmd(
                 println!("  {e}");
             }
         }
+        // `perf --strict` is the precedent: a measured contract that CI can fail on.
+        // Without this the Gate 1 numbers were printed and never guarded.
+        if strict {
+            anyhow::ensure!(
+                precision >= 0.90 && recall >= 0.70,
+                "Gate 1 not met: precision {precision:.3} (>= 0.90), recall {recall:.3} (>= 0.70)"
+            );
+        }
         return Ok(());
     }
     let mut by_class = std::collections::BTreeMap::new();
@@ -681,7 +709,24 @@ fn main() -> Result<()> {
             list,
             holdout,
             json,
-        } => rules_cmd(&dir, sample, n, seed, labels, list, holdout, json),
+            strict,
+        } => rules_cmd(&dir, sample, n, seed, labels, list, holdout, json, strict),
+        Cmd::Enforce {
+            cases,
+            muninn,
+            json,
+        } => {
+            let bin = muninn.unwrap_or_else(|| {
+                let mut p = std::env::current_exe().unwrap();
+                p.set_file_name("muninn");
+                p
+            });
+            anyhow::ensure!(bin.exists(), "muninn binary not found at {} (build it with `cargo build --release -p muninn-cli`)", bin.display());
+            let work = tempfile_dir()?;
+            let r = enforce::run_cmd(&cases, &bin, &work, json);
+            std::fs::remove_dir_all(&work).ok();
+            r
+        }
         Cmd::EmbedBench { root, reps, json } => embed_bench(&root, reps, json),
         Cmd::Perf {
             strict,

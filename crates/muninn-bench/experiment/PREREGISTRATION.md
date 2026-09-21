@@ -2319,3 +2319,46 @@ construction, and those cells are counted as failures like any other.
   the mechanism less — three of the nine tasks are already in that position and are kept.
 - claude-mem is run on its defaults. It is not configured to read commits, because it does not
   document doing so; if it can, this grid understates it.
+
+---
+
+# Pre-registration — is the memory reproducible?
+
+Registered 2026-09-21, while the v4 grid was seeding and **before its snapshots were opened**.
+
+## The question
+
+A memory that extracts with a model writes a different store each time it is given the same
+sessions; one that extracts with fixed rules writes the same store. That difference is not a
+benchmark score — it is whether the thing can be audited at all, and whether two engineers on
+the same repository are looking at the same memory.
+
+Muninn's extraction is a set of regexes and SQL over the literal text, so the claim is *by
+construction*. A claim by construction still has to be checked, and the check is free: the v4
+grid already seeds every arm three times with the same twenty messages, so its snapshots are
+three independent samples of "the same input" per arm and condition.
+
+## Design
+
+For each arm and condition, the three run snapshots
+(`/tmp/muninn-h2h/h2h-v4-{code,nocode}/snap-r{0,1,2}-<arm>`) are read with the tool's own
+export and reduced to the set of stored memory texts: for Muninn every active record's
+`(kind, subject, object)`, for claude-mem every stored memory row's text. Reported per arm:
+the Jaccard similarity of each of the three run pairs, and the count of items present in one
+run and not another.
+
+The comparison is **within an arm, across runs**, never between arms — the two tools store
+different kinds of thing and the sizes are not comparable.
+
+## What is reported regardless of outcome
+
+The three pairwise similarities per arm and condition. If Muninn is not 1.00, that is a defect
+in Muninn and is reported as one, with the differing items named; the grid's own seeding is
+the only source of variation, and any that reaches the store is worth finding. If claude-mem
+is also 1.00, the paragraph above is wrong and is struck.
+
+## What this is not
+
+Not a quality measurement. A memory can be perfectly reproducible and useless. It says only
+that the same input gives the same store, which is what makes a later `why` answerable and a
+regression attributable.
