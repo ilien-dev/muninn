@@ -2536,8 +2536,11 @@ grid would re-run claude-mem for nothing and compare across two days of API cond
 
 ## The arm
 
-`muninn-now`, pinned to `bdb12656b20bdfd7`. What it carries that `muninn-loop8`
-(`01bf77973609a56d`) does not:
+`muninn-now`, pinned to `3224aa8d74a904bf`. *Re-pinned before seeding, after reading the finished
+`muninn-loop8` cells* — the grid's registered arms were complete and their result (6/27
+against claude-mem's 22/27) is fixed; what those cells showed produced two more fixes, listed
+as 7 and 8 below, and running the arm without them would measure a build already known to be
+wrong. What it carries that `muninn-loop8` (`01bf77973609a56d`) does not:
 
 1. **The boot summary's wording** — the change above. Expected to matter most, and the reason
    for the arm.
@@ -2550,6 +2553,15 @@ grid would re-run claude-mem for nothing and compare across two days of API cond
    `swap`) no longer retires a true decision.
 6. Two defects found by the checks registered above: an episode's subject sorting its session
    id among its topic words, and the schema-2 migration leaving the index empty.
+7. **A hyphen no longer hides a value from its own decision.** A record's words come from text
+   with punctuation stripped (`async std`), the diff's kept it (`async-std`), so no
+   hyphenated value could ever match: in this grid Muninn served `we're using async-std` as
+   current after a commit had replaced it with tokio, and the agent concluded the decision had
+   been revoked. Found by reading these cells.
+8. **The `topic:` line is gone.** It restated the retired value whenever that value was an
+   ordinary lowercase word — `topic: backend openssl` printed under "Let's use rustls
+   instead". The key still inherits every word and is indexed; nothing of the replaced
+   statement reaches the body. Removing it moved no offline figure in either direction.
 
 ## Decision rule, fixed before the data
 
