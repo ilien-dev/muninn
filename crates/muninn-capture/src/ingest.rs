@@ -334,25 +334,10 @@ fn supersede_quantity(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> 
 /// names excluded) in its supersession key, so a question about the topic reaches it and a
 /// later change on the same topic still finds it.
 pub fn inherit_topic(tx: &rusqlite::Connection, new_id: i64) -> Result<()> {
-    inherit_topic_hiding(tx, new_id, &[])
-}
-
-/// As `inherit_topic`, with words the caller knows to be the replaced *value* rather than
-/// its topic. `name_tokens` catches a value that is spelled like a product — `PgBouncer`,
-/// `AG Grid` — and misses one that is not: `sequelize`, `winston`, `bash` are ordinary
-/// lowercase words, and inheriting them put the retired value back in front of the agent on
-/// the `topic:` line of the record that replaced it. The caller that retired the record
-/// knows which word it was, so it says so.
-pub fn inherit_topic_hiding(
-    tx: &rusqlite::Connection,
-    new_id: i64,
-    hidden: &[String],
-) -> Result<()> {
-    let (subject, body): (String, String) = tx.query_row(
-        "SELECT subject, body FROM record WHERE id=?1",
-        [new_id],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
+    let subject: String =
+        tx.query_row("SELECT subject FROM record WHERE id=?1", [new_id], |r| {
+            r.get(0)
+        })?;
     let mut st = tx.prepare("SELECT body FROM record WHERE invalidated_by=?1")?;
     let olds: Vec<String> = st.query_map([new_id], |r| r.get(0))?.flatten().collect();
     // `said:change:a b c` splits into a key and its words. An episode's subject is
@@ -374,11 +359,14 @@ pub fn inherit_topic_hiding(
         .filter(|w| !w.is_empty())
         .map(str::to_string)
         .collect();
-    // the key (indexed, never shown) takes every content word of the replaced statements, names
-    // included ("Node", "ORM"); the served body takes only the non-name words, so it never
-    // restates a replaced value
+    // The key is indexed and never shown: it takes every content word of the replaced
+    // statements, names included, which is what makes the replacement findable by the words
+    // it omits. Nothing of the replaced statement reaches the *body*. A `topic:` line used to,
+    // and it restated the retired value whenever that value was an ordinary lowercase word —
+    // `topic: backend openssl` under "Let's use rustls instead", which is the one thing F1
+    // exists to prevent. Removing it moved no figure of loops 8, 9, 10 or 11 in either
+    // direction, on either order, in any arm.
     let mut added: Vec<String> = Vec::new();
-    let mut shown: Vec<String> = Vec::new();
     for b in olds {
         let user_part = b
             .strip_prefix("user: ")
@@ -387,14 +375,10 @@ pub fn inherit_topic_hiding(
             .next()
             .unwrap_or("")
             .to_string();
-        let names = crate::extract::name_tokens(&user_part);
         for w in crate::extract::topic_words(&user_part) {
             if !set.contains(&w) {
                 set.push(w.clone());
                 added.push(w.clone());
-                if !names.contains(&w) && !hidden.contains(&w) && !shown.contains(&w) {
-                    shown.push(w);
-                }
             }
         }
     }
@@ -402,12 +386,6 @@ pub fn inherit_topic_hiding(
         return Ok(());
     }
     set.sort();
-    // the body carries the inherited topic for recall; no value of the replaced statement
-    let body = if shown.is_empty() {
-        body
-    } else {
-        format!("{}topic: {}\n", body, shown.join(" "))
-    };
     let (old_subject, object, old_body): (String, String, String) = tx.query_row(
         "SELECT subject, object, body FROM record WHERE id=?1",
         [new_id],
@@ -415,8 +393,8 @@ pub fn inherit_topic_hiding(
     )?;
     let new_subject = format!("{head}:{}", set.join(" "));
     tx.execute(
-        "UPDATE record SET subject=?1, body=?2 WHERE id=?3",
-        rusqlite::params![new_subject, body, new_id],
+        "UPDATE record SET subject=?1 WHERE id=?2",
+        rusqlite::params![new_subject, new_id],
     )?;
     // the full-text index only follows inserts and (in)validation: re-index this row by hand
     tx.execute(
@@ -425,7 +403,7 @@ pub fn inherit_topic_hiding(
     )?;
     tx.execute(
         "INSERT INTO record_fts(rowid, subject, object, body) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![new_id, new_subject, object, body],
+        rusqlite::params![new_id, new_subject, object, old_body],
     )?;
     Ok(())
 }
@@ -731,10 +709,11 @@ mod tests {
         );
     }
 
-    /// The record that replaces another inherits its topic so a question about the topic
-    /// reaches it — and must not inherit the *value*, or the retired value is back in front
-    /// of the agent on the `topic:` line. `name_tokens` hides a value spelled like a product
-    /// and misses `sequelize`, so the caller that knows which word was the value says so.
+    /// The record that replaces another inherits its topic *in its key*, which is indexed and
+    /// never shown, so a question about the topic reaches it. Nothing of the replaced
+    /// statement reaches the body: a `topic:` line used to, and it restated the retired value
+    /// whenever that value was an ordinary lowercase word — `name_tokens` hides `PgBouncer`
+    /// and not `sequelize` — which is the one thing F1 exists to prevent.
     #[test]
     fn an_inherited_topic_never_restates_the_value_it_replaced() {
         let tmp = tempfile::tempdir().unwrap();
@@ -761,28 +740,27 @@ mod tests {
                 rusqlite::params![new, old],
             )
             .unwrap();
-        inherit_topic_hiding(&db.conn, new, &["sequelize".to_string()]).unwrap();
-        let body: String = db
+        inherit_topic(&db.conn, new).unwrap();
+        let (body, subject): (String, String) = db
             .conn
-            .query_row("SELECT body FROM record WHERE id=?1", [new], |r| r.get(0))
+            .query_row("SELECT body, subject FROM record WHERE id=?1", [new], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
-        assert!(body.contains("topic:"), "the topic is inherited: {body}");
-        assert!(body.contains("layer"), "the topic words are kept: {body}");
         assert!(
             !body.contains("sequelize"),
             "the replaced value is not restated: {body}"
         );
-        // it is still *findable* by the old value: the key is indexed and never shown
-        let subject: String = db
-            .conn
-            .query_row("SELECT subject FROM record WHERE id=?1", [new], |r| {
-                r.get(0)
-            })
-            .unwrap();
+        assert!(
+            !body.contains("layer"),
+            "nothing of the replaced statement is shown: {body}"
+        );
+        // it is still *findable* by both: the key is indexed and never shown
         assert!(
             subject.contains("sequelize"),
             "still reachable by the old value: {subject}"
         );
+        assert!(subject.contains("layer"), "and by its topic: {subject}");
     }
 
     #[test]
