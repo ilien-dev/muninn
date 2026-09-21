@@ -65,6 +65,19 @@ grid, its pre-registration and its raw data are indexed in
   returns it on stdout (Muninn) and not for one that does not (claude-mem), so it counted
   Muninn's injection twice. The corrected reading is registered as a v4 outcome with the
   expectation pointing against us (`h2h/context_cost.py`).
+- **Better than claude-mem on the head-to-head.** Measured, and **Muninn lost**: with the
+  decisions also implemented in the repository, 6 of 27 replacement cells against claude-mem's
+  22 of 27, exact Fisher p = 2.7 × 10⁻⁵ (`results/h2h-v4-code/`). The pre-registered
+  decomposition of the same cells says the loss is not retrieval: **Muninn put the current
+  decision in front of the agent in 27 cells of 27** and the agent acted on it in 6, where
+  claude-mem delivered in 24 and the agent acted on it in 19. Muninn's agent also searched the
+  checkout three times as often, which is what an agent does when it does not believe what it
+  was told. Three causes were found by reading those cells, all Muninn's own: the boot summary
+  told the agent not to put blocks into files while the task was to write a decision into a
+  file; a hyphen hid `async-std` from the commit that replaced it, so both values were served;
+  and the `topic:` line restated the retired value when it was a lowercase word. All three are
+  fixed and are being re-measured on the same cells as a third arm. **Until that arm reports,
+  the claim is the loss above.**
 - **Better than Mem0, Rekal, agentmemory or any other product.** No head-to-head on the same
   harness has been run. Vendor LoCoMo / LongMemEval figures are not comparable and are not
   cited as comparisons. For Mem0 the arm now exists and is deliberately not run: Mem0 extracts
