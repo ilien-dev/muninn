@@ -44,3 +44,17 @@
 {"run": 2, "task": "revoke-compression", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 16, "cost_usd": 0.1941974, "duration_ms": 49098, "error": null}
 {"run": 2, "task": "revoke-password-hashing", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 8, "cost_usd": 0.16251079999999998, "duration_ms": 37449, "error": null}
 {"run": 2, "task": "revoke-tls-backend", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 7, "cost_usd": 0.1089288, "duration_ms": 26402, "error": null}
+{"run": 2, "task": "revoke-license", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 10, "cost_usd": 0.2150222, "duration_ms": 70197, "error": null}
+{"run": 2, "task": "revoke-password-hashing", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 7, "cost_usd": 0.10448040000000001, "duration_ms": 18207, "error": null}
+{"run": 2, "task": "revoke-version-scheme", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 6, "cost_usd": 0.09414480000000001, "duration_ms": 19884, "error": null}
+{"run": 2, "task": "revoke-compression", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 8, "cost_usd": 0.12231600000000001, "duration_ms": 39260, "error": null}
+{"run": 2, "task": "revoke-license", "arm": "claude-mem", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 7, "cost_usd": 0.13395379999999998, "duration_ms": 37011, "error": null}
+{"run": 2, "task": "revoke-version-scheme", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 10, "cost_usd": 0.15472019999999997, "duration_ms": 46289, "error": null}
+{"run": 2, "task": "revoke-internal-http", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 5, "cost_usd": 0.08706359999999999, "duration_ms": 16589, "error": null}
+{"run": 2, "task": "revoke-tls-verification", "arm": "muninn-loop8", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 8, "cost_usd": 0.16935440000000002, "duration_ms": 67400, "error": null}
+{"run": 2, "task": "revoke-internal-http", "arm": "muninn-loop8", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 11, "cost_usd": 0.1913464, "duration_ms": 53478, "error": null}
+{"run": 2, "task": "revoke-tls-verification", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 8, "cost_usd": 0.1476082, "duration_ms": 30625, "error": null}
+{"run": 2, "task": "revoke-async-runtime", "arm": "claude-mem", "inferable": false, "status": "pass", "oracle_exit": 0, "num_turns": 3, "cost_usd": 0.059546600000000005, "duration_ms": 17012, "error": null}
+{"run": 2, "task": "revoke-tls-backend", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 10, "cost_usd": 0.15592899999999998, "duration_ms": 38580, "error": null}
+{"run": 2, "task": "revoke-async-runtime", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 8, "cost_usd": 0.1575704, "duration_ms": 41665, "error": null}
+{"run": 2, "task": "revoke-cache-eviction", "arm": "muninn-loop8", "inferable": false, "status": "fail", "oracle_exit": 1, "num_turns": 17, "cost_usd": 0.27980060000000007, "duration_ms": 103715, "error": null}
