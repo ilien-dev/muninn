@@ -137,3 +137,48 @@ fn a_commit_about_something_else_retires_nothing() {
         "nothing in these commits says anything about the pooler"
     );
 }
+
+#[test]
+fn when_nobody_says_what_replaced_it_the_file_does() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    decision(root, "using PgBouncer for pooling");
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    // a subject that says nothing: the diff is the only evidence
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(!active(root, "PgBouncer"), "the old decision is retired");
+    assert!(
+        active(root, "Supavisor"),
+        "what the file now holds is on record, with the commit behind it"
+    );
+    // and the question that used to reach the old answer reaches this one
+    let out = run(root, BIN, &["recall", "pooling"]);
+    assert!(
+        out.contains("Supavisor"),
+        "the new value is served for the old topic: {out}"
+    );
+}
+
+#[test]
+fn an_unrelated_swap_writes_no_record_of_its_own() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    decision(root, "using PgBouncer for pooling");
+    std::fs::write(root.join("config/other.json"), "{\"value\": \"ripgrep\"}\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "add a tool"]);
+    std::fs::write(root.join("config/other.json"), "{\"value\": \"ugrep\"}\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        !active(root, "ugrep"),
+        "a swap that retires nothing is ordinary churn and leaves no decision behind"
+    );
+}
