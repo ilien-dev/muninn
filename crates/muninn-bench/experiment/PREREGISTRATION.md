@@ -2633,6 +2633,13 @@ arm is that one change on top of it (`muninn-kinds`, `e382674e12e8ce2a`): the th
 the kinds that exist, say they are all of them, and describe `:conflict with #n` as the
 suffix it is.
 
+*Amended before seeding.* Checking the shipped skill the same way found it claiming nine
+health checks where `muninn doctor` prints ten, and still carrying "Paste blocks into files"
+in its Never list — the sentence the third arm removed from the injected summary but not from
+the skill, which the agents in this grid do invoke. Both are corrected in this arm's plugin
+copy. So the arm is two instruction edits, not one, and the contrast against the third arm is
+against both together.
+
 ## Decision rule, fixed before the data
 
 One contrast, outside the registered family and labelled so: `pass(muninn-kinds) −
