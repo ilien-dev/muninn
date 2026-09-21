@@ -182,3 +182,29 @@ fn an_unrelated_swap_writes_no_record_of_its_own() {
         "a swap that retires nothing is ordinary churn and leaves no decision behind"
     );
 }
+
+#[test]
+fn a_word_the_repository_uses_everywhere_is_not_a_value() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    // `delivered` is vocabulary here: it is in five tracked files
+    for i in 0..5 {
+        std::fs::write(
+            root.join(format!("doc{i}.md")),
+            format!("the {i}th note about what is delivered\n"),
+        )
+        .unwrap();
+    }
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "notes"]);
+    decision(root, "delivered now looks the file up by session id");
+    // a commit that changes one of those lines, one for one
+    std::fs::write(root.join("doc2.md"), "the 2nd note about what is shipped\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        active(root, "looks the file up"),
+        "a diff that touches an ordinary word says nothing about a decision that uses it"
+    );
+}

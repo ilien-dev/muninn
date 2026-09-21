@@ -218,6 +218,15 @@ const FIRST_PASS_DIFF_LINES: usize = 40_000;
 /// grep at all and is not limited by this.
 const MAX_TREE_CHECKS: usize = 32;
 
+/// How many tracked files may hold a word before it stops being a *value* and starts being
+/// vocabulary. A dependency name lives in a manifest and perhaps a lock file; `delivered`,
+/// `session` or `path` live everywhere. Without this the rule fired on the first real store
+/// it met: a record saying "`delivered` now looks the file up by session id" was retired
+/// because a commit's diff happened to change a line containing the word `delivered`.
+/// A word the record itself spells like a name — an inner capital, a digit, a dot or a
+/// hyphen — is exempt, because that is a value however often it appears.
+const MAX_VALUE_FILES: usize = 3;
+
 /// The decisions the code itself left behind (ENGINE.md §5.2).
 ///
 /// Every lexical rule for noticing that a decision was replaced runs out at the same
@@ -351,16 +360,25 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.flatten().collect()
     };
-    let words_of: Vec<(i64, Vec<String>)> = live
+    // every content word of the statement, not only the ones that look like a product name —
+    // `nock` and `bash` are values too, and nothing about their spelling says so — with the
+    // name-shaped ones kept apart, because they are exempt from the commonness test below
+    let words_of: Vec<(i64, Vec<String>, Vec<String>)> = live
         .iter()
-        // every content word of the statement, not only the ones that look like a product
-        // name: `nock` and `bash` are values too, and nothing about their spelling says so
-        .map(|(id, obj)| (*id, muninn_capture::extract::topic_words(obj)))
+        .map(|(id, obj)| {
+            (
+                *id,
+                muninn_capture::extract::topic_words(obj),
+                muninn_capture::extract::name_tokens(obj),
+            )
+        })
         .collect();
     let mut n = 0;
     let mut gone_cache: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    let mut common_cache: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
     let tx = db.write_tx()?;
-    for (id, words) in &words_of {
+    for (id, words, names) in &words_of {
         // Two kinds of evidence, either of which is enough.
         //
         // A **swap**: one line became one line, the old value was on the first and is not on
@@ -413,10 +431,21 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             Some((_, sw)) => &sw.inn,
             None => &commit.added,
         };
+        // A word the repository uses all over the place is its vocabulary, not the value of
+        // a decision. The record's own spelling exempts a name.
+        if !names.contains(gone) {
+            let too_common = *common_cache.entry(gone.to_string()).or_insert_with(|| {
+                let out = git(&root, &["grep", "-F", "-i", "-l", "--", gone]).unwrap_or_default();
+                out.lines().filter(|l| !l.trim().is_empty()).count() > MAX_VALUE_FILES
+            });
+            if too_common {
+                continue;
+            }
+        }
         let heir: Option<i64> = words_of
             .iter()
-            .find(|(other, w)| other != id && w.iter().any(|w| added.contains(w)))
-            .map(|(i, _)| *i);
+            .find(|(other, w, _)| other != id && w.iter().any(|w| added.contains(w)))
+            .map(|(i, _, _)| *i);
         n += tx.execute(
             "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
              WHERE id=?1 AND invalid=0",
