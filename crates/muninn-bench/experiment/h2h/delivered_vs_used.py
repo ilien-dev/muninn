@@ -20,6 +20,11 @@ that. Crossed with the oracle:
     passed without memory       not delivered and the oracle passed anyway
     not delivered               not delivered and the oracle failed
 
+Beside those four counts, two more that say what the agent did with what it was given: how
+often it asked its memory for more, and how often it went looking in the repository instead
+(`Bash`, `Grep`, `Glob`, `Read`). An agent that believes what it was told does not need to go
+looking.
+
 It is a floor on delivery: a substring search cannot tell a block that states the value from
 one that merely contains the word, and it says nothing about whether the block was legible.
 
@@ -67,12 +72,41 @@ def injected_text(path: pathlib.Path) -> str:
     return " ".join(out).lower()
 
 
+SEARCH_TOOLS = ("bash", "grep", "glob", "read")
+
+
+def tool_counts(path: pathlib.Path) -> tuple:
+    """(memory asks, repository looks) in one cell."""
+    if not path.exists():
+        return (0, 0)
+    asks = looks = 0
+    for line in path.open(errors="replace"):
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        content = (r.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for x in content:
+            if not isinstance(x, dict) or x.get("type") != "tool_use":
+                continue
+            name = str(x.get("name", "")).lower()
+            cmd = str((x.get("input") or {}).get("command", "")).lower()
+            if any(t in name for t in MEMORY_TOOL) or any(c in cmd for c in MEMORY_CMD):
+                asks += 1
+            elif name in SEARCH_TOOLS:
+                looks += 1
+    return (asks, looks)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("dirs", nargs="+")
     a = ap.parse_args()
-    print("| grid | arm | used | delivered, not used | passed without memory | not delivered |")
-    print("|---|---|---|---|---|---|")
+    print("| grid | arm | used | delivered, not used | passed without memory | not delivered "
+          "| memory asks / cell | repository looks / cell |")
+    print("|---|---|---|---|---|---|---|---|")
     for d in a.dirs:
         d = pathlib.Path(d)
         if not (d / "results.jsonl").exists():
@@ -95,9 +129,16 @@ def main() -> None:
             t = tally.setdefault(r["arm"], {k: 0 for k in
                                             [(True, True), (True, False), (False, True), (False, False)]})
             t[key] += 1
+            asks, looks = tool_counts(
+                d / "logs" / f"r{r['run']}-{r['task']}-{r['arm']}.transcript.jsonl")
+            t["asks"] = t.get("asks", 0) + asks
+            t["looks"] = t.get("looks", 0) + looks
+            t["cells"] = t.get("cells", 0) + 1
         for arm, t in sorted(tally.items()):
+            n = max(t.get("cells", 1), 1)
             print(f"| {d.name} | {arm} | {t[(True, True)]} | {t[(True, False)]} | "
-                  f"{t[(False, True)]} | {t[(False, False)]} |")
+                  f"{t[(False, True)]} | {t[(False, False)]} | {t.get('asks', 0) / n:.1f} | "
+                  f"{t.get('looks', 0) / n:.1f} |")
 
 
 if __name__ == "__main__":
