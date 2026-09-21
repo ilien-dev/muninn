@@ -151,10 +151,15 @@ pub fn intent_gate(prompt: &str) -> bool {
 /// Top-`k` prompt terms by IDF over the store. Terms absent from the store are
 /// dropped: they cannot match anything.
 pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
-    let mut terms: Vec<String> = prompt
+    let all: Vec<String> = prompt
         .split_whitespace()
         .filter_map(fts_term)
-        .filter(|t| t.len() >= 3 && !STOP.contains(&t.as_str()))
+        .filter(|t| t.len() >= 3)
+        .collect();
+    let mut terms: Vec<String> = all
+        .iter()
+        .filter(|t| !STOP.contains(&t.as_str()))
+        .cloned()
         .collect();
     terms.sort();
     terms.dedup();
@@ -192,6 +197,24 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
         }
         let idf = ((n + 1.0) / (df + 1.0)).ln();
         scored.push((idf, t));
+    }
+    // `STOP` exists so a prompt's scaffolding does not drag the whole store in, and the
+    // df test drops a word no record holds. Between them they can take *every* word of a
+    // question and leave silence, which is worse than a common word: a store that holds the
+    // answer then returns nothing at all. Both are preferences, not vetoes — they apply
+    // while something else survives them.
+    if scored.is_empty() {
+        for t in all {
+            let df: f64 = stmt
+                .query_row([&t], |r| r.get::<_, Option<f64>>(0))?
+                .unwrap_or(0.0);
+            // the rarity guard still applies: a word in a third of the store buys a long
+            // posting list and no signal, and without this the full hook went past its
+            // latency contract (11.9 ms against a limit of 10)
+            if df > 0.0 && !(n >= 50.0 && df > n / 3.0) {
+                scored.push((((n + 1.0) / (df + 1.0)).ln(), t));
+            }
+        }
     }
     scored.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)

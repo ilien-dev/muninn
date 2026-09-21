@@ -15,10 +15,13 @@ model in any cell, every run deterministic.
 | | retired_a | | | | served_ok | |
 | set / order | talk | code | both | noise | talk | both |
 |---|---|---|---|---|---|---|
-| loop 8 adjacent | 17/30 | 29/30 | **30/30** | 0/30 | 9/30 | **15/30** |
-| loop 8 blocks | 6/30 | 29/30 | **29/30** | 0/30 | 0/30 | **11/30** |
+| loop 8 adjacent | 17/30 | 29/30 | **30/30** | 0/30 | 11/30 | **18/30** |
+| loop 8 blocks | 6/30 | 29/30 | **29/30** | 0/30 | 0/30 | **14/30** |
 | loop 9 adjacent | 17/30 | 29/30 | **29/30** | 0/30 | 8/30 | **16/30** |
 | loop 9 blocks | 5/30 | 29/30 | **29/30** | 0/30 | 1/30 | **15/30** |
+
+(`v3_<arm>_<order>.json`; `v2_*` are the same grid before the term fall-back below, and differ
+only in the `served_ok` columns of loop 8.)
 
 `code` gives the same 29/30 in every row: the commit does not care whether the revision
 followed the decision or came ten decisions later, and the conversation alone falls from
