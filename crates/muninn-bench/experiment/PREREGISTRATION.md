@@ -2608,3 +2608,40 @@ The boot-summary sentence was found while diagnosing a cell of this grid, and th
 is exactly the shape that sentence collided with. That note goes with every number this arm
 produces. The sentence was over-broad on its own terms — it forbids a common, legitimate task
 — which is why it changed, but that does not make the timing disappear.
+
+---
+
+# Pre-registration — v4 fourth arm: the block kinds Muninn documents
+
+Registered 2026-09-21, before the arm was seeded and before any of its cells ran; the third
+arm was still running its cells and its result was not known.
+
+## Why
+
+Verifying the startup note against the engine found that three of the six block kinds it
+documents are never emitted — `no-rebuild` lives only in a token-estimation fixture,
+`lineage` and `stale` are not produced at all — while `decision`, `invariant`,
+`deadend` and `correction`, which are what an agent actually receives, were not listed.
+
+One of the three is not merely absent, it argues the wrong way: `stale` is described as
+"a fact was retired, assume neither old nor new". Cell after cell of the registered arms came
+back saying a prior decision "was revoked and no replacement value has been recorded" — that
+sentence, applied. The engine cannot emit the block, so the sentence could only mislead.
+
+The third arm was already pinned when this was found and does not carry the correction. This
+arm is that one change on top of it (`muninn-kinds`, `e382674e12e8ce2a`): the three documents now list
+the kinds that exist, say they are all of them, and describe `:conflict with #n` as the
+suffix it is.
+
+## Decision rule, fixed before the data
+
+One contrast, outside the registered family and labelled so: `pass(muninn-kinds) −
+pass(muninn-now)`, exact Fisher, on the same replacement cells. Reported whatever it shows.
+The registered arms of this grid are closed and are not re-opened by it.
+
+## Threat
+
+Two arms differing by one edit to an instruction is a clean contrast only if nothing else
+moved, and nothing else did: the binaries differ in that edit and in nothing else that reaches
+a hook. But it is still one grid of 27 cells per arm, and 27 cells cannot separate a small
+effect [Z7].
