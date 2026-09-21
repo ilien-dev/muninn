@@ -2248,9 +2248,13 @@ from every tracked file. The `--survivor` control run afterwards showed that rul
 nothing at all when the old value survives in one untouched file — which is the position three
 of this grid's nine scenarios are already in, since the `gin` checkout contains `gzip`,
 `msgpack` and `GPL`. Running the grid on that binary would have measured a rule that had
-already been superseded by a measurement. The pin is now `e1f757590b2c63fb`, which also accepts a
+already been superseded by a measurement. The pin is now `01bf77973609a56d`, which also accepts a
 one-for-one hunk as evidence, and the three-scenario caveat below is correspondingly weaker:
-those scenarios can now fire, through the swap rather than the disappearance.
+those scenarios can now fire, through the swap rather than the disappearance. The same
+amendment carries one read-path change made in the same hour, for the same reason — a question
+every one of whose words is filtered out returned nothing, and now falls back to the words that
+were filtered. **From this pin onwards the engine is frozen until the grid has run**: an engine
+re-pinned every time a control finds something is an engine that never gets measured.
 
 ## The question
 
