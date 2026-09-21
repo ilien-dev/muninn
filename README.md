@@ -209,6 +209,19 @@ repository, nothing is retired — deliberately. And in the Spanish half of thos
 retirement is 10 of 10 while the answer is delivered 2 of 10, because the question is in
 English and the record is in Spanish; that gap is retrieval, not detection, and it is not fixed.
 
+Not retiring things is the other half of the job, and it was never measured until a real
+store made it obvious: run on six of this project's own transcripts, three of four sampled
+retirements were wrong. One retired a note about gzip and zstd because a later message
+described *running a test* on gzip and zstd.
+
+The cause was a handful of words that are both a verb and a noun. "Migrations", "cambios",
+"swap", "switch" read as announcements of a change, so any later sentence containing one of
+them could retire an earlier decision it happened to share two words with. On fifteen pairs
+built to contain exactly that shape, three of fifteen true decisions survived. After the fix,
+twelve — and of the three that still fail, two look like genuine changes that the test set
+called unrelated. On two other held-out sets of pairs that are simply about different things,
+fifteen of fifteen survive, before and after.
+
 Some results were weaker, and they are published too. The same fact test on Codex gave 10 of 25
 against 5 of 25, which is not a clear difference. Two features did not help and were removed or
 turned off by default.
