@@ -160,7 +160,7 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
 /// or a configuration key is made of. Deliberately generous — the set is only ever used
 /// to *look up* values the store already holds, never to create one.
 fn code_tokens(line: &str, out: &mut Vec<String>) {
-    let mut push = |w: &str, out: &mut Vec<String>| {
+    let push = |w: &str, out: &mut Vec<String>| {
         if w.chars().count() >= 3 && w.chars().any(|c| c.is_alphabetic()) {
             let w = w.to_lowercase();
             if !out.contains(&w) {
