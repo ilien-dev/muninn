@@ -77,6 +77,11 @@ def main() -> None:
     ap.add_argument("--scenarios", default=str(EXP / "loop7" / "scenarios.json"))
     ap.add_argument("--styles", default="terse,chatty,Spanish")
     ap.add_argument("--out", default=str(HERE / "all_results.json"))
+    ap.add_argument("--survivor", action="store_true",
+                    help="also write each old value into a second file that no commit ever "
+                         "touches, so 'the value is gone from the tree' is false — the position "
+                         "three of the nine head-to-head scenarios are in, where the checkout "
+                         "already contains the word")
     ap.add_argument("--filler", type=int, default=0,
                     help="unrelated commits to make after each change, so the commit that "
                          "matters falls further back in the history a single maintain reads")
@@ -103,6 +108,9 @@ def main() -> None:
         for s in scenarios:
             (cfg / f"{s['id']}.json").write_text(json.dumps({"value": s["old"]}, indent=1) + "\n")
         (cfg / "unrelated.json").write_text(json.dumps({"value": "ripgrep"}, indent=1) + "\n")
+        if a.survivor:
+            (root / "CHANGELOG.md").write_text(
+                "".join(f"- once used {s['old']}\n" for s in scenarios))
         commit(root, "base")
         sh([a.muninn, "--cwd", root, "init", "--keep-native"], root, env)
 
@@ -177,7 +185,7 @@ def main() -> None:
         return f"{sum(v)}/{len(v)}"
     for grp, sub in [("all", results)] + [(st, [r for r in results if r["style"] == st])
                                           for st in a.styles.split(",")]:
-        print(f"{a.arm:5s}/{a.order:8s}/{a.commit_msg:6s}/f{a.filler:<3d} {grp:9s} retired_a {share('retired_a', sub):7s} "
+        print(f"{a.arm:5s}/{a.order:8s}/{a.commit_msg:6s}/f{a.filler}{'/surv' if a.survivor else '':5s} {grp:9s} retired_a {share('retired_a', sub):7s} "
               f"kept_b {share('kept_b', sub):7s} served_ok {share('served_ok', sub):7s} "
               f"old_served {share('old_served', sub):7s} b_served {share('b_served', sub)}")
 
