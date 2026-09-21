@@ -260,9 +260,17 @@ pub fn answer(
             record: row,
         });
     }
+    // A commit log entry — `commit:<hash>`, whose text is the subject line and the files it
+    // touched — is corroboration, not an answer. It was being reported as one: asked what the
+    // cache eviction policy is, `why` replied "sufficient: #11 (commit_linked, trust 2)
+    // answers directly" over `commit c9249e6: update dependencies`, and the agent went on to
+    // write that nothing was recorded. It sinks below the records that carry a value, and it
+    // never decides sufficiency on its own.
+    let is_log = |f: &Found| f.record.subject.starts_with("commit:");
+    records.sort_by_key(|f| is_log(f));
     let direct = records
         .iter()
-        .find(|f| f.record.trust >= 2 && !f.record.invalid);
+        .find(|f| f.record.trust >= 2 && !f.record.invalid && !is_log(f));
     let (sufficient, sufficiency) = match direct {
         Some(f) => (
             true,
@@ -274,7 +282,12 @@ pub fn answer(
         None if records.is_empty() => (false, "insufficient: nothing recorded matches".into()),
         None => (
             false,
-            "insufficient: only circumstantial records (trust < 2); do not fill the gap".into(),
+            // what this has to prevent is an invented value, not an answer: an agent told
+            // only "do not fill the gap" wrote that nothing was recorded while a trust-3
+            // decision sat in the same output
+            "insufficient: no record of trust 2 or more answers this — say what the records \
+             below do show, name their trust, and do not invent a value"
+                .into(),
         ),
     };
     Ok(Answer {
@@ -371,6 +384,48 @@ mod tests {
         assert_eq!(route("history of src/auth/jwt.rs"), Route::File);
         assert_eq!(route("why is force push forbidden"), Route::Rule);
         assert_eq!(route("tell me about caching"), Route::All);
+    }
+
+    /// A commit log entry is corroboration, not an answer. Asked what the cache eviction
+    /// policy is, `why` replied "sufficient: #11 (commit_linked, trust 2) answers directly"
+    /// over `commit c9249e6: update dependencies`, and the agent went on to write that
+    /// nothing was recorded — with the decision itself three lines further down.
+    #[test]
+    fn a_commit_subject_does_not_answer_the_question() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        let ins = |subject: &str, object: &str, origin: &str, trust: i64| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,?3,?4,'s',?1,1)",
+                    rusqlite::params![subject, object, origin, trust],
+                )
+                .unwrap();
+        };
+        ins(
+            "commit:c9249e6",
+            "update dependencies\nfiles: config/cache-eviction.json\n",
+            "commit_linked",
+            2,
+        );
+        ins(
+            "said:change:cache eviction lru",
+            "LRU with a 300-second TTL for cache eviction",
+            "user_said",
+            3,
+        );
+        let a = answer(&db, "the cache eviction policy", false, 20, 1_500).unwrap();
+        assert!(a.sufficient, "the decision answers it: {}", a.sufficiency);
+        assert!(
+            a.sufficiency.contains("user_said"),
+            "the commit subject must not be what answers: {}",
+            a.sufficiency
+        );
+        assert!(
+            !a.records[0].record.subject.starts_with("commit:"),
+            "and it must not lead the list"
+        );
     }
 
     /// `--all` exists so a person can see what was retired. It asked the full-text index which
