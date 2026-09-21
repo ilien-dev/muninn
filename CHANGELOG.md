@@ -1,32 +1,97 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — prepared, not yet tagged
 
-- **The serving gate is in the schema and in the type system, not in every query.** A new
-  `served_record` view is the only source a serving path reads from, and `recall::Hit` — the
-  type both hook renderers accept — has a single constructor, which reads from that view. A
-  query that forgets to exclude retired records no longer serves them silently: it fails to
-  prepare. `project::load` is split into `load_served` and `load_all`, `cue::evaluate` drops
-  retired candidates before they reach the delivery log, and a test refuses any new read of
-  `record` from a file that has not declared itself. Two fault-injection scenarios (`s16`,
-  `s17`, 200 repetitions each in CI) assert on real hook stdout that a retired record's text
-  never appears — including under a corrupt store, an unknown schema version and a clock moved
-  backwards — and that the record which replaced it does. The assertion was shown to fail when
-  the filter is reverted. A store written by an earlier version is migrated on its next write;
-  until then the health gate reports RED rather than staying quiet.
-- **License: GNU AGPL-3.0-only with attribution terms.** Muninn is © ilien. Anyone may use, modify,
-  host and sell it. Modified versions, including ones offered over a network, must publish their
-  source, keep the notice "Based on Muninn by ilien" (`NOTICE`, AGPL section 7(b)), and be marked
-  as changed. The MIT declaration was never published: the repository was private, and its history
-  was rewritten before the first public release so that no commit carries it
-  (`crates/muninn-bench/experiment/HISTORY-REWRITE.md`).
-- **Head-to-head v2 (held-out wording, three runs, 27 replacement cells per arm).** 0.2.0: 17/27;
-  claude-mem 14/27 (tie, Holm p = 0.58); agentmemory 9/27 (tie, Holm p = 0.11); agentmemory with
-  injection 1/27; no memory 0/27. Secondary figure: 0.2.0's answers mention the retired value in 11/27
-  cells, claude-mem's in 2/27.
-- **Logo** replaced: raven in a broken ring, with light, dark, symbol and social-preview cuts.
-- **Contributor License Agreement** (`CLA.md`, `CONTRIBUTING.md`), checked on every pull request
-  by `.github/workflows/cla.yml`.
+- **The memory reads the repository, not only the conversation.** Every lexical rule for
+  noticing that a decision was replaced runs out in the same place: 23 of 30 held-out
+  replacements share no content word with the message that replaces them, and neither
+  embeddings nor a stemmer reaches them. `maintain` now reads the diffs of the commits it
+  captures. A hunk where one line became one line, with a decision's value on the first and
+  not on the second, says what replaced what; so does a value that a commit took out and that
+  no tracked file holds any more. The record naming it is retired, what the line became is
+  recorded with the commit behind it (`commit_linked`, trust 2, anchored to the file), and
+  the question that reached the old answer reaches the new one. Nothing is invented from a
+  diff: a removed word only counts if a record already named it, and a swap that retires
+  nothing writes nothing. Measured on two held-out sets generated after the engine was frozen,
+  with the commit subject deliberately uninformative — retirement 17/30 → 29-30/30, and 5-6/30
+  → 29/30 when the revision is not adjacent to the decision; the current answer delivered
+  8-11/30 → 19-25/30, and 21-29/30 where the conversation never names the new value at all.
+  False retirement 0/30 in all eight conditions (`experiment/loop8/`, `loop9/`).
+- **Three defects the loop-8 grid found before it could be trusted.** git parses `--since=@0`
+  as *now*, not as the epoch, so a fresh store was told its repository had no history and
+  captured nothing until its second `maintain` — every new install has been missing its own
+  past. Topic inheritance restated the retired value on the `topic:` line whenever the value
+  was lowercase, because the filter was `name_tokens`, which knows `PgBouncer` and not
+  `sequelize` — an F1 leak worth six held-out cells. And a commit hash is part of an indexed
+  record's text, so a grid that commits with wall-clock dates is not deterministic: one cell in
+  thirty flipped between runs.
+- **An accented query matched nothing.** `fts_term` dropped the accented letter instead of
+  folding it, so `móvil` became `mvil` while the index holds `movil`; a non-Latin script was
+  emptied outright. Measured on an accented query against an accented record: 0 blocks before,
+  1 after.
+- **The index is stemmed, and a question whose every word is filtered out is no longer met
+  with silence.** FTS5 `porter` (schema 2, with a one-off rebuild on migration) plus a
+  fall-back that asks the index itself for a word the vocabulary does not hold, and a second
+  pass over the words the stop list and the rarity test dropped when they take all of them.
+  Ablation: porter and the fall-back are worth 1-4 and 4-5 held-out cells; a prefix back-off
+  that scored well on the development set moved exactly nothing on either held-out set and was
+  deleted.
+
+- **Gate 5a: the compiled controls were measured end to end, and it took three held-out sets.**
+  Gate 1 had scored whether a sentence *can* be enforced (precision 0.905) and stopped there.
+  `muninn-bench enforce` builds a throwaway project for each hand-labelled tool call, runs
+  `compile` → `apply --yes`, and feeds a harness-shaped payload to the real `hook PreToolUse`;
+  every call is labelled from **the rule's own words**, so a control broader than its rule is a
+  failure rather than a silence. Run 1 (set A, 84 cases): **FAIL** — the controls fired, and one
+  benign call in eight fired with them, every case the same shape (a rule about `main` denying
+  every force-push, one about `pkill -f zellij` denying every `kill`, one about `.env` denying
+  `.env.example`). Run 2 (set B, 71 cases): **FAIL** the other way — false blocks down to
+  **0/36** on a set the fixes were not fitted to, block rate four cases under the floor, one of
+  them an engine bug the run found. Run 3 (set C, 53 cases over 28 rules from 22 files none of
+  the others touched): **PASS, 0.920 block / 0.000 false block.** All three runs, their
+  pre-registrations and their raw data are published (`corpora/claude-md/GATE5A.md`,
+  `experiment/results/gate5a-holdout{1,2,3}/`).
+- **Nine narrowings, so a control is no wider than the rule it came from.** A backticked
+  invocation with its own arguments emits that invocation, not its command head; a rule marked
+  as the root or whole-repo form emits an end-anchored control; a rule naming a remote scopes to
+  it; a branch-scoped force-push reads the target from the command and the bare form from the
+  checkout; `git config` matches the writing forms so `--get` still reads; `.env` no longer
+  matches inside `.env.example`; an extensionless protected path covers its subtree; `git stash`
+  reaches the control that already detected it; the full-suite control knows the runners the
+  corpus names. A rule that carves out named paths now compiles to `interpretive_only`, because
+  no control can subtract one path from another — coverage given up on purpose.
+- **A `new_file` hook condition judged the wrong file.** It resolved a relative tool path
+  against the process's working directory rather than the project root, so `Write README.md`
+  was judged by whichever README the caller stood next to. Fixed, with a regression test.
+- **The enforcement chain has tests.** `crates/muninn-cli/tests/enforce.rs`, 11 cases: compile
+  alone enforces nothing, apply merges with foreign `settings.json` entries and revert removes
+  only ours, `ask` degrades to a reminder on Codex, a branch-scoped rule stays on its branch, an
+  unscoped one keeps its blanket control, every evaluation leaves a line including silence, a
+  corrupt artefact never blocks the agent. From `emit` onwards nothing had been tested.
+- **CI guards both F2 gates.** `muninn-bench rules --strict` fails below Gate 1's contract and
+  `muninn-bench enforce` fails if the controls stop refusing what they should or start refusing
+  what they should not. CI also now triggers on `master`, which it did not.
+- **`docs/claims.md` has F2 rows**, which it had none of, and two more for the grids that are
+  built and deliberately unrun: Gate 5b (does the control change what the agent does?) and a
+  `native` arm that finally puts a number on "better than the harness's own memory". Both are
+  pre-registered; neither is claimed.
+- **Codex hook paths are quoted, and the threat model says what the code does.** `init --codex`
+  interpolated `current_exe()` into a shell-form command unvalidated while
+  `docs/threat-model.md` claimed it refused metacharacters. The path is now single-quoted, and
+  one carrying a single quote or a control character is refused outright. The document's claim
+  about the binary being pinned in `plugin.json` was also false and now describes the release
+  bundles that make it true.
+- **Install without a Rust toolchain.** Every release publishes a plugin bundle per platform
+  with the binary already in `plugin/bin/`, stamps the tag's version into `plugin.json` and
+  `marketplace.json`, and ships `install.sh` as an asset. `scripts/install.sh` pointed at a
+  repository that does not exist, defaulted to 0.1.0, covered three of four published targets
+  and filled one of the two places the binary is needed; all four are fixed, and the README
+  leads with the no-Rust path.
+- **Two cue defects.** `muninn init --cues` overwrote `.muninn/config.json` instead of merging
+  into it. And `glob` and `cooldown` cues, which the schema accepts but no evaluator checks,
+  counted as satisfied — so a group containing one fired on its other cues alone, having
+  checked a condition nobody evaluated. They are refused on import and the conjunction fails
+  closed.
 
 ## 0.2.0 — 2026-09-17
 
