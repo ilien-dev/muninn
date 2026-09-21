@@ -2508,3 +2508,59 @@ The detector is a substring search for the new value in the injected context. It
 a block that names the value from one that names it as part of something else, and it says
 nothing about whether the block was *understandable*. It is a floor on delivery, not a
 measure of quality.
+
+---
+
+# Pre-registration — v4 third arm: the same grid, the engine as it stands
+
+Registered 2026-09-21, before the arm was seeded and before any of its cells ran. The v4
+`--code` grid's registered arms (`muninn-loop8`, `claude-mem`) had finished or were finishing;
+their cells are untouched by this and are not re-run.
+
+## Why a third arm rather than a new grid
+
+The decomposition registered above returned, on the v4 code grid: **Muninn delivered the new
+value in 17 of 17 cells and the agent used it in 4.** claude-mem delivered in 10 of 16 and the
+agent used it in 9. Whatever the pass rate says, it is not saying that Muninn failed to find
+the decision — it found it every time.
+
+Diagnosing one of those cells showed a cause that is Muninn's own and is not the engine: the
+boot summary the plugin injects said **"Do not … paste blocks into files"**, while the task is
+to write the current decision into a file. That sentence, and one beside it that could be read
+as "this is not part of the project", have been rewritten to say what they meant.
+
+Adding an arm to the same grid keeps every other thing equal — same seed phrasings, same
+tasks, same oracles, same checkout, same claude-mem cells — so the difference between the two
+Muninn arms is attributable to what changed between the two pins, which is listed below. A new
+grid would re-run claude-mem for nothing and compare across two days of API conditions.
+
+## The arm
+
+`muninn-now`, pinned to `bdb12656b20bdfd7`. What it carries that `muninn-loop8`
+(`01bf77973609a56d`) does not:
+
+1. **The boot summary's wording** — the change above. Expected to matter most, and the reason
+   for the arm.
+2. What the file now holds is written as a record whenever a swap retires something, not only
+   when nobody said it in conversation (measured: +1 to +8 held-out cells).
+3. A quantity changed in a diff is read as a replacement (`10 connections` → `25 connections`).
+4. A word the repository uses in more than three files is not read as a value — a real false
+   retirement this found on this project's own store.
+5. Four change-marker patterns want a verb form, so an ordinary noun (`migrations`, `cambios`,
+   `swap`) no longer retires a true decision.
+6. Two defects found by the checks registered above: an episode's subject sorting its session
+   id among its topic words, and the schema-2 migration leaving the index empty.
+
+## Decision rule, fixed before the data
+
+The registered contrasts of this grid are unchanged and are not re-opened. For this arm, one
+contrast: `pass(muninn-now) − pass(muninn-loop8)`, exact Fisher, on the replacement cells.
+It is reported whatever it shows, and it is **not** a claim about the head-to-head — the
+comparison that matters there stays `muninn-* vs claude-mem`, reported for both pins.
+
+## What travels with any improvement this shows
+
+The boot-summary sentence was found while diagnosing a cell of this grid, and the grid's task
+is exactly the shape that sentence collided with. That note goes with every number this arm
+produces. The sentence was over-broad on its own terms — it forbids a common, legitimate task
+— which is why it changed, but that does not make the timing disappear.
