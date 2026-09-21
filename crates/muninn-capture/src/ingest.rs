@@ -355,9 +355,20 @@ pub fn inherit_topic_hiding(
     )?;
     let mut st = tx.prepare("SELECT body FROM record WHERE invalidated_by=?1")?;
     let olds: Vec<String> = st.query_map([new_id], |r| r.get(0))?.flatten().collect();
-    let (head, words) = subject
-        .rsplit_once(':')
-        .unwrap_or(("said:change", subject.as_str()));
+    // `said:change:a b c` splits into a key and its words. An episode's subject is
+    // `session:<id>#<turn>`, which has no words at all — splitting it the same way made the
+    // session id one of them, and since the words are sorted, where the id landed depended on
+    // its own first character: the same conversation produced `session:<id>#0 calver
+    // versioning` in one run and `session:calver <id>#0 versioning` in the next. Harmless to
+    // retrieval, which tokenises both the same way, and fatal to the claim that the same
+    // input gives the same store, which is how it was found.
+    let (head, words) = if subject.starts_with("session:") {
+        (subject.as_str(), "")
+    } else {
+        subject
+            .rsplit_once(':')
+            .unwrap_or(("said:change", subject.as_str()))
+    };
     let mut set: Vec<String> = words
         .split(' ')
         .filter(|w| !w.is_empty())
@@ -668,6 +679,56 @@ mod tests {
     }
     fn tool_result(id: &str, out: &str, code: i64) -> serde_json::Value {
         serde_json::json!({"type":"user","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":id,"content":out,"is_error":code!=0}]},"toolUseResult":{"exitCode":code}})
+    }
+
+    /// Two stores given the same conversation must hold the same subjects. They did not: an
+    /// episode's session id was sorted in among the inherited topic words, so its own first
+    /// character decided the order.
+    #[test]
+    fn an_episodes_subject_does_not_sort_its_session_id_among_the_topic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let subject_after = |sid: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('episode',?1,'said','semver is cleaner','user: semver is cleaner\n','tool_observed',1,'s',?2,1)",
+                    rusqlite::params![format!("session:{sid}#0"), sid],
+                )
+                .unwrap();
+            let new = db.conn.last_insert_rowid();
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,invalidated_by,created_at) \
+                     VALUES('decision',?1,'user_decision','calver for versioning','user: calver for versioning\n','user_said',3,'s',?2,1,?3,1)",
+                    rusqlite::params![format!("said:state:{sid}old"), format!("{sid}old"), new],
+                )
+                .unwrap();
+            inherit_topic(&db.conn, new).unwrap();
+            db.conn
+                .query_row::<String, _, _>("SELECT subject FROM record WHERE id=?1", [new], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        // one session id sorts before the topic words, one after
+        let early = subject_after("aaaa");
+        let late = subject_after("zzzz");
+        let shape = |s: &str| {
+            s.split(' ')
+                .map(|w| if w.starts_with("session:") { "<id>" } else { w })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert_eq!(shape(&early), shape(&late), "{early} vs {late}");
+        assert!(
+            early.starts_with("session:"),
+            "the key stays in front: {early}"
+        );
     }
 
     /// The record that replaces another inherits its topic so a question about the topic

@@ -11,11 +11,25 @@ run pairs, within an arm. Never between arms: the two tools store different kind
 <work-dir> is the harness's working directory, e.g. /tmp/muninn-h2h/h2h-v4-code.
 """
 import argparse
-import json
 import pathlib
+import re
 import sqlite3
 import subprocess
 import tempfile
+
+
+# Two identifiers vary by construction and say nothing about what was stored: the harness
+# gives every run its own checkout, so the same commit has a different hash in each, and the
+# harness gives every seeding message its own session, so the same message has a different
+# session id. Both are normalised away, in both tools, before anything is compared. What is
+# left is the text. Disclosed rather than silent, because it is the one place this analysis
+# touches the data — the raw figure without it is in the report.
+UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
+HASHISH = re.compile(r"\b[0-9a-f]{7,40}\b")
+
+
+def normalise(text: str) -> str:
+    return HASHISH.sub("<hash>", UUID.sub("<session>", text))
 
 
 def muninn_items(snap: pathlib.Path) -> set:
@@ -30,7 +44,7 @@ def muninn_items(snap: pathlib.Path) -> set:
             "SELECT kind, subject, object FROM record WHERE invalid = 0"
         ).fetchall()
         con.close()
-    return {" | ".join(str(c) for c in r) for r in rows}
+    return {normalise(" | ".join(str(c) for c in r)) for r in rows}
 
 
 def claude_mem_items(snap: pathlib.Path) -> set:
@@ -58,7 +72,7 @@ def claude_mem_items(snap: pathlib.Path) -> set:
             for row in con.execute(f"SELECT {', '.join(textish)} FROM '{t}'"):
                 v = " | ".join(str(x) for x in row if x is not None).strip()
                 if v:
-                    items.add(f"{t}: {v}")
+                    items.add(normalise(f"{t}: {v}"))
         con.close()
     return items
 
