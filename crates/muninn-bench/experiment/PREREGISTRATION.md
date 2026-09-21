@@ -2214,3 +2214,23 @@ published as contaminated: the engine was written while reading it.
   whole tree, which is the rule; a refactor that moves the value elsewhere is deliberately
   not detected.
 - 30 cells is a mechanism gate, not a population estimate.
+
+## Status
+
+**Run, and the decision rule is met** (`results` in `loop8/`, replication in `loop9/`).
+Held-out set 1 (loop 8): `served_ok(both)` 19/30 against `talk` 9/30 adjacent, 15/30 against
+0/30 in blocks; `retired_a(noise)` 0/30 in both orders; `kept_b` 30/30 either way. Held-out
+set 2 (loop 9), generated after the engine was frozen at `2e15efb` and never read before it
+ran: 30/30 against 8/30 and 30/30 against 1/30, `retired_a(noise)` 0/30 again.
+
+Two things are reported with it rather than left for a reader to find.
+
+*The loop-8 set was read while three defects were fixed* — `--since=@0`, the topic-line leak
+and the harness's own non-determinism — so loop 8 is a development set from that point on and
+loop 9 is the number to quote. Both are published.
+
+*An added control the registration did not contain* (`--commit-msg opaque`): with a commit
+subject that does not name the new value, `retired_a` is unchanged (23/30 and 29/30) and
+`served_ok` falls to 15-16/30 adjacent and 11-15/30 in blocks. So the retirement is the
+diff's doing and the 30/30 is a commit subject answering the question by itself. The public
+figure is the opaque one.

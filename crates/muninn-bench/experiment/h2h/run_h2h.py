@@ -106,6 +106,26 @@ def claude(prompt: str, cwd: Path, env: dict, spec: dict, settings: Path, max_tu
     return v, out, time.time() - t0
 
 
+# Every arm so far runs with the harness's own memory switched off, so `off` means "no
+# memory at all". A native-memory arm needs that one key flipped, and only for itself:
+# the file every other arm gets must stay byte-identical, or the v1 and v2 grids already
+# measured stop being comparable.
+NATIVE_MEMORY_ARMS = {"native"}
+
+
+def settings_for(arm: str, cell_root: Path | None = None) -> str:
+    v = {"autoMemoryEnabled": arm in NATIVE_MEMORY_ARMS}
+    if arm in NATIVE_MEMORY_ARMS and cell_root is not None:
+        # Auto memory otherwise lands in `~/.claude/projects/<repo>/memory/`, keyed by the
+        # git repository, so every cell of every run would share one directory and the
+        # operator's own memory for this repository would be in it. `autoMemoryDirectory`
+        # is read from any settings scope, `--settings` included, and confines the arm to
+        # its own cell. A private HOME would do it too, but it also moves the login, and an
+        # unauthenticated cell measures nothing.
+        v["autoMemoryDirectory"] = str((cell_root / "memory").resolve())
+    return json.dumps(v)
+
+
 def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path:
     snap = work / f"snap-r{run}-{arm}"
     if (snap / ".done").exists():
@@ -116,7 +136,7 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
     co = root / REPO.name   # tools key state by the checkout basename: same name in seed and task cells
     checkout(co)
     settings = root / "settings.json"
-    settings.write_text(json.dumps({"autoMemoryEnabled": False}))
+    settings.write_text(settings_for(arm, root / "cell"))
     log = (out / "seeding").joinpath(f"r{run}-{arm}.jsonl")
     log.parent.mkdir(parents=True, exist_ok=True)
     with lock_for(arm):
@@ -158,7 +178,7 @@ def run_cell(cfg: dict, task: dict, arm: str, run: int, out: Path, work: Path) -
     with lk:
         env = dict(os.environ, CELL_ROOT=str(root / "cell"), CHECKOUT=str(co), PORT=str(next_port()), PATH=clean_path())
         settings = root / "settings.json"
-        settings.write_text(json.dumps({"autoMemoryEnabled": False}))
+        settings.write_text(settings_for(arm, root / "cell"))
         spec: dict = {}
         started = False
         try:

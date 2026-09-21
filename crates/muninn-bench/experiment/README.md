@@ -18,6 +18,9 @@ of the pre-registration commits; `docs/claims.md` lists what is and is not claim
 | 3, Codex | F1 filter on Codex / gpt-5.6-sol (pre-registered; first grid invalid, see `PREREGISTRATION.md`) | `GATE3.md` (when measured) | `results/gate3-codex/`, `results/gate3-codex-v1-leaky/` |
 | 3, public seed | F1 filter with no private input (pre-registered) | `GATE3.md` (when measured) | `results/gate3-public/` |
 | 4 §1, replications | boot vehicle and query expansion at five runs (pre-registered) | `GATE4.md` (when measured) | `results/boot-vehicle-rep5/`, `results/gate4-cues-v2-rep5/` |
+| 5a | does the compiled control refuse the call its rule forbids, and nothing else? | `../corpora/claude-md/GATE5A.md` — PASS on the third held-out set (0.920 / 0.000); the two that failed are reported there | `results/gate5a-holdout{1,2,3}/` |
+| 5b | does compiling a written rule change what the agent does? | `PREREGISTRATION.md` — **not run**; grid built and its plan verified (48 cells) | `rules/scenarios.py`, `rules/tasks-rules.json` |
+| h2h, native | how does the harness's own automatic memory score on the same grid? | `PREREGISTRATION.md` — **not run**; arm built and smoke-tested | `h2h/competitors/native/arm.sh` |
 | — | DreamBench-SWE [K2]: not runnable — hidden oracles and 6 of 11 fixture commits are not public; a `MemoryPolicy` port and the request to the authors are in `dreambench/` | `dreambench/STATUS.md` | — |
 
 ## Runner

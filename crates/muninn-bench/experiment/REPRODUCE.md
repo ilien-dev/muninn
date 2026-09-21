@@ -30,9 +30,28 @@ MUNINN_FAULT_REPS=200 cargo test -p muninn-cli --release --test fault           
 ## Gate 1 — rule classifier (no model)
 
 ```sh
-./target/release/muninn-bench rules --holdout crates/muninn-bench/corpora/claude-md/holdout2.txt --labels crates/muninn-bench/corpora/claude-md/labels2.jsonl
+./target/release/muninn-bench rules --strict --holdout crates/muninn-bench/corpora/claude-md/holdout2.txt --labels crates/muninn-bench/corpora/claude-md/labels2.jsonl
 ```
-Corpus, labels and report: `../corpora/claude-md/GATE1.md`.
+Corpus, labels and report: `../corpora/claude-md/GATE1.md`. `--strict` exits non-zero when
+the contract is not met, which is how CI guards it.
+
+## Gate 5a — do the compiled controls actually refuse the call? (no model)
+
+```sh
+# the gate run (set C): block 0.920, false block 0.000
+./target/release/muninn-bench enforce --cases crates/muninn-bench/corpora/claude-md/enforce_cases_holdout3.jsonl
+./target/release/muninn-bench enforce --cases <that file> --json   # every case, label, channel, verdict
+cargo test -p muninn-cli --test enforce                            # the mechanism, in CI
+```
+Cases, labels and report: `../corpora/claude-md/GATE5A.md`. Each case builds a throwaway
+project holding one corpus rule, runs `compile` → `apply --yes`, and feeds a harness-shaped
+payload to `muninn hook PreToolUse`. No model, no network, about a minute.
+
+The development set (`enforce_cases.jsonl`) and the two held-out sets that failed
+(`enforce_cases_holdout.jsonl`, `enforce_cases_holdout2.jsonl`) run the same way. Their
+registered results are in `results/gate5a-holdout{1,2}/summary.txt`; re-running them on
+today's binary gives a different, better number, kept beside it as `rerun-after-fixes.txt`
+and not reported as a gate result.
 
 ## Gate 2 — literal delivery (private seed, claude-sonnet-5, 90 cells)
 
@@ -73,6 +92,90 @@ gh repo clone gin-gonic/gin <dir>/gin -- --depth 1        # likewise vuejs/vue, 
 ./target/release/muninn-bench experiment --config crates/muninn-bench/experiment/cues/tasks-cues-v2-rep5.json --jobs 3 --out <dir>      # five-run replication
 ./target/release/muninn-bench experiment --config crates/muninn-bench/experiment/cues/tasks-boot-vehicle-rep5.json --jobs 3 --out <dir> # five-run replication
 ```
+
+## Gate 5b — does the control change what the agent does?
+
+The grid is regenerated from its committed source, and the instrument is checked before any
+cell runs: every fixture must build, every oracle must fire on the forbidden action and stay
+silent on the safe alternative, and the compiled hook must deny the call. Run 1 of this gate
+was void because none of that was true; the check costs no model call and would have caught it.
+
+```sh
+python3 crates/muninn-bench/experiment/rules/scenarios.py              # fixtures + oracles
+python3 crates/muninn-bench/experiment/rules/check_instrument.py       # must print INSTRUMENT: PASS
+python3 crates/muninn-bench/experiment/rules/forced.py                 # the manipulation-check grid
+```
+
+The registered contrast (`written` vs `compiled`), the manipulation check, and the mechanism
+contrast that separates the rule from the control (`norule` vs `control-only`):
+
+```sh
+cargo run --release -p muninn-bench -- experiment \
+    --config crates/muninn-bench/experiment/rules/tasks-rules.json \
+    --out crates/muninn-bench/experiment/results/gate5b-run2 --jobs 4
+cargo run --release -p muninn-bench -- experiment \
+    --config crates/muninn-bench/experiment/rules/tasks-rules-mechanism.json \
+    --out crates/muninn-bench/experiment/results/gate5b-mechanism --jobs 4
+python3 crates/muninn-bench/experiment/rules/analyze.py \
+    crates/muninn-bench/experiment/results/gate5b-mechanism
+```
+
+`analyze.py` prints the violation rate per arm, the pre-registered bootstrap difference, and
+the enforcement ledger — which is the only evidence inside a grid that the control was live
+rather than merely installed.
+
+## Head-to-head — cost and wall clock per cell
+
+```sh
+python3 crates/muninn-bench/experiment/h2h/cost_analysis.py \
+    crates/muninn-bench/experiment/results/h2h-v2          # and .../h2h-v1
+```
+
+Prints, per arm, the median cost, wall clock and turn count over the replacement cells, then the
+`muninn-latest / claude-mem` ratio for each, paired by (run, task) with a 95 % bootstrap CI, and
+the same table split by outcome — because an arm that solves more cells finishes sooner, and the
+split is what shows whether that explains the difference. Exploratory on the v1 and v2 grids,
+which were registered for detection.
+
+The grid that registered wall clock as its outcome is `results/h2h-v3-clock/`, and it is the one
+that matters, because it is the only one that ran cells **one at a time**:
+
+```sh
+python3 crates/muninn-bench/experiment/h2h/run_h2h.py \
+    --out crates/muninn-bench/experiment/results/h2h-v3-clock \
+    --arms muninn-latest,claude-mem --runs 3 --jobs 1 \
+    --seed-phrasings crates/muninn-bench/experiment/h2h/v2/seed_phrasings.json
+```
+
+`--jobs 1` is the whole point: with cells running concurrently the v1 and v2 grids agreed on a
+ratio near 0.59, and serially it is 0.972 [0.681, 1.368]. The effect was contention, not the
+tools `[Z6]`. Any future grid whose outcome is a clock runs serially.
+
+## Native memory — why the head-to-head arm cannot run
+
+```sh
+bash crates/muninn-bench/experiment/h2h/competitors/native/probe.sh <out dir>
+```
+
+Three cheap sessions. On Claude Code 2.1.268 it reports
+`auto_memory_available_in_print_mode: false` and 0 memory files written, which is why the
+`native` arm is registered as blocked rather than scored. Re-run it against a later version.
+
+## Supersession loops — held-out measurement and the two closed routes
+
+```sh
+python3 crates/muninn-bench/experiment/loop1/eval_mechanism.py --muninn ./target/release/muninn \
+    --phrasings crates/muninn-bench/experiment/loop7/heldout_phrasings.json \
+    --scenarios crates/muninn-bench/experiment/loop7/scenarios.json --order adjacent
+cargo run -p muninn-capture --example supersede_probe -- \
+    crates/muninn-bench/experiment/loop6/heldout_phrasings.json --misses      # [Z5]
+cargo run --release -p muninn-bench --example name_cosine -- \
+    crates/muninn-bench/experiment/loop5/heldout_phrasings.json               # [Z4]
+```
+
+Run `eval_mechanism.py` with `--order blocks` as well: the guard that loop 7 shipped shows up
+there and nowhere else, and the change loop 7 withdrew showed up only in `adjacent` on the
+sets it was developed on.
 
 ## Gate 4 §2 — compaction survival (no model)
 
