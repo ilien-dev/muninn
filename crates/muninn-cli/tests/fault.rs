@@ -1,4 +1,4 @@
-//! Fault injection: 15 scenarios × N repetitions (MUNINN_FAULT_REPS, default 3; CI 200).
+//! Fault injection: 17 scenarios × N repetitions (MUNINN_FAULT_REPS, default 3; CI 200).
 //! Modelled on the reliability study in [Y1]. Each scenario states the property it
 //! holds: the hook exits 0 and never blocks the agent; data is never lost; a broken
 //! store shows as RED in the gate, never as silence.
