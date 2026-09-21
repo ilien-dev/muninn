@@ -1,0 +1,13 @@
+seeded r0 muninn-now -> /tmp/muninn-h2h/h2h-v4-code/snap-r0-muninn-now
+seeded r1 muninn-now -> /tmp/muninn-h2h/h2h-v4-code/snap-r1-muninn-now
+seeded r2 muninn-now -> /tmp/muninn-h2h/h2h-v4-code/snap-r2-muninn-now
+30 cells planned, 30 to run
+r0 revoke-version-scheme muninn-now -> fail (67s)
+r0 revoke-password-hashing muninn-now -> fail (22s)
+r0 revoke-internal-http muninn-now -> fail (36s)
+r0 revoke-license muninn-now -> fail (100s)
+r0 revoke-tls-verification muninn-now -> pass (24s)
+r0 revoke-compression muninn-now -> fail (23s)
+r0 revoke-tls-backend muninn-now -> fail (25s)
+r0 revoke-wire-format muninn-now -> fail (48s)
+r0 revoke-cache-eviction muninn-now -> fail (67s)
