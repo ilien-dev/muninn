@@ -242,19 +242,25 @@ pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
         }
         // path regex and path condition hold for the same path; a patch matches when
         // any one of its files does
+        // a relative tool path is relative to the project, never to wherever this process
+        // happens to have been started: resolving it against the process directory judged
+        // `README.md` by whichever README the caller's cwd held
+        let absolute = |path: &str| {
+            let p = std::path::Path::new(path);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                paths.root.join(p)
+            }
+        };
         let path_ok = |path: &str| {
             if path_re.as_ref().is_some_and(|r| !r.is_match(path)) {
                 return false;
             }
             match cond {
-                Some("new_file") => !path.is_empty() && !std::path::Path::new(path).exists(),
+                Some("new_file") => !path.is_empty() && !absolute(path).exists(),
                 Some("root_file") => {
-                    let p = std::path::Path::new(path);
-                    let abs = if p.is_absolute() {
-                        p.to_path_buf()
-                    } else {
-                        paths.root.join(p)
-                    };
+                    let abs = absolute(path);
                     !path.is_empty() && abs.parent() == Some(paths.root.as_path()) && !abs.exists()
                 }
                 _ => true,

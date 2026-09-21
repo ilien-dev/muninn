@@ -47,7 +47,9 @@ CREATE VIEW IF NOT EXISTS served_record AS
 CREATE VIRTUAL TABLE IF NOT EXISTS record_fts USING fts5(
     subject, object, body,
     content='record', content_rowid='id',
-    tokenize='unicode61 remove_diacritics 2'
+    -- `porter` stems English suffixes so a question about the "connection pooler" reaches
+    -- a record that said "pooling"; it wraps `unicode61`, which still folds the diacritics.
+    tokenize='porter unicode61 remove_diacritics 2'
 );
 -- meta.fts_rows mirrors the FTS row count so the health gate checks coherence in O(1).
 INSERT OR IGNORE INTO meta(key, value) VALUES ('fts_rows', '0');

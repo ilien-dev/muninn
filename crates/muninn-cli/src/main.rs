@@ -183,8 +183,8 @@ fn main() {
             check_budget,
         } => {
             if cues {
-                let _ = std::fs::create_dir_all(&paths.muninn_dir);
-                let _ = std::fs::write(paths.muninn_dir.join("config.json"), "{\"cues\": true}\n");
+                // Merge, never overwrite: config.json also carries `boot` and `expand`.
+                let _ = init::set_config(&paths.muninn_dir, "cues", true.into());
             }
             {
                 if check_budget {

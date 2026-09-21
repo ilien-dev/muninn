@@ -136,11 +136,11 @@ pub fn set_explicit(db: &Db, record_id: i64, cues: &[(String, String, i64)]) -> 
         .prepare("INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, ?2, ?3, ?4)")?;
     let mut n = 0;
     for (k, key, g) in cues {
-        if ![
-            "dir", "symbol", "event", "after", "cooldown", "keyword", "glob",
-        ]
-        .contains(&k.as_str())
-        {
+        // Only the kinds `evaluate` actually checks. `glob` and `cooldown` are in the
+        // schema's CHECK and in ENGINE.md §2.2 but have no evaluator, so storing one
+        // would silently weaken its group: the conjunction would fire on the other
+        // cues alone. A cue that is always true is worse than no cue.
+        if !["dir", "symbol", "event", "after", "keyword"].contains(&k.as_str()) {
             continue;
         }
         let key = if k == "keyword" {
@@ -445,7 +445,10 @@ pub fn evaluate(db: &Db, ctx: &TurnContext, exclude: &HashSet<i64>) -> Result<Ve
                 reasons.iter().any(|r| r == &format!("{k}:{key}"))
             }
             "after" => key.parse::<i64>().map(|t| now >= t).unwrap_or(true),
-            _ => true,
+            // Fail closed: an unevaluable cue must not be treated as satisfied, or the
+            // group fires on a condition nobody checked. `set_explicit` refuses to store
+            // one; a row from an older store is dropped here.
+            _ => false,
         });
         if all {
             out.entry(rid).or_default().extend(reasons);
@@ -812,5 +815,60 @@ mod tests {
             .any(|(i, r)| *i == 2 && r.starts_with("cue:")));
         let tiny = merge(&[], &recs, &[], &[], 30, &[]);
         assert!(tiny.ids.len() <= 1 && !tiny.gated.is_empty());
+    }
+
+    /// A cue kind with no evaluator must not be storable, and must not be treated as
+    /// satisfied if an older store already holds one: either way it would let its group
+    /// fire on a condition nobody checked.
+    #[test]
+    fn unevaluable_cue_kinds_are_refused_and_fail_closed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        db.conn.execute(
+            "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) VALUES('decision','k','is','o','body','user_said',3,'src/a/b.rs','s','h',1)",
+            [],
+        ).unwrap();
+        let id = db.conn.last_insert_rowid();
+
+        // set_explicit stores the dir cue and drops the glob in the same group
+        let stored = set_explicit(
+            &db,
+            id,
+            &[
+                ("dir".into(), "src/a".into(), 0),
+                ("glob".into(), "src/a/**/*.rs".into(), 0),
+                ("cooldown".into(), "60000".into(), 0),
+            ],
+        )
+        .unwrap();
+        assert_eq!(stored, 1, "only the dir cue is evaluable");
+
+        let ctx = TurnContext {
+            files: vec!["src/a/b.rs".into()],
+            event: "prompt".into(),
+            ..Default::default()
+        };
+        assert!(
+            evaluate(&db, &ctx, &HashSet::new())
+                .unwrap()
+                .iter()
+                .any(|h| h.record_id == id),
+            "the dir cue alone still fires"
+        );
+
+        // a row written by an older binary, straight into the table, fails its group closed
+        db.conn
+            .execute(
+                "INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, 'glob', 'src/a/**', 0)",
+                [id],
+            )
+            .unwrap();
+        assert!(
+            evaluate(&db, &ctx, &HashSet::new())
+                .unwrap()
+                .iter()
+                .all(|h| h.record_id != id),
+            "a cue nobody can check must not count as satisfied"
+        );
     }
 }

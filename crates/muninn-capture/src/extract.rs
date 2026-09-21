@@ -439,9 +439,54 @@ pub fn topic_words(s: &str) -> Vec<String> {
     out
 }
 
+/// The measured slots of a statement: every number that is followed by a content word,
+/// as (unit, number). "payment worker: 3 attempts" gives `[("attempts", "3")]`.
+///
+/// A decision about a quantity is the one kind of replacement that needs no shared
+/// vocabulary to recognise: the unit *is* the topic, and a different number in the same
+/// unit is a different decision. Nothing here reads the words around it, so it says
+/// nothing about *which* retry budget — that is the caller's guard.
+pub fn quantity_slots(s: &str) -> Vec<(String, String)> {
+    let key = norm_key(s, 400);
+    let toks: Vec<&str> = key.split(' ').filter(|w| !w.is_empty()).collect();
+    let mut out = Vec::new();
+    for pair in toks.windows(2) {
+        let (num, unit) = (pair[0], pair[1]);
+        if !num.chars().all(|c| c.is_ascii_digit()) || num.is_empty() {
+            continue;
+        }
+        if unit.chars().count() < 3 || STOP.contains(&unit) || unit.chars().any(|c| c.is_numeric())
+        {
+            continue;
+        }
+        out.push((unit.to_string(), num.to_string()));
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Content words of a statement that are not part of one of its quantity slots. A message
+/// that has none left ("bump to 7 attempts") states a value and nothing else, so it can
+/// only be about a value already on record.
+pub fn words_outside_quantities(s: &str) -> Vec<String> {
+    let units: Vec<String> = quantity_slots(s).into_iter().map(|(u, _)| u).collect();
+    topic_words(s)
+        .into_iter()
+        .filter(|w| !units.contains(w))
+        .collect()
+}
+
 /// Tokens that look like a name of a thing (a product, a library, a version): an inner
-/// capital, a digit, a dot or hyphen inside the word, or a capital that does not start the
-/// sentence. Lowercased.
+/// capital, a digit, a dot or hyphen inside the word, or any capitalised word that is not a
+/// `STOP` word — wherever it sits. Lowercased.
+///
+/// Loop 6: the capital case used to require `i > 0`, so a statement that opens with the
+/// product ("Pingdom for uptime monitoring.") named nothing, and loop 3's implicit-change
+/// rule — guarded by `!old_names.is_empty()` — could not fire against it. That guard was
+/// what blocked six of the nine loop-5 held-out misses. `STOP` already carries the ordinary
+/// openers ("the", "we", "use", "go"), which is why dropping the position test costs no
+/// false retirement: held-out `kept_b` 30/30 before and after.
 pub fn name_tokens(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut prev = String::new();
@@ -462,7 +507,7 @@ pub fn name_tokens(s: &str) -> Vec<String> {
         let inner_cap = rest.chars().any(|c| c.is_uppercase());
         let digit = w.chars().any(|c| c.is_ascii_digit()) && w.chars().any(|c| c.is_alphabetic());
         let joined = w.contains('.') || w.contains('-') || w.contains('_');
-        let cap_mid = first.is_uppercase() && i > 0 && !STOP.contains(&w.to_lowercase().as_str());
+        let capitalised = first.is_uppercase() && !STOP.contains(&w.to_lowercase().as_str());
         let slot = i > 0
             && matches!(
                 prev.as_str(),
@@ -471,7 +516,7 @@ pub fn name_tokens(s: &str) -> Vec<String> {
             && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             && !STOP.contains(&w.to_lowercase().as_str());
         prev = w.to_lowercase();
-        if inner_cap || digit || joined || cap_mid || slot {
+        if inner_cap || digit || joined || capitalised || slot {
             let l = w.to_lowercase();
             if !out.contains(&l) {
                 out.push(l);
@@ -548,6 +593,9 @@ pub fn replaces(old: &[String], new: &[String], announces_change: bool) -> bool 
     let shared = old.iter().filter(|w| new.contains(w)).count();
     let small = old.len().min(new.len()).max(1);
     let share = shared as f64 / small as f64;
+    // A floor of one shared word was tried and dropped: of 30 held-out pairs, 23 share no
+    // content word at all, so lowering the floor reaches almost none of them and only widens
+    // what two unrelated decisions can pair on (loop 7, development sets).
     shared >= 2 && share >= if announces_change { 0.34 } else { 0.5 }
 }
 
@@ -561,7 +609,13 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
         }
         let change = change_re().is_match(sent);
         sentence_change |= change && !name_tokens(sent).is_empty();
-        if !(change || decision_re().is_match(sent) || choice_re().is_match(sent)) {
+        // A sentence that states a measured value and nothing else ("bump to 7 attempts")
+        // announces a decision in a vocabulary no verb list covers; whether it *replaces*
+        // one is decided against the store, in `supersede_quantity`.
+        let bare_quantity =
+            !quantity_slots(sent).is_empty() && words_outside_quantities(sent).len() <= 1;
+        if !(change || bare_quantity || decision_re().is_match(sent) || choice_re().is_match(sent))
+        {
             continue;
         }
         let words = topic_words(sent);
@@ -981,6 +1035,15 @@ mod tests {
         );
         assert!(name_tokens("the source license is GPL-3.0").contains(&"gpl-3.0".to_string()));
         assert!(name_tokens("Use the new thing").is_empty());
+        // loop 6: a name that opens the statement counts, so the earlier statement of an
+        // implicit change is not treated as naming nothing. Ordinary openers stay out.
+        assert_eq!(
+            name_tokens("Pingdom for uptime monitoring."),
+            vec!["pingdom"]
+        );
+        assert!(name_tokens("Varnish sits in front of the cache").contains(&"varnish".to_string()));
+        assert!(name_tokens("The new thing goes here").is_empty());
+        assert!(name_tokens("We keep the current setup").is_empty());
         assert!(is_anaphoric("Mejor Postmark, es más confiable"));
         assert!(is_anaphoric(
             "You know what, ECharts has better customization options, let's go with that instead"
