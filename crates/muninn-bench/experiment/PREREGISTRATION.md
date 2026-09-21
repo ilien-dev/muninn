@@ -2461,3 +2461,50 @@ Muninn's share grows with the number of turns and claude-mem's, in these cells, 
 but these cells cannot say whether claude-mem injects on later prompts of a longer session,
 because they have no later prompts. The ratio is therefore a statement about a one-prompt
 session and is not extrapolated to a long one in either direction.
+
+---
+
+# Pre-registration — when a cell fails, was the memory wrong or was the answer?
+
+Registered 2026-09-21, after 16 of the v4 code grid's 60 cells had run and **before any
+further cell was read for this question**. One failing cell was opened to diagnose a
+suspected delivery defect; what it showed is the reason for this registration, and it is
+stated here rather than presented later as a finding: in that cell Muninn delivered
+`[muninn:decision] … Going with argon2id for better security · topic: hashing` as the first
+block of the prompt's context, and the agent wrote that the project "has no current recorded
+decision on a password hashing algorithm".
+
+## The question
+
+Every head-to-head so far reports one number: did the cell's oracle pass. A cell can fail two
+ways that are not the same thing — the memory did not deliver the current decision, or it did
+and the agent did not use it. The first is a memory result. The second is a statement about
+the agent, and counting it against the memory makes a grid that cannot be improved by
+improving the memory.
+
+## Design
+
+For every cell of both v4 grids, from the cell's own transcript, whether the arm's injected
+context contained the scenario's **new** value before the agent's first answer. Then:
+
+| | oracle passed | oracle failed |
+|---|---|---|
+| value delivered | used | **delivered and not used** |
+| value not delivered | passed without memory | not delivered |
+
+Reported per arm and condition as those four counts. `h2h/delivered_vs_used.py`, written
+after this text and before it is run.
+
+## Decision rule
+
+None: this is a decomposition, not a contrast. It changes no claim on its own. What it can do
+is tell whether the grid's headline is measuring the memory — if "delivered and not used" is
+a large share of the failures for **both** arms, the pass rate is measuring how the agent
+treats injected context, and that is what the write-up has to say.
+
+## Threat
+
+The detector is a substring search for the new value in the injected context. It cannot tell
+a block that names the value from one that names it as part of something else, and it says
+nothing about whether the block was *understandable*. It is a floor on delivery, not a
+measure of quality.
