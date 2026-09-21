@@ -77,6 +77,9 @@ def main() -> None:
     ap.add_argument("--scenarios", default=str(EXP / "loop7" / "scenarios.json"))
     ap.add_argument("--styles", default="terse,chatty,Spanish")
     ap.add_argument("--out", default=str(HERE / "all_results.json"))
+    ap.add_argument("--filler", type=int, default=0,
+                    help="unrelated commits to make after each change, so the commit that "
+                         "matters falls further back in the history a single maintain reads")
     ap.add_argument("--commit-msg", choices=["names", "opaque"], default="names",
                     help="names: the commit subject names the new value, as many real ones "
                          "do ('use nats'). opaque: it does not ('update dependencies'), so "
@@ -124,6 +127,10 @@ def main() -> None:
                         json.dumps({"value": s["new"]}, indent=1) + "\n")
                     commit(root, f"use {s['new']}" if a.commit_msg == "names"
                            else "update dependencies")
+                for j in range(a.filler if a.arm in ("code", "both") else 0):
+                    (cfg / "unrelated.json").write_text(
+                        json.dumps({"value": f"filler-{k}-{j}"}, indent=1) + "\n")
+                    commit(root, "chore")
                 if a.arm == "noise":
                     (cfg / "unrelated.json").write_text(
                         json.dumps({"value": f"grep{k}"}, indent=1) + "\n")
@@ -170,7 +177,7 @@ def main() -> None:
         return f"{sum(v)}/{len(v)}"
     for grp, sub in [("all", results)] + [(st, [r for r in results if r["style"] == st])
                                           for st in a.styles.split(",")]:
-        print(f"{a.arm:5s}/{a.order:8s}/{a.commit_msg:6s} {grp:9s} retired_a {share('retired_a', sub):7s} "
+        print(f"{a.arm:5s}/{a.order:8s}/{a.commit_msg:6s}/f{a.filler:<3d} {grp:9s} retired_a {share('retired_a', sub):7s} "
               f"kept_b {share('kept_b', sub):7s} served_ok {share('served_ok', sub):7s} "
               f"old_served {share('old_served', sub):7s} b_served {share('b_served', sub)}")
 
