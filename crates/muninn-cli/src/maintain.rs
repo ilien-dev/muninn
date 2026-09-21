@@ -51,6 +51,10 @@ fn since_arg(since_ms: i64) -> Option<String> {
 /// Commits since the watermark become `decision` records (commit_linked, trust 2);
 /// reverts retire the decision they undo and leave a `deadend`.
 pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize, usize)> {
+    // where the code is, which is not always where the store is: `MUNINN_SOURCE_ROOT`
+    // separates them, and symbols, anchors and `scan` have always followed it. Git did not,
+    // so a store kept outside its checkout read the history of the wrong directory.
+    let root = paths.source_root();
     let since_ms: i64 = db
         .meta_get("git_watermark_ms")?
         .and_then(|s| s.parse().ok())
@@ -69,7 +73,7 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
         .map(String::from),
     );
     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-    let Some(log) = git(&paths.root, &argv) else {
+    let Some(log) = git(&root, &argv) else {
         return Ok((0, 0));
     };
     let mut commits = 0usize;
@@ -167,9 +171,16 @@ fn code_tokens(line: &str, out: &mut Vec<String>) {
     }
 }
 
-/// How many diff lines one `maintain` reads. A commit that rewrites a lock file must not
-/// turn the write path into a linear scan of the repository's history.
+/// How many diff lines one `maintain` reads once it is caught up. A commit that rewrites a
+/// lock file must not turn the write path into a linear scan of the repository's history.
 const MAX_DIFF_LINES: usize = 4_000;
+
+/// The first pass over a repository Muninn has never read reaches much further back: a store
+/// installed into a project with history should learn what that project stopped using, and it
+/// pays for it exactly once. Measured: with seventy commits between the swaps and the first
+/// `maintain`, the 50-commit window costs two of the thirty held-out retirements.
+const FIRST_PASS_COMMITS: usize = 500;
+const FIRST_PASS_DIFF_LINES: usize = 40_000;
 
 /// The decisions the code itself left behind (ENGINE.md §5.2).
 ///
@@ -190,6 +201,7 @@ const MAX_DIFF_LINES: usize = 4_000;
 ///
 /// Write path only. Read hooks never run git.
 pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<usize> {
+    let root = paths.source_root();
     let since_ms: i64 = db
         .meta_get("values_watermark_ms")?
         .and_then(|s| s.parse().ok())
@@ -202,6 +214,8 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
     // Re-reading a commit is free — a record already retired is not retired twice.
     let mut args: Vec<String> = vec!["log".into()];
     args.extend(since_arg(since_ms));
+    let first_pass = since_ms == 0;
+    let n = if first_pass { FIRST_PASS_COMMITS } else { 50 };
     args.extend(
         [
             "--no-merges",
@@ -210,12 +224,12 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             "--no-color",
             "--format=%x1e%h",
             "-n",
-            "50",
         ]
         .map(String::from),
     );
+    args.push(n.to_string());
     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-    let Some(diff) = git(&paths.root, &argv) else {
+    let Some(diff) = git(&root, &argv) else {
         return Ok(0);
     };
     db.meta_set("values_watermark_ms", &now.to_string())?;
@@ -223,7 +237,12 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
     // two together is what makes the replacement specific — a range of commits pooled into
     // one bag pairs a value dropped here with a value added over there.
     let mut commits: Vec<(Vec<String>, Vec<String>)> = Vec::new();
-    for line in diff.lines().take(MAX_DIFF_LINES) {
+    let max_lines = if first_pass {
+        FIRST_PASS_DIFF_LINES
+    } else {
+        MAX_DIFF_LINES
+    };
+    for line in diff.lines().take(max_lines) {
         if line.starts_with('\u{1e}') {
             commits.push((Vec::new(), Vec::new()));
             continue;
@@ -274,7 +293,7 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         // still somewhere in the tree? then the project has not dropped it
         let absent = *gone_cache
             .entry(gone.to_string())
-            .or_insert_with(|| git(&paths.root, &["grep", "-F", "-q", "-i", "--", gone]).is_none());
+            .or_insert_with(|| git(&root, &["grep", "-F", "-q", "-i", "--", gone]).is_none());
         if !absent {
             continue;
         }
