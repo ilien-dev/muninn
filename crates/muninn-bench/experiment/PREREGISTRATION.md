@@ -2362,3 +2362,50 @@ is also 1.00, the paragraph above is wrong and is struck.
 Not a quality measurement. A memory can be perfectly reproducible and useless. It says only
 that the same input gives the same store, which is what makes a later `why` answerable and a
 regression attributable.
+
+---
+
+# Pre-registration — what a memory costs the window (v4 secondary outcome)
+
+Registered 2026-09-21, while the v4 grid was seeding and **before any of its cells ran**
+(`results.jsonl` did not exist).
+
+## The question
+
+A memory's price is not only what it costs to run. It is the room it takes in the context
+window before the agent has read a line of code, every turn, whether or not it helped. Muninn
+caps a delivery at 700 tokens by design; a tool that injects a summary has no such cap.
+
+Claude Code records what every hook put into a session as `attachment` rows in the cell's
+transcript, so this is measurable on both arms with no instrumentation of either tool and no
+cooperation from the competitor.
+
+## Design
+
+`h2h/context_cost.py`, already written and committed, on the v4 grids. Per cell, the
+characters of the attachment payloads a memory is responsible for —
+`hook_additional_context`, `hook_system_message` and `hook_success` — paired by (run, task) so
+both arms answer the same question in the same checkout, reported as a median ratio with a
+10 000-sample bootstrap interval over the pairs. The harness's own scaffolding is counted
+separately and reported beside it as a check.
+
+## Decision rule, fixed before the data
+
+The claim "Muninn takes less of the window than claude-mem" is made iff the median ratio's
+95 % bootstrap interval excludes 1. Whatever the interval says is reported, including if it
+contains 1 or lies above it.
+
+## Prior, stated so it cannot be presented as a discovery
+
+The same analysis on the **v2** grid — post-hoc, and exploratory for that reason — reads
+0.452 [0.441, 0.482] over 30 paired cells, with claude-mem at a median of 18 516 characters
+against Muninn's 8 427. v4 is the registered test of that number on cells that had not run
+when this was written. The v2 figure also shows claude-mem raising the *harness's* scaffolding
+(164 399 against 149 608 characters), which is its MCP server and tool listing rather than its
+memory, and which this analysis deliberately does not count against it.
+
+## What this is not
+
+Not a measure of whether the memory helped. A memory that injects nothing scores best here and
+answers nothing. It is only worth reading beside the pass rate, which is the registered primary
+outcome of the same grid.
