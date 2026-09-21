@@ -29,6 +29,11 @@
   folding it, so `móvil` became `mvil` while the index holds `movil`; a non-Latin script was
   emptied outright. Measured on an accented query against an accented record: 0 blocks before,
   1 after.
+- **`why --all` could not find the value it exists to show you.** A retired record leaves the
+  full-text index, which is what F1 is for; `--all` is the door back in for a person, and it
+  asked that same index which of the question's words were worth searching for. The word you
+  would ask about is the one guaranteed to be missing from it, so `muninn why --all PgBouncer`
+  returned three commits and no PgBouncer. Under `--all` the words are now taken as typed.
 - **The migration that would have emptied every existing index.** Schema 2 rebuilds the
   full-text index once, and the guard that decided whether to rebuild asked
   `SELECT count(*) FROM record_fts` — which, on an external-content FTS5 table, is answered
