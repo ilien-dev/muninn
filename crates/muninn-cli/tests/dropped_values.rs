@@ -208,3 +208,23 @@ fn a_word_the_repository_uses_everywhere_is_not_a_value() {
         "a diff that touches an ordinary word says nothing about a decision that uses it"
     );
 }
+
+#[test]
+fn a_number_that_changed_is_read_from_the_diff_too() {
+    let tmp = project("10 connections");
+    let root = tmp.path();
+    decision(root, "the database pool holds 10 connections");
+    // the unit stays on both lines and the number is not a word: nothing *went away*
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"25 connections\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        !active(root, "holds 10 connections"),
+        "the same unit with a different number is a different decision"
+    );
+}
