@@ -37,6 +37,14 @@ _plock = threading.Lock()
 
 
 PHRASINGS: list = []
+# v4: the decisions are also implemented in the checkout, which is what happens in a real
+# project — the value lives in a file and a commit moves it. Every arm gets the same repository
+# and the same commits; only a memory that reads them can use them. Empty unless --code.
+CODE_PAIRS: list = []
+DECISIONS_DIR = "config/decisions"
+# deliberately uninformative: a commit subject that named the new value would answer the
+# question by itself, and the offline control (loop 9) showed exactly how much that is worth
+CODE_COMMIT_MSG = "update dependencies"
 
 
 def lock_for(arm: str) -> threading.Lock:
@@ -51,10 +59,21 @@ def next_port() -> int:
         return next(_ports)
 
 
-def checkout(dest: Path) -> None:
+def checkout(dest: Path, seed: bool = False) -> None:
+    """`seed`: a seeding checkout, which under --code also holds one tracked file per decision.
+
+    A task cell gets the base checkout and nothing else, exactly as in every other grid. The
+    files and the commits exist only while the sessions are being seeded, because a task cell
+    whose repository contained the current value would be answerable by `grep` and would
+    measure the checkout rather than the memory — every arm would pass, `off` included."""
     dest.mkdir(parents=True, exist_ok=True)
     arc = subprocess.run(["git", "-C", str(REPO), "archive", BASE_REF], capture_output=True, check=True).stdout
     subprocess.run(["tar", "-x", "-C", str(dest)], input=arc, check=True)
+    if CODE_PAIRS and seed:
+        d = dest / DECISIONS_DIR
+        d.mkdir(parents=True, exist_ok=True)
+        for pair in CODE_PAIRS:
+            (d / f"{pair['id']}.json").write_text(json.dumps({"value": pair["old"]}, indent=1) + "\n")
     for a in (["init", "-q"], ["add", "-A"], ["-c", "user.email=cell@h2h", "-c", "user.name=cell", "commit", "-qm", "base"]):
         subprocess.run(["git", "-C", str(dest), *a], check=True, capture_output=True)
 
@@ -134,7 +153,7 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
     shutil.rmtree(root, ignore_errors=True)
     (root / "cell").mkdir(parents=True)
     co = root / REPO.name   # tools key state by the checkout basename: same name in seed and task cells
-    checkout(co)
+    checkout(co, seed=True)
     settings = root / "settings.json"
     settings.write_text(settings_for(arm, root / "cell"))
     log = (out / "seeding").joinpath(f"r{run}-{arm}.jsonl")
@@ -152,6 +171,15 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
                         body = PHRASINGS[i // 2]["a" if i % 2 == 0 else "b"]
                     prompt = f"{body}\n\n{ACK}"
                     v, raw, secs = claude(prompt, co, session_env(env, spec), spec, settings, 3, None, timeout=300)
+                    if CODE_PAIRS and i % 2 == 1:
+                        # row 2k+1 is pair k's change: the code moves with it
+                        pair = CODE_PAIRS[i // 2] if i // 2 < len(CODE_PAIRS) else None
+                        if pair and pair.get("new"):
+                            f = co / DECISIONS_DIR / f"{pair['id']}.json"
+                            f.write_text(json.dumps({"value": pair["new"]}, indent=1) + "\n")
+                            for g in (["add", "-A"], ["-c", "user.email=cell@h2h", "-c", "user.name=cell",
+                                      "commit", "-qm", CODE_COMMIT_MSG]):
+                                subprocess.run(["git", "-C", str(co), *g], capture_output=True)
                     settled = arm_cmd(arm, "settle", env)
                     fh.write(json.dumps({"i": i, "created_at": r["created_at"], "prompt": prompt, "reply": str(v.get("result"))[:300],
                                          "is_error": v.get("is_error"), "secs": round(secs, 1), "settle": json.loads(settled or "{}")}) + "\n")
@@ -240,6 +268,10 @@ def main() -> None:
     ap.add_argument("--seed-phrasings", default=None,
                     help="v2: JSON list of {key,a,b}, one per seed pair in time order, used instead of the seed bodies")
     ap.add_argument("--tasks", default=str(EXP / "revocation" / "tasks-revocation-public.json"))
+    ap.add_argument("--code", action="store_true",
+                    help="v4: also implement each decision in the checkout — one tracked file per "
+                         "scenario holding its value, and a commit with an uninformative subject "
+                         "when the decision changes. Identical for every arm.")
     a = ap.parse_args()
 
     out = Path(a.out).resolve()
@@ -249,11 +281,14 @@ def main() -> None:
     cfg = json.loads(Path(a.tasks).read_text())
     seed_rows = sorted((json.loads(l) for l in open(EXP / "revocation" / "seed.jsonl")), key=lambda r: r["created_at"])
     arms = a.arms.split(",")
-    global PHRASINGS
+    global PHRASINGS, CODE_PAIRS
+    if a.code:
+        CODE_PAIRS = [{"id": t["id"], "old": t["scenario"]["old"], "new": t["scenario"]["new"]}
+                      for t in cfg["tasks"]]
     if a.seed_phrasings:
         PHRASINGS = json.loads(Path(a.seed_phrasings).read_text())
         assert len(PHRASINGS) * 2 == len(seed_rows), "one phrasing pair per seed pair"
-    frozen = {"arms": arms, "runs": a.runs, "model": MODEL, "repo": str(REPO), "base_ref": BASE_REF, "ack": ACK,
+    frozen = {"arms": arms, "runs": a.runs, "code": bool(a.code), "model": MODEL, "repo": str(REPO), "base_ref": BASE_REF, "ack": ACK,
               "tasks_file": a.tasks, "seed_phrasings": a.seed_phrasings, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "harness_sha256": subprocess.run(["sha256sum", __file__], capture_output=True, text=True).stdout[:64],
               "arm_scripts_sha256": {arm: subprocess.run(["sha256sum", str(HERE / "competitors" / arm / "arm.sh")], capture_output=True, text=True).stdout[:64]

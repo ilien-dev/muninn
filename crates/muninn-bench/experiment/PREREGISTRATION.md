@@ -2234,3 +2234,74 @@ subject that does not name the new value, `retired_a` is unchanged (23/30 and 29
 `served_ok` falls to 15-16/30 adjacent and 11-15/30 in blocks. So the retirement is the
 diff's doing and the 30/30 is a commit subject answering the question by itself. The public
 figure is the opaque one.
+
+---
+
+# Pre-registration — head-to-head v4: the decisions are also in the code
+
+Registered 2026-09-21, before any cell ran. Engine frozen at the binary pinned in
+`h2h/competitors/muninn-loop8/arm.sh` (`eed80ea34cc55f48`).
+
+## The question
+
+Every head-to-head so far (v1, v2, v3) seeded its arms with *conversation only*: twenty
+messages, ten decisions, ten revisions, and a repository that never changed. On held-out
+wording Muninn and claude-mem could not be told apart at that size [Z7].
+
+A real project is not conversation only. The decision reaches a file, and a commit moves it
+when the decision changes. Loop 9 measured what that is worth offline, with no model: with an
+uninformative commit subject the retirement rate goes from 17/30 to 29/30 and the delivered
+answer from 8/30 to 16/30; when the revision is not adjacent to the decision, from 1/30 to
+15/30. This grid asks whether that survives a real agent, a real harness and a competitor.
+
+## Design
+
+`run_h2h.py --code`, otherwise the registered v2 design unchanged: the same twenty live
+`claude -p` seeding sessions per run, the same held-out phrasings (`h2h/v2/seed_phrasings.json`),
+the same nine replacement tasks, the same Gate 3 oracles, the same analysis
+(`analyze_h2h.py`, exact Fisher with Holm across the family).
+
+`--code` adds, **identically for every arm**: one tracked file per decision in the seeding
+checkout holding that decision's value, and, immediately after the message that announces a
+change, a commit that swaps the value. The commit subject is `update dependencies` and never
+names the new value — the control in loop 9 showed that a subject naming it answers the
+question on its own.
+
+Task cells are untouched: each gets the base checkout, with no decision files and no commits,
+exactly as in v2 and v3. A cell whose repository held the current value would be answerable by
+`grep`, and would measure the checkout rather than the memory.
+
+Four arm-conditions, 27 replacement cells each (9 tasks × 3 runs):
+
+| | without `--code` | with `--code` |
+|---|---|---|
+| muninn-loop8 | A | B |
+| claude-mem 13.24.23 | C | D |
+
+## Decision rule, fixed before the data
+
+1. **The claim** is made iff `pass(B) − pass(D)` is positive with exact Fisher p < 0.05 after
+   Holm correction over the two registered contrasts (B−D and B−A).
+2. **The control that makes it meaningful**: `pass(D) − pass(C)` must *not* be significant at
+   the same threshold. If the commits also help claude-mem, then what the grid measured is the
+   fixture and not the memory, and no claim is made whatever (1) says.
+3. If `pass(B) − pass(A)` is not positive, the code condition did not help Muninn in the live
+   grid either, and loop 9's mechanism result is reported as not transferring to the harness.
+
+## What is reported regardless of outcome
+
+All four cells of the table with their intervals, the per-task breakdown, and the three
+scenarios whose value cannot leave the tree because the `gin` checkout already contains it
+(`gzip`, `msgpack`, `GPL`) — the code mechanism cannot fire on 3 of the 9 tasks by
+construction, and those cells are counted as failures like any other.
+
+## Threats this design does not remove
+
+- 27 cells per arm-condition is the size that could not separate a +0.13 difference [Z7]. It
+  can only separate a large one, and if the difference is small the honest answer is again
+  "not distinguishable at this size".
+- The fixture's commit is a one-line value swap in a file created for the grid. A repository
+  where the value is spread over many files, or where the old value survives somewhere, gives
+  the mechanism less — three of the nine tasks are already in that position and are kept.
+- claude-mem is run on its defaults. It is not configured to read commits, because it does not
+  document doing so; if it can, this grid understates it.
