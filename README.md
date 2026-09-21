@@ -226,7 +226,23 @@ Some results were weaker, and they are published too. The same fact test on Code
 against 5 of 25, which is not a clear difference. Two features did not help and were removed or
 turned off by default.
 
-The comparison with other memory tools (claude-mem and agentmemory) gives every tool the same
+The comparison was run again with the decisions also implemented in the repository, the way a
+real project works, and **Muninn lost it: 6 of 27 against claude-mem's 22 of 27.** That is a
+clear result and it is published as one. What the same cells also show is where the loss is:
+Muninn put the current decision in front of the assistant in 27 cells out of 27, and the
+assistant used it in 6. claude-mem delivered in 24 and the assistant used it in 19. The
+assistant with Muninn also searched the repository three times as often — which is what you do
+when you do not believe what you were told.
+
+Three reasons turned up in those transcripts, and all three are ours. Muninn's own startup
+note told the assistant "do not paste blocks into files" while the task was to write a decision
+into a file. A hyphen kept `async-std` from matching the commit that replaced it, so both the
+old and the new value were served and the assistant concluded the decision had been revoked.
+And the line that gives a block its topic printed the retired value back when that value was an
+ordinary lowercase word. All three are fixed, and the same cells are being re-run with the
+fixes; until that finishes, the number above is the number.
+
+The earlier comparison (claude-mem and agentmemory) gives every tool the same
 decisions from the same real sessions, and nobody tells it which decisions were replaced.
 Version 0.1.0 lost it to claude-mem (12 of 27 against 26 of 27). Version 0.2.0 was then tested on
 new wording that no version had seen: it got 17 of 27, claude-mem 14 of 27 and agentmemory 9 of 27.
