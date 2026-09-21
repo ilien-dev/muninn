@@ -84,17 +84,26 @@ def main():
         (ax, nx), (ay, ny) = tally.get(x, (0, 0)), tally.get(y, (0, 0))
         return fisher_two_sided(ax, nx, ay, ny), (ax, nx, ay, ny)
 
-    muninn = next((c.split("|")[0] for c in cells if c.startswith("muninn")), "muninn-loop8")
+    muninns = sorted({c.split("|")[0] for c in cells if c.startswith("muninn")})
     other = next((c.split("|")[0] for c in cells if not c.startswith("muninn")), "claude-mem")
+    muninn = muninns[0] if muninns else "muninn-loop8"
     B, A = f"{muninn}|code", f"{muninn}|nocode"
     D, C = f"{other}|code", f"{other}|nocode"
     registered = [("B-D  claim", B, D), ("B-A  code helped Muninn", B, A)]
+    # any further Muninn arm is reported against the registered one and against the
+    # competitor, outside the registered family and labelled as such
+    extra = [(f"{m} vs {muninn}", f"{m}|code", B) for m in muninns[1:]] + \
+            [(f"{m} vs {other}", f"{m}|code", D) for m in muninns[1:]]
     ps = [contrast(x, y)[0] for _, x, y in registered]
     adj = holm(ps)
     print()
     for (label, x, y), p, q in zip(registered, ps, adj):
         ax, nx, ay, ny = contrast(x, y)[1]
         print(f"{label:28s} {ax}/{nx} vs {ay}/{ny}   Fisher p = {p:.4g}   Holm p = {q:.4g}")
+    for label, x, y in extra:
+        p, (ax, nx, ay, ny) = contrast(x, y)
+        print(f"{label:28s} {ax}/{nx} vs {ay}/{ny}   Fisher p = {p:.4g}   (not in the "
+              f"registered family)")
     p_ctrl, (ax, nx, ay, ny) = contrast(D, C)
     print(f"{'D-C  control (must be ns)':28s} {ax}/{nx} vs {ay}/{ny}   Fisher p = {p_ctrl:.4g}")
     print()
