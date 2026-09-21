@@ -171,6 +171,15 @@ fn code_tokens(line: &str, out: &mut Vec<String>) {
     }
 }
 
+/// What one commit did to the words of the code.
+#[derive(Default)]
+struct Commit {
+    removed: Vec<String>,
+    added: Vec<String>,
+    /// hunks where one line became one line: (words out, words in)
+    swaps: Vec<(Vec<String>, Vec<String>)>,
+}
+
 /// How many diff lines one `maintain` reads once it is caught up. A commit that rewrites a
 /// lock file must not turn the write path into a linear scan of the repository's history.
 const MAX_DIFF_LINES: usize = 4_000;
@@ -233,33 +242,58 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         return Ok(0);
     };
     db.meta_set("values_watermark_ms", &now.to_string())?;
-    // one entry per commit, newest first: what it took out and what it put in. Keeping the
-    // two together is what makes the replacement specific — a range of commits pooled into
-    // one bag pairs a value dropped here with a value added over there.
-    let mut commits: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    // one entry per commit, newest first: what it took out, what it put in, and the swaps —
+    // hunks where exactly one line became exactly one other line. Keeping removals and
+    // additions per commit is what makes the replacement specific: a range of commits pooled
+    // into one bag pairs a value dropped here with a value added over there.
+    let mut commits: Vec<Commit> = Vec::new();
+    let mut hunk: (Vec<String>, Vec<String>, usize, usize) = (Vec::new(), Vec::new(), 0, 0);
     let max_lines = if first_pass {
         FIRST_PASS_DIFF_LINES
     } else {
         MAX_DIFF_LINES
     };
+    let close_hunk = |commits: &mut Vec<Commit>,
+                      hunk: &mut (Vec<String>, Vec<String>, usize, usize)| {
+        // a one-for-one hunk is what a changed value looks like: one line became one line.
+        // Anything larger is a rewrite, and pairing across it would be guessing.
+        if hunk.2 == 1 && hunk.3 == 1 {
+            if let Some(c) = commits.last_mut() {
+                c.swaps
+                    .push((std::mem::take(&mut hunk.0), std::mem::take(&mut hunk.1)));
+            }
+        }
+        *hunk = (Vec::new(), Vec::new(), 0, 0);
+    };
     for line in diff.lines().take(max_lines) {
         if line.starts_with('\u{1e}') {
-            commits.push((Vec::new(), Vec::new()));
+            close_hunk(&mut commits, &mut hunk);
+            commits.push(Commit::default());
             continue;
         }
-        let Some((removed, added)) = commits.last_mut() else {
+        if commits.is_empty() {
             continue;
-        };
-        if line.starts_with("+++") || line.starts_with("---") {
+        }
+        if line.starts_with("@@")
+            || line.starts_with("+++")
+            || line.starts_with("---")
+            || line.starts_with("diff --git")
+        {
+            close_hunk(&mut commits, &mut hunk);
             continue;
         }
         if let Some(rest) = line.strip_prefix('-') {
-            code_tokens(rest, removed);
+            code_tokens(rest, &mut commits.last_mut().unwrap().removed);
+            code_tokens(rest, &mut hunk.0);
+            hunk.2 += 1;
         } else if let Some(rest) = line.strip_prefix('+') {
-            code_tokens(rest, added);
+            code_tokens(rest, &mut commits.last_mut().unwrap().added);
+            code_tokens(rest, &mut hunk.1);
+            hunk.3 += 1;
         }
     }
-    commits.retain(|(removed, _)| !removed.is_empty());
+    close_hunk(&mut commits, &mut hunk);
+    commits.retain(|c| !c.removed.is_empty());
     if commits.is_empty() {
         return Ok(0);
     }
@@ -284,23 +318,53 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
     let mut gone_cache: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     let tx = db.write_tx()?;
     for (id, words) in &words_of {
-        let Some((commit, gone)) = commits.iter().find_map(|c| {
-            let w = words.iter().find(|w| c.0.contains(w))?;
-            Some((c, w))
-        }) else {
-            continue;
+        // Two kinds of evidence, either of which is enough.
+        //
+        // A **swap**: one line became one line, the old value was on the first and is not on
+        // the second. The hunk itself says what replaced what, so the rest of the repository
+        // does not have to agree — which matters, because a CHANGELOG entry, a lock file or a
+        // comment keeps a word alive long after the project stopped using it. Measured: with
+        // the old value left in one untouched file, the disappearance test alone retires
+        // nothing at all, on either held-out set.
+        //
+        // A **disappearance**: a commit took the word out and no tracked file holds it any
+        // more. Weaker evidence about a stronger fact, and it catches a value that was deleted
+        // rather than replaced.
+        let swap = commits.iter().find_map(|c| {
+            let sw = c
+                .swaps
+                .iter()
+                .find(|(out, inn)| words.iter().any(|w| out.contains(w) && !inn.contains(w)))?;
+            Some((c, sw))
+        });
+        let (commit, gone) = match &swap {
+            Some((c, (out, _))) => (*c, words.iter().find(|w| out.contains(w)).unwrap()),
+            None => {
+                let Some((c, gone)) = commits.iter().find_map(|c| {
+                    let w = words.iter().find(|w| c.removed.contains(w))?;
+                    Some((c, w))
+                }) else {
+                    continue;
+                };
+                // still somewhere in the tree? then the project has not dropped it
+                let absent = *gone_cache.entry(gone.to_string()).or_insert_with(|| {
+                    git(&root, &["grep", "-F", "-q", "-i", "--", gone]).is_none()
+                });
+                if !absent {
+                    continue;
+                }
+                (c, gone)
+            }
         };
-        // still somewhere in the tree? then the project has not dropped it
-        let absent = *gone_cache
-            .entry(gone.to_string())
-            .or_insert_with(|| git(&root, &["grep", "-F", "-q", "-i", "--", gone]).is_none());
-        if !absent {
-            continue;
-        }
-        // the replacement is an existing record that *this* commit's added lines corroborate
+        // the replacement is an existing record that this commit's added lines corroborate —
+        // the added line of the swap itself where there was one
+        let added: &[String] = match &swap {
+            Some((_, (_, inn))) => inn,
+            None => &commit.added,
+        };
         let heir: Option<i64> = words_of
             .iter()
-            .find(|(other, w)| other != id && w.iter().any(|w| commit.1.contains(w)))
+            .find(|(other, w)| other != id && w.iter().any(|w| added.contains(w)))
             .map(|(i, _)| *i);
         n += tx.execute(
             "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
