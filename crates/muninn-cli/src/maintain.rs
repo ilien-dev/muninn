@@ -210,6 +210,14 @@ const MAX_DIFF_LINES: usize = 4_000;
 const FIRST_PASS_COMMITS: usize = 500;
 const FIRST_PASS_DIFF_LINES: usize = 40_000;
 
+/// How many "is this word still anywhere in the tree?" questions one `maintain` may ask.
+/// Each is a `git grep` over the working tree — 36 ms on this repository, more on a large
+/// one — and the number of candidate words grows with the store, so without a bound a busy
+/// commit range could hold the write path for minutes; `Stop` runs it inline. Records are
+/// considered newest first, so the bound drops the oldest questions. The swap rule needs no
+/// grep at all and is not limited by this.
+const MAX_TREE_CHECKS: usize = 32;
+
 /// The decisions the code itself left behind (ENGINE.md §5.2).
 ///
 /// Every lexical rule for noticing that a decision was replaced runs out at the same
@@ -383,9 +391,16 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
                     continue;
                 };
                 // still somewhere in the tree? then the project has not dropped it
-                let absent = *gone_cache.entry(gone.to_string()).or_insert_with(|| {
-                    git(&root, &["grep", "-F", "-q", "-i", "--", gone]).is_none()
-                });
+                let known = gone_cache.get(gone).copied();
+                let absent = match known {
+                    Some(v) => v,
+                    None if gone_cache.len() >= MAX_TREE_CHECKS => continue,
+                    None => {
+                        let v = git(&root, &["grep", "-F", "-q", "-i", "--", gone]).is_none();
+                        gone_cache.insert(gone.to_string(), v);
+                        v
+                    }
+                };
                 if !absent {
                     continue;
                 }
