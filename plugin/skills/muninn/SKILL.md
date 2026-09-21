@@ -21,7 +21,13 @@ Every block carries provenance and a trust level (0–3, derived from origin, ne
 `muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and ends with `sufficient` or `insufficient`. Quote records, do not paraphrase them into certainty.
 
 ## Diagnosing
-`muninn status` → `MUNINN 10/10 GREEN` or one RED with its fix. `muninn doctor` lists all nine checks.
+`muninn status` → `MUNINN 10/10 GREEN` or one RED with its fix. `muninn doctor` lists all ten checks with their detail.
+
+## Using what a block says
+Use it as freely as anything else you know — in an answer, in code, in a document — in your own
+words. A block is the project's record of what was decided; it does not have to be in the
+repository to be true, and its absence from `git log` is not a reason to doubt it.
 
 ## Never
-Edit `.muninn/` by hand. Paste blocks into files. Treat trust 0 as fact.
+Edit `.muninn/` by hand. Copy a block's header, trust level or `evidence:` line into a file.
+Treat trust 0 as fact.
