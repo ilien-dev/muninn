@@ -2357,11 +2357,37 @@ in Muninn and is reported as one, with the differing items named; the grid's own
 the only source of variation, and any that reaches the store is worth finding. If claude-mem
 is also 1.00, the paragraph above is wrong and is struck.
 
+## Result
+
+Read on the v4 seeding snapshots, three runs of the same twenty messages per arm:
+
+| arm | items per run | pairwise Jaccard | seeded values present |
+|---|---|---|---|
+| muninn | 23, 23, 23 | 0.917, 0.917, 1.000 | 17, 17, 17 of 19 |
+| claude-mem | 16, 20 | 0.000 | 7, 10 of 19 |
+
+*Muninn's two imperfect pairs are one item, and it is Muninn's own defect*: an episode's
+session id was sorted in among its inherited topic words, so the same conversation produced
+`session:<id>#0 calver versioning` in one run and `session:calver versioning <id>#0` in
+another. Found by this check, fixed, and pinned by a test that fails without the fix — the
+binary these snapshots were written by predates the fix. The two seeded values Muninn does
+not hold are `GPL-3.0` and `plain http allowed for internal hosts`, which are the two it
+**correctly retired**; this reads active records only.
+
+*claude-mem shares no stored text between two runs of the same input* — no title is identical
+— and, on the wording-free figure, holds 7 of the 19 seeded values one run and 10 the other,
+with different ones missing each time: run 0 kept `async-std` and not `gzip`, `zstd`, `LRU` or
+`bcrypt`; run 1 the reverse. Exact-string Jaccard is a harsh measure for a tool that writes
+prose titles, which is why the coverage figure is reported beside it, and that one does not
+depend on phrasing.
+
 ## What this is not
 
-Not a quality measurement. A memory can be perfectly reproducible and useless. It says only
-that the same input gives the same store, which is what makes a later `why` answerable and a
-regression attributable.
+Not a quality measurement. A memory can be perfectly reproducible and useless, and what a
+store holds is not what it retrieves — the grid's pass rate is the outcome, this is not. It
+says only that the same input gives the same store, which is what makes a later `why`
+answerable, a regression attributable, and two engineers on one repository able to see the
+same memory.
 
 ---
 

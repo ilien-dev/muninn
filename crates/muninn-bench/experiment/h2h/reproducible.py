@@ -6,7 +6,12 @@ are three samples of the same input. This reads each snapshot with the tool's ow
 reduces it to a set of stored memory texts, then reports the Jaccard similarity of the three
 run pairs, within an arm. Never between arms: the two tools store different kinds of thing.
 
-  reproducible.py <work-dir> [--arms muninn-loop8,claude-mem] [--runs 3]
+Exact-string Jaccard is harsh on a tool that writes prose titles, so a second, wording-free
+figure is reported beside it and disclosed as an addition to the registered analysis: of the
+values the grid actually seeded, how many appear anywhere in each run's store. That one does
+not care how the text is phrased — only whether the decision was kept at all.
+
+  reproducible.py <work-dir> [--arms muninn-loop8,claude-mem] [--runs 3] [--tasks <file>]
 
 <work-dir> is the harness's working directory, e.g. /tmp/muninn-h2h/h2h-v4-code.
 """
@@ -86,16 +91,29 @@ def jaccard(a: set, b: set) -> float:
     return len(a & b) / len(a | b)
 
 
+def seeded_values(tasks: pathlib.Path) -> list:
+    import json
+    out = []
+    for t in json.loads(tasks.read_text())["tasks"]:
+        for v in (t["scenario"]["old"], t["scenario"]["new"]):
+            if v:
+                out.append(v.split(" with ")[0].split(",")[0])
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("work")
     ap.add_argument("--arms", default="muninn-loop8,claude-mem")
     ap.add_argument("--runs", type=int, default=3)
+    ap.add_argument("--tasks", default=str(pathlib.Path(__file__).resolve().parent.parent
+                                           / "revocation" / "tasks-revocation-public.json"))
     a = ap.parse_args()
+    values = seeded_values(pathlib.Path(a.tasks)) if pathlib.Path(a.tasks).exists() else []
     work = pathlib.Path(a.work)
     print(f"# {work.name}")
-    print("| arm | runs | items per run | pairwise Jaccard | items in one run only |")
-    print("|---|---|---|---|---|")
+    print("| arm | runs | items per run | pairwise Jaccard | items in one run only | seeded values present |")
+    print("|---|---|---|---|---|---|")
     for arm in a.arms.split(","):
         read = READERS.get(arm, muninn_items)
         sets, sizes = [], []
@@ -112,8 +130,10 @@ def main() -> None:
         pairs = [(i, j) for i in range(len(sets)) for j in range(i + 1, len(sets))]
         js = [jaccard(sets[i], sets[j]) for i, j in pairs]
         only = len(set.union(*sets) - set.intersection(*sets))
+        cover = [sum(1 for v in values if v.lower() in " ".join(st).lower()) for st in sets]
         print(f"| {arm} | {len(sets)} | {sizes} | "
-              f"{', '.join(f'{x:.3f}' for x in js)} | {only} |")
+              f"{', '.join(f'{x:.3f}' for x in js)} | {only} | "
+              f"{cover if values else '—'} of {len(values)} |")
         if min(js) < 1.0:
             diff = sorted(set.union(*sets) - set.intersection(*sets))[:5]
             for d in diff:
