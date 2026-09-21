@@ -82,6 +82,16 @@ output.
 
 That is the fifth arm, pre-registered before seeding.
 
+## The fourth arm: the instructions were wrong and it did not matter either
+
+`muninn-kinds` — the block kinds the engine actually emits, the skill's count corrected, the
+"paste blocks into files" sentence gone from the skill too — scored **7/27**, against
+`muninn-loop8`'s 6/27 (exact Fisher p = 1) and `muninn-now`'s 4/27. Delivered in 27 cells of
+27, used in 7.
+
+Two registered hypotheses about what Muninn *tells* the agent, both measured, both wrong. The
+documents were inaccurate and correcting them changed nothing the cell writes.
+
 ## Raw data
 
 `results.jsonl` (one row per cell), `diffs/` (what each cell wrote), `logs/` (each cell's
