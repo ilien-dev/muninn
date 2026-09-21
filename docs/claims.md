@@ -51,6 +51,18 @@ grid, its pre-registration and its raw data are indexed in
   support, narrowly: **on this version Muninn's hooks deliver in `-p` sessions and the native
   memory does not** — a statement about session modes, not a comparison of the two memories,
   and it is not presented as one. The probe is committed so a later version can be re-checked.
+- **Cheaper in context than claude-mem.** Measured, and it is the other way round. On the
+  payload that is certainly the model's context (`hook_additional_context`), three
+  head-to-head grids agree that Muninn takes **1.6 to 2.1 times** claude-mem's room:
+  2.090 [2.061, 2.122] on v1, 1.612 [1.558, 1.751] on v2, 1.700 [1.555, 1.896] on v3, 30
+  paired cells each. Per cell on v2: Muninn 1 410 characters at session start and 860 more on
+  the prompt, claude-mem 1 380 at session start and nothing on the prompt. The difference is a
+  design decision — Muninn delivers on every prompt, not only once — and it is a cost.
+  A first version of this measurement read 0.452 in Muninn's favour and was wrong: it added
+  the hook *result record*, whose `stdout` repeats the injected context for a tool that
+  returns it on stdout (Muninn) and not for one that does not (claude-mem), so it counted
+  Muninn's injection twice. The corrected reading is registered as a v4 outcome with the
+  expectation pointing against us (`h2h/context_cost.py`).
 - **Better than Mem0, Rekal, agentmemory or any other product.** No head-to-head on the same
   harness has been run. Vendor LoCoMo / LongMemEval figures are not comparable and are not
   cited as comparisons. For Mem0 the arm now exists and is deliberately not run: Mem0 extracts
