@@ -213,3 +213,47 @@ git log --format='%H %cI %s' -- crates/muninn-bench/experiment/PREREGISTRATION.m
 ```
 An `.ots` file is "pending" until the calendar's Bitcoin transaction confirms (hours); `ots
 upgrade <file>.ots` completes it afterwards.
+
+## Loops 8 and 9 — the repository as a second signal (no model)
+
+Two held-out sets, four arms, two orders, every cell deterministic. `talk` is the
+conversation alone, `code` is the first message of each pair plus a commit, `both` is an
+ordinary week, `noise` is the precision control.
+
+```sh
+cargo build --release
+E=crates/muninn-bench/experiment
+for L in loop8 loop9; do for o in adjacent blocks; do for arm in talk code both noise; do
+  python3 $E/loop8/eval_all.py --muninn target/release/muninn \
+      --arm $arm --order $o --commit-msg opaque \
+      --phrasings $E/$L/heldout_phrasings.json --scenarios $E/$L/scenarios.json \
+      --out /tmp/$L-$arm-$o.json
+done; done; done
+```
+
+The controls that changed what the engine does, and are worth re-running before trusting it:
+
+```sh
+# the commit subject names the new value: it answers the question by itself (30/30 on loop 9)
+... --commit-msg names
+# the old value survives in a file no commit touches: the disappearance rule alone dies here
+... --survivor
+# unrelated commits between the change and the maintain that reads it
+... --filler 20
+```
+
+## Head-to-head v4 — the decisions are also in the code
+
+```sh
+cd crates/muninn-bench/experiment/h2h
+python3 run_h2h.py --out ../results/h2h-v4-code   --runs 3 --jobs 2 \
+    --arms muninn-loop8,claude-mem --code --seed-phrasings v2/seed_phrasings.json
+python3 run_h2h.py --out ../results/h2h-v4-nocode --runs 3 --jobs 2 \
+    --arms muninn-loop8,claude-mem        --seed-phrasings v2/seed_phrasings.json
+python3 analyze_v4.py ../results/h2h-v4-code ../results/h2h-v4-nocode
+```
+
+`--code` adds, identically for every arm, one tracked file per decision in the *seeding*
+checkout and a commit with an uninformative subject when the decision changes. Task cells get
+the base checkout, as in every other head-to-head: a cell whose repository held the current
+value would be answerable by `grep`.
