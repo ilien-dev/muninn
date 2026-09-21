@@ -1,1 +1,5 @@
 seeded r0 muninn-loop8 -> /tmp/muninn-h2h/h2h-v4-nocode/snap-r0-muninn-loop8
+seeded r0 claude-mem -> /tmp/muninn-h2h/h2h-v4-nocode/snap-r0-claude-mem
+seeded r1 muninn-loop8 -> /tmp/muninn-h2h/h2h-v4-nocode/snap-r1-muninn-loop8
+seeded r1 claude-mem -> /tmp/muninn-h2h/h2h-v4-nocode/snap-r1-claude-mem
+seeded r2 muninn-loop8 -> /tmp/muninn-h2h/h2h-v4-nocode/snap-r2-muninn-loop8

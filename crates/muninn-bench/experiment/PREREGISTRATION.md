@@ -2659,6 +2659,17 @@ One contrast, outside the registered family and labelled so: `pass(muninn-kinds)
 pass(muninn-now)`, exact Fisher, on the same replacement cells. Reported whatever it shows.
 The registered arms of this grid are closed and are not re-opened by it.
 
+## Result
+
+**7/27**, against 6/27 for `muninn-loop8` and 4/27 for `muninn-now` (exact Fisher p = 1
+against the first). The instruction corrections did not move the grid either. Delivered in
+27 cells of 27, used in 7, with 5.4 repository searches per cell.
+
+Two hypotheses about what Muninn tells the agent have now been registered and measured, and
+both are wrong: the documents were inaccurate and fixing them changes nothing the cell writes.
+What remains untested is the responder — the one surface the agent actively asks, 0.9 to 1.3
+times per cell, and whose one-line verdict it acts on. That is the fifth arm.
+
 ## Threat
 
 Two arms differing by one edit to an instruction is a clean contrast only if nothing else
