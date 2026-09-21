@@ -29,6 +29,27 @@
   folding it, so `móvil` became `mvil` while the index holds `movil`; a non-Latin script was
   emptied outright. Measured on an accented query against an accented record: 0 blocks before,
   1 after.
+- **The migration that would have emptied every existing index.** Schema 2 rebuilds the
+  full-text index once, and the guard that decided whether to rebuild asked
+  `SELECT count(*) FROM record_fts` — which, on an external-content FTS5 table, is answered
+  from the content table. It was never zero, so the rebuild never ran and every store
+  upgrading from a v1 binary would have come up with no index at all. Found by writing the
+  upgrade test, fixed, and checked end to end against a store written by the previous build.
+- **A value that is a number is read from the diff too.** A number is invisible to a diff read
+  for words — the unit is on both lines and the number is not a word — so `10 connections` →
+  `25 connections` left nothing that went away. The hunk's two lines are now read as quantity
+  slots, which is the rule the conversation already used: on a held-out set of ten measured
+  values, retired 10/30 → 19/30 and delivered 9/30 → 18/30, with false retirement still 0/30.
+- **A noun is not an announced change.** `\bmigrat` matched `migrations` as readily as
+  `migrating`, and `\bcambi` matched `los cambios fueron…`, so any later sentence containing
+  one of those nouns could retire a decision it shared two words with. On a held-out set built
+  to contain that shape, **3 of 15** true decisions survived; now 12 of 15, with recall
+  unchanged in every cell of loops 8 and 9. The gap was found by running on a real store —
+  this project's own transcripts — where three of four sampled retirements were wrong.
+- **A word the repository uses everywhere is not a value.** The same real store retired a
+  record about `delivered` because a commit changed a line containing the word. A word living
+  in more than three tracked files is no longer read as a value unless the record spells it
+  like a name; every held-out figure is unchanged.
 - **The index is stemmed, and a question whose every word is filtered out is no longer met
   with silence.** FTS5 `porter` (schema 2, with a one-off rebuild on migration) plus a
   fall-back that asks the index itself for a word the vocabulary does not hold, and a second
