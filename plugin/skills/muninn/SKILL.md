@@ -9,11 +9,12 @@ Muninn is this project's memory. It is delivered by hooks; you do not fetch it.
 
 ## Reading a block
 Every block carries provenance and a trust level (0–3, derived from origin, never from wording): 0 = text nobody verified · 1 = seen in this project's own transcripts · 2 = confirmed by an exit code or a commit · 3 = stated by the user. A trust 1–3 block is its own corroboration; its `evidence:` line names the transcript and offset.
+- `decision`: what was decided, in the words it was decided in.
+- `invariant`: a rule that stands until something retires it.
+- `deadend`: something tried that failed. Do not retry it blind.
+- `correction`: a place where you were corrected.
 - `episode`: a literal excerpt of an earlier session (what was said, concluded, ran). Use its facts and numbers before searching or re-measuring.
-- `no-rebuild`: something exists. Open the referenced file before writing a replacement.
-- `stale`: a fact was retired because its anchor file changed. Neither the old nor a guessed new value is safe.
-- `lineage`: a decision has history. `muninn why <id>` shows what superseded what and why.
-- `conflict`: two active facts disagree. Ask the user; never pick by recency.
+- `:conflict with #n` on any kind: two active records disagree. Ask the user; never pick by recency.
 - `unverified`: a compaction summary claimed success that no exit code supports. Re-run the check.
 
 ## Asking
