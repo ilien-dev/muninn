@@ -1,7 +1,9 @@
 # Muninn — especificación del motor de memoria
 
-Estado: diseño, no implementado. Fecha: 2026-09-12. Toda referencia `[X]` apunta a
-`research/00-evidence-log.md`. Las cifras `[H*]` `[I*]` `[M2]` son mediciones propias.
+Estado: enviado en 1.0.0. Fecha del diseño: 2026-09-12; las divergencias entre lo
+especificado y lo enviado están marcadas **Enviado** en su sección. Toda referencia `[X]`
+apunta a `research/00-evidence-log.md`. Las cifras `[H*]` `[I*]` `[M2]` son mediciones
+propias.
 
 ## 0. La decisión, y lo que fija
 
@@ -79,6 +81,13 @@ medición futura lo pide, se añade entonces.
 Índices: `(kind, key)`. Los globs `dir/**` se normalizan a prefijo en la escritura; los
 que no se pueden normalizar se guardan como `glob` y se evalúan aparte, porque un `GLOB`
 por fichero tocado cuesta 5,4x más `[M2]`.
+
+**Enviado, a 1.0.0:** el evaluador implementa `dir`, `symbol`, `event`, `after` y
+`keyword`. `glob` y `cooldown` siguen en el CHECK del esquema pero **no se evalúan**, así
+que `set_explicit` los rechaza y la conjunción falla cerrada ante un `kind` que no sabe
+comprobar (`cue.rs`). Un cue siempre cierto debilita su grupo en silencio: el grupo
+dispararía con los demás cues y nadie habría comprobado la condición escrita. Se aceptarán
+cuando tengan evaluador y una cifra de `perf --strict` que lo respalde.
 
 ### 2.3 `rule` — reglas del proyecto y su estado de cumplimiento (F2)
 
@@ -210,6 +219,23 @@ Tres disparadores, todos deterministas, ninguno por similitud:
    nuevo**: se retira `[K11]`.
 3. **Revert detectado:** el commit enlazado fue revertido → `deadend` se mantiene,
    `decision` pasa a `invalid=1, reason=reverted`.
+4. **El código dejó de usar el valor:** un commit sacó del código un valor que una decisión
+   activa nombraba, y ningún archivo versionado lo contiene ya → esa decisión se retira y
+   apunta al registro que las líneas añadidas del mismo commit corroboran, que hereda sus
+   palabras de tema (nunca el valor retirado). No se inventa nada desde el diff: una palabra
+   borrada solo cuenta si un registro ya la nombraba, y el reemplazo es siempre un registro
+   que ya existe. Una decisión que nunca tocó el código (una cadencia de release, una política
+   de revisión) no se ve afectada, porque su valor no está en el diff.
+
+   Es el único disparador que no depende de las palabras, y es el que rompe el techo léxico:
+   23 de 30 reemplazos retenidos no comparten ninguna palabra de contenido con el mensaje que
+   los reemplaza `[Z5]`, y ni el coseno `[Z3]` `[Z4]` ni un stemmer llegan ahí. Medido en dos
+   conjuntos retenidos independientes, sin modelo y con el asunto del commit deliberadamente
+   mudo: retirada 17/30 → 23/30 y 17/30 → 29/30; respuesta entregada 9/30 → 15/30 y 8/30 →
+   16/30; y cuando la revisión no es adyacente a la decisión, 0/30 → 11/30 y 1/30 → 15/30.
+   Control de precisión: commits de la misma forma que cambian un valor que ninguna decisión
+   menciona retiran **0 de 30**, en ocho condiciones distintas (`experiment/loop9/README.md`).
+   Ruta de escritura únicamente; ningún hook de lectura ejecuta git.
 
 Regla de la lectura: `invalid=1` **nunca** se sirve por defecto; existe `muninn why --all`
 para verlo. Si dos registros activos entran en conflicto y no hay orden establecible, se

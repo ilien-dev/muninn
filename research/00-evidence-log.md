@@ -1872,3 +1872,205 @@ Nueve barridos con vocabularios distintos. Los cinco primeros produjeron cambios
 produjeron **una advertencia metodológica y competidores adicionales, pero ningún cambio
 de diseño**. El rendimiento marginal de seguir barriendo con este método ha caído.
 Lo que queda no se resuelve leyendo más papers: se resuelve corriendo el experimento.
+
+---
+
+# MEDICIÓN EN REPOSITORIO: la rama densa, cerrada por los dos lados (20-sep-2026)
+
+Sondas de mecanismo corridas en este repositorio, no barridos de literatura. Cierran la
+pregunta "¿un embedding de la consulta en la ruta de lectura mejora lo que se entrega?",
+que `[I5]` había dejado abierta con una cifra de auto-recuperación. Las tres sondas se
+borraron después de responder; los números quedan aquí.
+
+[Z1] **El coste de carga se puede esquivar, pero no basta.** `[I2]` mide 35 ms de carga
+de `potion-base-8M` y 0,006 ms de encode, y concluye que el modelo no cabe en el hook.
+El modelo es una tabla estática de 29 528 × 256 f32 en `model.safetensors`, contigua: una
+consulta de 13 tokens necesita 13 filas de 1 KB, no las 29 528. Medido, 20 repeticiones,
+p50, misma máquina que `[I3]`:
+  | ruta                                        | p50       |
+  | carga completa del modelo (lo de hoy)       | 34,93 ms  |
+  | solo el tokenizer (`tokenizer.json`, 684 KB)|  6,71 ms  |
+  | header safetensors + 13 filas por `seek`    |  0,003 ms |
+  => La carga se puede bajar 5x, y **todo el residuo es parsear el tokenizer**. Pero
+     6,71 ms sigue siendo ~2x el hook completo de `[I3]` (3,5 ms) y ~8x el compuerteado
+     (0,86 ms). Esquivar la tabla no alcanza; habría que reimplementar WordPiece contra
+     un vocabulario en SQLite, y eso solo se justifica si la calidad paga. No paga: `[Z2]`.
+
+[Z2] **En la entrega real no hay margen que ganar.** `[I5]`'s +6,7 % es auto-recuperación
+(la consulta es la cola del propio cuerpo del registro), que no es la tarea. Sonda con
+consultas no degeneradas: los 10 prompts de `revocation/tasks-revocation-public.json`
+—escritos para otra rejilla, en palabras distintas a las del registro— contra un pajar de
+440 registros activos (430 exportados del almacén vivo de este repositorio más los 20
+sembrados). Objetivo por tarea: el registro activo del par sembrado. k = 8, el que pide
+`hook.rs`. Fusión RRF k=60.
+  | rama             | objetivo en el top-8 |
+  | léxica (BM25)    | **10/10**            |
+  | densa sola       | 4/10                 |
+  | híbrida RRF      | 10/10                |
+  => El léxico ya está en el techo: no hay nada que el denso pueda añadir, y solo saca
+     4/10 por su cuenta. 10 consultas no estiman una población; lo que la sonda descarta
+     es que exista margen medible aquí, que es la pregunta que se hizo.
+
+[Z3] **Y en la ruta de escritura, donde el modelo es gratis, el coseno no separa.** El
+cuello real no es la consulta: es la detección de supersession. Réplica determinista, sin
+modelo, de la conversación de siembra del brazo `muninn-latest` de h2h v2 (20 turnos, log
+en `results/h2h-v2/seeding/r0-muninn-latest.jsonl`) a través de `muninn ingest`: **2/10
+pares quedan retirados del todo**, 4 eventos de supersession. La réplica predice todos los
+fallos del grid: async-runtime, version-scheme, compression, password-hashing e
+internal-http fallan aquí y fallaron allí; cache-eviction y license se detectan aquí y
+pasaron allí. `extract::replaces` exige dos palabras de contenido compartidas, y
+"semver is cleaner" no comparte ninguna con "for versioning, we're using calver".
+  Un coseno entre la frase nueva y la vieja sería el arreglo natural —el modelo ya está
+  cargado en la ruta asíncrona, `[I2]` dice que allí no cuesta—. Medido sobre los 10 pares
+  contra sus 90 cruces:
+  | el par verdadero rankea primero | 4/10           |
+  | media verdadera / media cruzada | 0,247 / 0,125  |
+  | mínima verdadera / máxima cruzada | **−0,036 / 0,408** |
+  => Separado en media, inservible en la cola: no existe umbral. "Wire format: msgpack"
+     contra "Switching to cbor - it's more compact" da **−0,036**. Un modelo estático de
+     promediado de tokens no sabe que cbor sustituye a msgpack; los tokens técnicos raros
+     se parten en subpalabras sin relación aprendida.
+  => La rama densa queda cerrada por los dos lados. El cuello de F1 —enlazar una frase de
+     cambio con el registro que sustituye cuando no comparten palabras— sigue abierto y
+     **no se resuelve con embeddings**. Lo que le falta para atacarse es un corpus de
+     negativos: sin medir el falso retiro, cualquier regla más laxa que la actual esconde
+     decisiones vigentes, que es el fallo más caro que puede tener F1.
+
+[Z4] **El coseno entre los nombres es peor que entre las frases: la rama densa queda
+cerrada también por ahí.** `[Z3]` cerró la ruta de embeddings midiendo frases enteras. Quedaba
+una objeción razonable: una frase de cambio es sobre todo prosa del *porqué* ("cuts down on
+boilerplate", "less infrastructure to babysit"), y lo que identifica la decisión es el nombre
+del producto. Si `gRPC` y `ConnectRPC` están cerca en el espacio del modelo aunque sus frases
+no lo estén, bastaría con embeber `extract::name_tokens` en vez de la oración.
+  Medido con el modelo model2vec que ya ships, sobre el set de desarrollo del loop 5
+  (`crates/muninn-bench/examples/name_cosine.rs`, commitado), 26 pares con nombre en ambos
+  lados contra todos sus cruces:
+  | el par verdadero rankea primero | **1/26** (frente a 4/10 con frases) |
+  | mínima verdadera / máxima cruzada | **−0,061 / 1,000** |
+  => Peor que la medida que pretendía mejorar. El cruce máximo llega a 1,000 porque dos
+     escenarios distintos comparten un token de nombre tras la normalización, y la verdadera
+     mínima es negativa. No hay umbral, ni siquiera separación en media utilizable.
+  => Consecuencia: la ruta de embeddings para supersession está cerrada **por los dos
+     extremos** —frase `[Z3]` y nombre `[Z4]`— con medida propia en el repositorio. El
+     sidecar se queda donde estaba: ruta de escritura, para `muninn why`.
+
+[Z5] **El techo léxico: 23 de 30 pares no comparten ninguna palabra de contenido.** Antes de
+tocar umbrales convenía saber cuánto queda al alcance de cualquier regla léxica. Sonda
+`muninn-capture/examples/supersede_probe.rs` (commitada) sobre el set de retención del loop 6,
+imprimiendo lo que `replaces_text` ve en cada par: **23 pares con 0 palabras compartidas, 6 con
+1, 1 con 2**. Bajar el suelo de 2 a 1 se implementó y se midió: loop 6 en orden adyacente se
+quedó en 15/30, sin mover una sola celda, y se revirtió.
+  => Ninguna regla sobre solapamiento de palabras alcanza una intersección vacía. Junto con
+     `[Z3]` y `[Z4]`, esto acota dónde *no* está la mitad que falta de la detección: ni en las
+     palabras ni en los embeddings. Lo que queda es un modelo en la ruta de escritura, excluido
+     por `docs/scope.md` con razones medidas `[C1]` `[K10]`.
+  => Corolario metodológico, medido en el mismo loop: relajar la puerta de anáfora daba +8 en
+     el set de desarrollo (loop 6, 15/30 → 23/30) y **+0** en el de retención (loop 7, 19/30 en
+     ambos casos). Se retiró. Lo único que replicó fue una guarda de precisión —nunca retirar
+     un registro que era él mismo un cambio—, que en orden de bloques sube `kept_b` de 15/30 a
+     27/30 en retención, y que corrige una pérdida silenciosa, no un fallo de recall.
+
+[Z6] **Lo que parecía la única ventaja frente a la competencia era un artefacto de
+concurrencia, y una rejilla controlada lo desmontó.** La detección empata con claude-mem
+`[h2h v2]`. Buscando dónde no empata, `h2h/cost_analysis.py` (commitado) midió el coste por
+celda sobre las dos rejillas existentes —post-hoc, sobre rejillas registradas para otra
+pregunta— emparejando por (run, tarea), razón de medianas con bootstrap de 10 000 sobre pares:
+  | rejilla | reloj muninn-latest / claude-mem | coste | turnos |
+  |---|---|---|---|
+  | v2 (celdas concurrentes) | 0,599 [0,516, 0,943] | 0,776 [0,613, 1,066] | 0,667 [0,571, 1,000] |
+  | v1 (celdas concurrentes) | 0,583 [0,435, 0,832] | 0,820 [0,663, 1,074] | 0,800 [0,571, 1,000] |
+  | **v3 (celdas en serie, reloj pre-registrado)** | **0,972 [0,681, 1,368]** | 1,094 [0,801, 1,532] | 1,000 [0,833, 1,500] |
+  => Dos rejillas coincidían en ~0,59 y la tercera, que es la única en la que el reloj se
+     registró como desenlace **antes** de correr, da 0,97 con el intervalo cruzando el 1. La
+     afirmación no se hace.
+  => Lo único que v3 cambió a propósito fue `--jobs 1`. Con celdas concurrentes, una celda
+     lenta retiene su hueco más tiempo y deja al otro brazo corriendo con menos contención; las
+     celdas de claude-mem son más lentas (su siembra tardó unas cuatro veces la de Muninn en
+     esta máquina). El efecto vivía en el planificador, no en las herramientas.
+  => Lección, y es la que importa: **dos rejillas de acuerdo no son una réplica si comparten el
+     defecto.** El control del desenlace —v1 tenía ambos brazos en techo de acierto— descartaba
+     la explicación por resultado y no decía nada sobre la contención, que era la verdadera.
+  => Queda en pie, sin tocar: el coste del hook en sí, `perf --strict`, sin modelo y medido
+     aparte. Eso nunca dependió de esta comparación.
+
+[Z7] **El "empate" con claude-mem no es evidencia de que no haya diferencia: es una rejilla
+cuatro veces demasiado pequeña para saberlo.** La cifra publicada es v2: 17/27 contra 14/27,
+Holm p = 0,58. La rejilla v3 —corrida para otra cosa, misma redacción de retención, mismo
+oráculo, mismo análisis— repitió la dirección y la distancia: **23/27 contra 19/27**, los mismos
+cuatro aciertos de diferencia. Agrupadas (agrupación post-hoc, no un contraste registrado):
+  | | aciertos | tasa |
+  |---|---|---|
+  | muninn-latest | 40/54 | 0,741 |
+  | claude-mem | 33/54 | 0,611 |
+  | diferencia | +0,130 | Fisher bilateral p = 0,217 |
+  => Potencia necesaria para ese tamaño de efecto, al 80 % y α = 0,05 bilateral:
+     **204 celdas por brazo** — 408 celdas de tarea más unas 920 sesiones de siembra
+     (23 runs por brazo, 20 mensajes cada uno). Las rejillas que se han corrido tienen 27 y 54.
+  => Consecuencia para la redacción pública: decir "empate" es correcto y decir "no hay
+     diferencia" no lo es. Lo honesto es "no distinguible con 27 celdas por brazo, y harían
+     falta unas 204 para distinguirlo si el efecto es el que insinúan las dos rejillas".
+  => La diferencia apunta consistentemente a favor de Muninn en las dos. Eso **no** es una
+     afirmación: dos rejillas apuntando igual es exactamente lo que `[Z6]` demostró que puede
+     ser un artefacto compartido. La única forma de convertirlo en número es la rejilla grande,
+     registrada con su N fijo y su regla de parada antes de correr.
+
+[Z8] **Lo que la competencia no hace es F2, no F1 — y esto es evidencia débil, por su forma.**
+Revisión de documentación pública (2026-09-21): claude-mem
+(`docs.claude-mem.ai/hooks-architecture`) captura, comprime e inyecta contexto por hooks de
+ciclo de vida; Mem0 (`github.com/mem0ai/mem0`) y Zep/Graphiti (`getzep.com/platform/graphiti`)
+son capas de memoria y recuperación; Letta y LangGraph Store, lo mismo con otro reparto.
+  => **Ninguna documenta compilar reglas escritas en controles que el harness aplique en la
+     frontera de herramienta.** Eso es F2, y es una diferencia de categoría, no una victoria de
+     benchmark: son herramientas de memoria y el control es otra cosa. Con el resultado de
+     comportamiento de Gate 5b (8/24 contra 0/24 con el control puesto), es lo único de esta
+     sesión que se sostiene frente a la línea competitiva, y se sostiene como "hacemos algo que
+     ellos no", no como "lo hacemos mejor".
+  => **Corrección a una suposición propia:** Graphiti sí invalida hechos superados ("as facts
+     change, Graphiti invalidates the old ones"). O sea que "tirar lo que reemplazaste" **no**
+     es exclusivo de Muninn; ya lo decían `[U5]` `[S3]` `[S5]` y por eso la afirmación de
+     novedad se reescribió en su día. Lo que sigue siendo distinto en F1 no es la idea sino su
+     forma: en Muninn la garantía es de construcción —el tipo que lleva una tarjeta al contexto
+     tiene un solo constructor y lee de la vista filtrada— y no un reordenamiento de
+     resultados. Eso está medido aparte (`fault.rs` s16/s17).
+  => **Peso de esta entrada: bajo.** Ausencia en la documentación no es medición. Basta con que
+     una de esas herramientas tenga la función sin documentarla, o la añada mañana, para que
+     caiga. No se cita en el README ni en `docs/claims.md` como ventaja; vive aquí, fechada y
+     con sus fuentes, para que se pueda revisar.
+
+[Z9] **El techo léxico se rompe por fuera del lenguaje: el repositorio.** `[Z5]` acotó dónde
+*no* está la mitad que falta de la detección —ni en las palabras ni en los embeddings— y
+concluyó que lo que quedaba era un modelo en la ruta de escritura, excluido por `docs/scope.md`
+`[C1]` `[K10]`. Quedaba una tercera opción que no se había probado: no mirar las frases, mirar
+el código. "HashiCorp Vault" y "AWS Secrets Manager" no comparten nada *como texto*; comparten
+algo *como hechos sobre un repositorio*: uno está en él, y después no.
+  Implementado en `maintain` (ruta de escritura, sin modelo, sin red): se leen los diffs de los
+  commits capturados; un valor que un commit sacó del código y que ningún archivo versionado
+  contiene ya retira el registro que lo nombraba. Medido con `experiment/loop8/eval_all.py` en
+  dos conjuntos retenidos generados después de congelar el binario, 30 celdas por brazo, con el
+  asunto del commit mudo (`update dependencies`) para que el commit solo aporte su diff:
+  | conjunto | orden | `talk` | `both` | retirada `talk` | retirada `code` |
+  |---|---|---|---|---|---|
+  | loop 8 | adyacente | 9/30 | 15/30 | 17/30 | 23/30 |
+  | loop 8 | bloques | 0/30 | 11/30 | 6/30 | 23/30 |
+  | loop 9 | adyacente | 8/30 | 16/30 | 17/30 | 29/30 |
+  | loop 9 | bloques | 1/30 | 15/30 | 5/30 | 29/30 |
+  => **La señal no depende del orden.** `code` da el mismo número tanto si la revisión sigue a
+     la decisión como si llegan diez decisiones en medio; `talk` cae de 17/30 a 5-6/30. Todas
+     las reglas léxicas del motor dependen de que las dos frases estén cerca, porque es lo
+     único que las relaciona cuando no comparten palabras. Un commit las relaciona por valor.
+  => **Precisión: 0/30 retiradas falsas** en ocho condiciones (dos conjuntos × dos órdenes ×
+     dos estilos de asunto). Un commit que cambia algo que ninguna decisión menciona no retira
+     nada.
+  => **Lo que el asunto del commit vale por separado.** Con un asunto que nombra el valor nuevo
+     (`use nats`), loop 9 da 30/30: el asunto contesta la pregunta él solo. La cifra pública es
+     la del asunto mudo. El control está corrido y publicado precisamente porque la diferencia
+     es grande.
+  => **Límite, y es el mismo de siempre por el otro lado:** una decisión que no llega a un
+     archivo no deja rastro que leer, y ahí sigue mandando `talk`. El techo de la conversación
+     no se ha movido; se ha añadido un segundo camino para los casos que sí tocan el código.
+  => Tres defectos que esta rejilla encontró y que no son del mecanismo: git interpreta
+     `--since=@0` como *ahora* (una tienda nueva nunca capturaba su propio historial); la
+     herencia de tema reimprimía el valor retirado cuando era minúscula, porque el filtro era
+     `name_tokens` (fuga de F1, 6 celdas); y el hash de un commit es parte del texto indexado,
+     así que una rejilla con commits de fecha real no es determinista (una celda de treinta
+     cambiaba entre corridas).
