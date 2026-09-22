@@ -331,6 +331,24 @@ pub struct CueHit {
 /// when every cue in it holds; a record fires when any group does. `after` cues hold
 /// once `now` passes them. `exclude` holds ids already delivered in this epoch.
 pub fn evaluate(db: &Db, ctx: &TurnContext, exclude: &HashSet<i64>) -> Result<Vec<CueHit>> {
+    Ok(evaluate_capped(db, ctx, exclude, usize::MAX)?.0)
+}
+
+/// `evaluate`, with at most `cap` event candidates considered, and how many were left out.
+///
+/// An event cue fires on every invariant and correction in the store. On a store at the
+/// schema's cap that is thousands of records, and the turn budget renders about sixteen —
+/// the conjunction check and the record load ran for all of them to reject all but sixteen,
+/// which was 14 ms of a 10 ms hook. The cap is applied in the event query itself, ordered the
+/// way the budget would have ordered them (invariant before correction before dead end,
+/// newest first), so what surfaces does not change; the number left out is returned so the
+/// caller's "N more exist" disclosure stays true.
+pub fn evaluate_capped(
+    db: &Db,
+    ctx: &TurnContext,
+    exclude: &HashSet<i64>,
+    cap: usize,
+) -> Result<(Vec<CueHit>, usize)> {
     // candidate (record, group) pairs from each matching cue, with the cue kind that hit
     let mut matched: HashMap<(i64, i64), Vec<String>> = HashMap::new();
     let mut st_dir = db
@@ -400,46 +418,97 @@ pub fn evaluate(db: &Db, ctx: &TurnContext, exclude: &HashSet<i64>) -> Result<Ve
                 .push(format!("after:{key}"));
         }
     }
+    let mut event_dropped = 0usize;
     if !ctx.event.is_empty() {
-        let mut st_ev = db
-            .conn
-            .prepare_cached("SELECT record_id, grp FROM cue WHERE kind = 'event' AND key = ?1")?;
-        let rows = st_ev.query_map([ctx.event.as_str()], |r| {
+        let total = db.count(
+            "SELECT count(*) FROM cue c JOIN served_record r ON r.id = c.record_id \
+             WHERE c.kind = 'event' AND c.key = ?1",
+        );
+        let mut st_ev = db.conn.prepare_cached(
+            "SELECT c.record_id, c.grp FROM cue c JOIN served_record r ON r.id = c.record_id \
+             WHERE c.kind = 'event' AND c.key = ?1 \
+             ORDER BY CASE r.kind WHEN 'invariant' THEN 0 WHEN 'correction' THEN 1 \
+                                  WHEN 'deadend' THEN 2 WHEN 'decision' THEN 3 \
+                                  WHEN 'claim' THEN 4 ELSE 5 END, \
+                      r.created_at DESC, r.id DESC LIMIT ?2",
+        )?;
+        let lim = cap.min(i64::MAX as usize) as i64;
+        let rows = st_ev.query_map(rusqlite::params![ctx.event.as_str(), lim], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
         })?;
+        let mut n = 0usize;
         for r in rows.flatten() {
+            n += 1;
             matched
                 .entry(r)
                 .or_default()
                 .push(format!("event:{}", ctx.event));
         }
+        if let Ok(t) = total {
+            event_dropped = (t as usize).saturating_sub(n);
+        }
     }
     if matched.is_empty() {
-        return Ok(vec![]);
+        return Ok((vec![], event_dropped));
     }
     // conjunction: every cue of the group must have matched (after/cooldown by time)
     let now = now_ms();
-    let mut st_grp = db
-        .conn
-        .prepare_cached("SELECT kind, key FROM cue WHERE record_id = ?1 AND grp = ?2")?;
-    // a `cue` row outlives the retirement of its record, so candidates are checked against
-    // the serving view here: without this, retired ids reach the delivery log and the
-    // fire_ledger before `hits_for` drops them, and `served_invalid` measures the wrong thing
-    let mut st_served = db
-        .conn
-        .prepare_cached("SELECT 1 FROM served_record WHERE id = ?1")?;
+    // A `cue` row outlives the retirement of its record, so candidates are checked against
+    // the serving view: without this, retired ids reach the delivery log and the fire_ledger
+    // before `hits_for` drops them, and `served_invalid` measures the wrong thing. Both this
+    // and the group lookup are done in chunks rather than once per candidate — a session
+    // start on a store at the schema's cap matches thousands of groups, and two round trips
+    // each put the hook 3.5x over its latency contract on that store alone.
+    let candidates: Vec<i64> = {
+        let mut v: Vec<i64> = matched
+            .keys()
+            .map(|(rid, _)| *rid)
+            .filter(|rid| !exclude.contains(rid))
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    let mut served: HashSet<i64> = HashSet::new();
+    let mut groups: HashMap<(i64, i64), Vec<(String, String)>> = HashMap::new();
+    for chunk in candidates.chunks(500) {
+        let places = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let params: Vec<&dyn rusqlite::ToSql> =
+            chunk.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        let mut st = db.conn.prepare(&format!(
+            "SELECT id FROM served_record WHERE id IN ({places})"
+        ))?;
+        for id in st
+            .query_map(params.as_slice(), |r| r.get::<_, i64>(0))?
+            .flatten()
+        {
+            served.insert(id);
+        }
+        let mut sg = db.conn.prepare(&format!(
+            "SELECT record_id, grp, kind, key FROM cue WHERE record_id IN ({places})"
+        ))?;
+        for (rid, grp, kind, key) in sg
+            .query_map(params.as_slice(), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                ))
+            })?
+            .flatten()
+        {
+            groups.entry((rid, grp)).or_default().push((kind, key));
+        }
+    }
     let mut out: HashMap<i64, Vec<String>> = HashMap::new();
     for ((rid, grp), reasons) in matched {
-        if exclude.contains(&rid) {
+        if exclude.contains(&rid) || !served.contains(&rid) {
             continue;
         }
-        if st_served.query_row([rid], |_| Ok(())).is_err() {
-            continue;
-        }
-        let cues: Vec<(String, String)> = st_grp
-            .query_map(rusqlite::params![rid, grp], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .flatten()
-            .collect();
+        let cues: Vec<(String, String)> = groups.get(&(rid, grp)).cloned().unwrap_or_default();
         let all = cues.iter().all(|(k, key)| match k.as_str() {
             "dir" | "symbol" | "event" | "keyword" => {
                 reasons.iter().any(|r| r == &format!("{k}:{key}"))
@@ -466,7 +535,7 @@ pub fn evaluate(db: &Db, ctx: &TurnContext, exclude: &HashSet<i64>) -> Result<Ve
         })
         .collect();
     hits.sort_by_key(|h| h.record_id);
-    Ok(hits)
+    Ok((hits, event_dropped))
 }
 
 fn priority(kind: &str) -> u8 {
@@ -482,17 +551,64 @@ fn priority(kind: &str) -> u8 {
 
 /// Load records by id as hits (score = 0), for rendering. Reads `served_record`, so an id
 /// whose record has been retired simply yields nothing.
-pub fn hits_for(db: &Db, ids: &[i64]) -> Result<Vec<Hit>> {
-    let mut out = Vec::new();
-    let mut st = db.conn.prepare_cached(&format!(
-        "SELECT {}, r.transcript_ref FROM served_record r WHERE r.id = ?1",
-        crate::recall::SERVED_COLS
-    ))?;
-    for id in ids {
-        if let Ok(h) = st.query_row([id], |r| Hit::from_served_row(r, 0.0)) {
-            out.push(h);
-        }
+/// The `cap` highest-priority, most recent of `ids`, and how many were left behind.
+///
+/// A session start on a store at the schema's cap matches every invariant and correction in
+/// it — thousands — and the turn budget delivers about sixteen. Loading the rest to reject
+/// them read every one of their bodies. Ordering is the one `merge` would have applied
+/// (invariant before correction before dead end, newest first), so what surfaces is
+/// unchanged; the count that was dropped is returned so the caller's "N more exist" line
+/// stays true.
+pub fn hits_for_capped(db: &Db, ids: &[i64], cap: usize) -> Result<(Vec<Hit>, usize)> {
+    if ids.len() <= cap {
+        return Ok((hits_for(db, ids)?, 0));
     }
+    let mut kept: Vec<i64> = Vec::new();
+    for chunk in ids.chunks(500) {
+        let places = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let params: Vec<&dyn rusqlite::ToSql> =
+            chunk.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        let mut st = db.conn.prepare(&format!(
+            "SELECT id FROM served_record WHERE id IN ({places}) ORDER BY \
+             CASE kind WHEN 'invariant' THEN 0 WHEN 'correction' THEN 1 WHEN 'deadend' THEN 2 \
+                       WHEN 'decision' THEN 3 WHEN 'claim' THEN 4 ELSE 5 END, \
+             created_at DESC, id DESC LIMIT {cap}"
+        ))?;
+        kept.extend(
+            st.query_map(params.as_slice(), |r| r.get::<_, i64>(0))?
+                .flatten(),
+        );
+    }
+    kept.truncate(cap);
+    let dropped = ids.len().saturating_sub(kept.len());
+    Ok((hits_for(db, &kept)?, dropped))
+}
+
+pub fn hits_for(db: &Db, ids: &[i64]) -> Result<Vec<Hit>> {
+    // In chunks, not one statement per id: on a store at the schema's cap a session-start
+    // event matched thousands of records and this loop ran a query for each of them.
+    let mut out = Vec::new();
+    for chunk in ids.chunks(500) {
+        if chunk.is_empty() {
+            continue;
+        }
+        let places = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut st = db.conn.prepare(&format!(
+            "SELECT {}, r.transcript_ref FROM served_record r WHERE r.id IN ({places})",
+            crate::recall::SERVED_COLS
+        ))?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            chunk.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        let rows = st.query_map(params.as_slice(), |r| Hit::from_served_row(r, 0.0))?;
+        out.extend(rows.filter_map(|r| r.ok()));
+    }
+    // callers pass ids in the order they want them back
+    let pos: HashMap<i64, usize> = ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    out.sort_by_key(|h| pos.get(&h.id).copied().unwrap_or(usize::MAX));
     Ok(out)
 }
 
@@ -558,6 +674,14 @@ pub fn merge(
     for id in order {
         let h = by_id[&id];
         if !turns_seen.insert(crate::recall::turn_key(&h.subject)) {
+            gated.push(id);
+            continue;
+        }
+        // Once the budget is spent nothing else can fit, and formatting a block to find that
+        // out costs a `best_passage` scan over its body. On a store at the schema's own cap
+        // this loop was formatting thousands of blocks per prompt purely to reject them: the
+        // full prompt hook measured 67 ms against a contract of 10.
+        if tokens >= budget {
             gated.push(id);
             continue;
         }
