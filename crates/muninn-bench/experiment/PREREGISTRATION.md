@@ -3684,3 +3684,94 @@ it. What the arm shows is that the catalogue line's wording is not what decides 
 
 This is the third registered hypothesis in this project to be built, measured and thrown away
 (after the prefix back-off and the bare-number quantity path), and the count is kept on purpose.
+
+---
+
+# Pre-registration — v10: the catalogue in the plain condition
+
+Registered 2026-09-22, before any cell ran.
+
+## Why
+
+The head-to-head claim covers one condition: the decisions are in the conversation *and* in the
+code. In the plain condition — the decisions exist only in the transcripts — the last measured
+figure is a **tie**: Muninn 18/27, claude-mem 20/27, p = 0.77, and that was six builds ago,
+before the relevance floor, the deletion guard and the catalogue. The change that won the other
+condition has never been run in this one.
+
+## The grid
+
+`results/h2h-v10-plain`, fresh, its own seeding. Six runs, 54 replacement cells per arm, no
+`--code`: no decision files, no swap commits, the cell checkout is the base archive with one
+`base` commit. Same frozen phrasings, same nine replacement tasks, same Gate 3 oracles.
+
+Arms: `off`, `muninn-catalog` (the build on `master`), `claude-mem 13.24.23`.
+
+## Decision rule, fixed before the data
+
+- **Validity:** `off` ≥ 12/54 invalidates the fixture.
+- **Primary, confirmatory:** `pass(muninn-catalog) − pass(claude-mem)`, exact Fisher,
+  two-sided, α = 0.05. A claim about this condition is made only if it is significant and in
+  Muninn's favour. A tie stays a tie: failing to reach 0.05 is reported as "not shown", never
+  as parity.
+- **Secondary, reported:** the delivered/used decomposition and the injected-context ratio.
+- Analysed once, when all 180 cells are in.
+
+## Threat
+
+The previous figure in this condition, 18/27 against 20/27, was against Muninn. Running it
+again with a better build is a fair re-measurement, and it is also the third fresh grid this
+project has commissioned after an unfavourable result; the protection is that the rule and the
+size are fixed here, the `off` control travels with it, and the old figure stays published
+whatever this shows.
+
+---
+
+# Pre-registration — v11: telling the agent that a missing file is not a retirement
+
+Registered 2026-09-22, before the arm was built and before any cell of it ran. It runs after
+v10 and changes nothing about v10's analysis.
+
+## What the failing cells say
+
+Eleven of the catalogue arm's thirteen v7 failures are one inference, in the agent's own words:
+
+> A decision record (`config/decisions/revoke-async-runtime.json`) once existed …
+> … the decision configuration that used to track it was moved out of the tree
+
+The agent reads a file that is gone as a decision that was revoked. It is the same mistake the
+capture path was making until the deletion guard, now made by the agent instead. v9 tested
+whether the catalogue line's wording decides those cells — citing the commit that still
+resolves — and it does not: 43/54 against 41/54, p = 0.82.
+
+What has not been tested is the one surface v8 showed **is** load-bearing. Cutting the boot
+summary from 1 768 characters to 594 cost six answers (35/54 against 41/54), so its content is
+not inert, and nothing has been *added* to it since the catalogue arrived.
+
+## The arm
+
+`muninn-stands`: two sentences added to the boot summary, and nothing else —
+
+> If it is in the catalogue it is current. A record is retired when a later decision or a
+> commit replaces its value, and a retired record is not listed; a file that moved or is
+> missing is not a retirement.
+
+Both halves are true by construction: the catalogue reads `served_record`, which is the
+`invalid = 0` view, and since the deletion guard a deleted file retires nothing.
+
+`BOOT_HOOK_MAX_CHARS` is raised from 1 800 to 1 950 to fit. That is not a loosening of the real
+budget: the binding limit is 500 tokens, the summary measures 3.92 characters a token, and
+1 950 characters is the same 500 tokens the cap already allowed. The token limit does not move.
+
+## Decision rule, fixed before the data
+
+`pass(muninn-stands) − pass(muninn-catalog)` on v7's fixture at v7's size, exact Fisher.
+**Superiority**, as v9 was and v8 should have been: adopted only if significant at α = 0.05 and
+in its favour. Secondary, reported: the injected-context ratio, which this raises slightly.
+
+## Threat
+
+Written by the author after reading the cells it is meant to fix. It is also the seventh
+attempt in this project to move a number by changing what Muninn *tells* the agent; five of the
+first six did nothing, and the one that worked (v8, in reverse) only showed that the text is
+not free to remove. That prior is against this arm.
