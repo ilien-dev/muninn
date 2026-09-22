@@ -3857,3 +3857,17 @@ That is `[Z5]`, the lexical ceiling, in one column: with no commit to corroborat
 replacement that shares no content word with what it replaces is not matched to it, and 23 of
 30 held-out replacements share none. Loop 8 measures conversation-only retirement at 17/30 and
 this is what that costs on live cells.
+
+## Amendment to the closing suite, before it ran
+
+`muninn-stands` was pinned days of work ago, on the build v7 measured. Comparing it to v7's
+`muninn-catalog` cells would confound its one sentence with everything that has changed since:
+the deletion guard, four scale fixes, the conflict mark, the catalogue's completeness line, the
+sentence splitter and the ack bridge. It is rebuilt on `master` with the sentence applied to
+`master`'s own boot text, and its contrast is against `muninn-now2` **in the same grid**, so the
+sentence is the only difference between them. The rule is unchanged: superiority at α = 0.05 or
+it does not ship.
+
+`BOOT_HOOK_MAX_CHARS` moves 1 800 → 1 950 in that arm only, which is the same 500-token budget
+written in the unit the check counts in; the token limit does not move and the arm measures
+1 919 characters, 486 tokens.
