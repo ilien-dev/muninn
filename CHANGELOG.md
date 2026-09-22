@@ -2,6 +2,67 @@
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **The agent is shown what is on record, not only what a query returned.** Six builds
+  delivered the current decision in 27 head-to-head cells out of 27 and the agent acted on it
+  in 4 to 9, writing "no current recorded decision" with the decision in front of it; five of
+  those builds changed what Muninn *tells* the agent and none of them moved it. Reading the
+  competitor's own cells showed why: it delivers an index of every decision once per session
+  and the agent asks for what it wants by id. `[muninn:catalog]` now does the same with no
+  model — one line per active decision, standing rule and correction, newest first, with
+  `replaces #n` read from `invalidated_by` and `conflict` where two active records disagree,
+  under a 300-token budget whose last line says whether the list is complete. `muninn show
+  <id> [<id> …]` pulls any entry in full and returns nothing for a retired id. On the shipped
+  build: **51 of 54 against claude-mem 13.24.23's 25 and agentmemory 0.9.29's 1**, with a
+  no-memory control at 0 of 54 (`results/h2h-v13-final/`).
+- **A moved file is not a retirement, and saying so is worth twelve cells.** Two sentences in
+  the startup summary took 39 of 54 to 51 of 54 (exact Fisher p = 0.0036) with nothing else
+  changed. Eleven of the thirteen remaining failures were an agent reading a removed file as a
+  revoked decision. This is the seventh attempt in this project to move a number by changing
+  what Muninn says and the first that worked; the six before it are published too.
+- **Deleting a file used to delete the memory of it.** Every `-` line of a diff fed the
+  retirement rule, a deleted file's included, so one commit that moved a config directory
+  retired the current decision *and its source episode* for six topics with no heir — active
+  decisions 21 → 16 on the grid that found it. A value that disappears with its file is not
+  evidence that the decision changed. Costs nothing: retirement 27/30 and false retirement
+  0/30 with the guard and without it.
+- **The hooks were 7 to 16 times over contract on a store at the schema's own cap**, and the
+  perf gate could not see it: its fixture had no event cue and no retired record, so the path
+  that was slow never ran. At 20 000 records SessionStart measured 128 ms against a 10 ms
+  contract and the prompt hook 67 ms. Four causes, each measured: the delivery ledger wrote one
+  line per gated record (4 200 a prompt, 14 MB in 32 prompts) and re-read them on the next;
+  `cue::merge` formatted blocks after the budget was spent; `cue::evaluate` ran two queries per
+  candidate; and the session-start cue loaded every invariant in the store to render sixteen.
+  Now 8.9 ms and 4.4 ms, with the gate's fixture rebuilt to run at the cap and to contain what
+  production contains.
+- **The harness is not the user.** Claude Code injects `<task-notification>`,
+  `<system-reminder>` and slash-command blocks inside `type: user` lines with no `isMeta` flag
+  — 134 and 56 of them in this project's own transcripts — and they were captured as things the
+  user said, at trust 3. With the sentinel lines it writes on the user's behalf, that was 40 %
+  of the turns this project's own memory held. Both transcript parsers strip them now.
+- **What you paste is not what you decided.** Fenced blocks and blockquotes no longer feed the
+  typed extraction — one "decision of this project" was a line of claude-mem's output pasted
+  into the chat. A denied change (`No cambié nada`) is no longer a change, a sentence ending in
+  a colon is no longer a statement, `ahora` alone is no longer a Spanish change marker, and an
+  abbreviation's full stop no longer ends a sentence (`CHECKOUT debe llamarse igual (p` was the
+  whole of a record). Fourteen decisions on five real transcripts become nine, and every
+  held-out figure is unchanged.
+- **The assistant's own reply is read when it names both values.** "Got it, switching the TLS
+  backend from openssl to rustls" identifies what a replacement replaced where no lexical test
+  can, which is the `[Z5]` ceiling. Its reach is measured and small: 27 % of recorded change
+  replies in sessions where Muninn was injecting the earlier decision, 10 % with claude-mem,
+  and 0 of 45 with no memory in the loop — delivery of the stale record is what makes its
+  retirement possible.
+- **A block stops when the matches stop.** A hit scoring worse than half the first hit's bm25
+  is not served, and a trust-3 record is never cut. It moved no cell and took the window cost
+  from 2.14 to 1.84 times claude-mem's before the catalogue put it back up.
+- **Measured and not kept:** citing the commit in a catalogue line (43/54 against 41/54,
+  p = 0.82, reverted); a 594-character startup summary instead of 1 768 (35/54 against 41/54 —
+  the registered rule would have adopted it on a non-significant test and was wrong to);
+  turning the per-prompt block off, which reaches 1.84 times the window cost and loses about
+  four answers in fifty, so it ships as `muninn config prompt-delivery off` and not as the
+  default. Pairing a replacement with what it replaces by vector is now closed on 42 pairs as
+  well as on 10: 3 ranked first, where chance is 1.
+
 - **The memory reads the repository, not only the conversation.** Every lexical rule for
   noticing that a decision was replaced runs out in the same place: 23 of 30 held-out
   replacements share no content word with the message that replaces them, and neither
