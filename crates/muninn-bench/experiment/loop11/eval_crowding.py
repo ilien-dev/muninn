@@ -65,14 +65,17 @@ def git(root: Path, *args: str) -> None:
                     *args], check=True, capture_output=True)
 
 
-def seed(muninn: str, root: Path, tdir: Path, tasks: list, pairs: list) -> dict:
+def seed(muninn: str, root: Path, tdir: Path, tasks: list, pairs: list,
+         commits: bool = True) -> dict:
     """The v4 `--code` store: the phrasings as sessions, the values in tracked files, and one
     commit per change whose subject never names the new value."""
     env = {**os.environ, "MUNINN_ROOT": str(root), "MUNINN_NO_PROJECT": "1"}
     (root / DECISIONS_DIR).mkdir(parents=True, exist_ok=True)
     for t in tasks:
-        (root / DECISIONS_DIR / f"{t['id']}.json").write_text(
-            json.dumps({"value": t["scenario"]["old"]}, indent=1) + "\n")
+        if commits:
+            (root / DECISIONS_DIR / f"{t['id']}.json").write_text(
+                json.dumps({"value": t["scenario"]["old"]}, indent=1) + "\n")
+    (root / "README.md").write_text("base\n")
     git(root, "init", "-q")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "base")
@@ -85,7 +88,7 @@ def seed(muninn: str, root: Path, tdir: Path, tasks: list, pairs: list) -> dict:
             transcript(f, f"s{i:02d}{k}", t0 + timedelta(minutes=30 * (2 * i + k)), text)
             subprocess.run([muninn, "--cwd", str(root), "ingest", str(f)], env=env,
                            capture_output=True)
-        if t["scenario"]["new"]:
+        if commits and t["scenario"]["new"]:
             (root / DECISIONS_DIR / f"{t['id']}.json").write_text(
                 json.dumps({"value": t["scenario"]["new"]}, indent=1) + "\n")
             git(root, "add", "-A")
@@ -138,12 +141,15 @@ def main() -> None:
     ap.add_argument("--tag", default="base")
     ap.add_argument("--out", default=None)
     ap.add_argument("--keep", action="store_true", help="leave the store for inspection")
+    ap.add_argument("--no-commits", action="store_true",
+                    help="the plain condition: the decisions never reach a file, so the store "
+                         "holds only what the sessions said — the grid arm that scores 18/27")
     a = ap.parse_args()
     tasks = json.load(open(GRID))["tasks"]
     pairs = json.load(open(PHRASINGS))
     root = Path(tempfile.mkdtemp(prefix=f"loop11-{a.tag}-"))
     tdir = Path(tempfile.mkdtemp(prefix="loop11-t-"))
-    env = seed(a.muninn, root, tdir, tasks, pairs)
+    env = seed(a.muninn, root, tdir, tasks, pairs, commits=not a.no_commits)
     rows = measure(a.muninn, root, env, tasks)
     n = len(rows)
     summary = {

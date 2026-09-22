@@ -2927,3 +2927,16 @@ If the floor does not move the code condition materially toward 18/27, the hones
 that the `--code` condition of this grid is not a memory problem this engine can solve by
 changing what it serves, and the next measurement is a fresh grid on unseen wording rather
 than a seventh build on these cells.
+
+## Addendum, after the registration and against the change
+
+Run after the arm was launched, on a condition this pre-registration did not name, and
+recorded because it goes the wrong way. The same replica **without** commits — the condition
+the live grid scores 18/27 on — reads: base answered 5/9, floor answered **4/9**. On
+`revoke-internal-http` the record stating "https everywhere" is not the first hit and the
+floor cuts it for scoring under half of the one above it.
+
+So the floor is not free. It protects the top of the block and will drop a correct record that
+ranks below a better-matching one. Whether that costs more than the padding it removes is what
+the seventh arm measures; if the arm comes back flat, this addendum is the reason to look at a
+floor that cannot cut a trust-3 record rather than at a seventh instruction change.
