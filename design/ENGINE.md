@@ -127,7 +127,18 @@ disparar aparece como ausencia `[G3]`.
   ejecuta el `delete` del FTS5 externo y la fila queda en `record`.
 - `record(subject, relation) WHERE invalid=0`: índice parcial para la supersesión en O(1).
 - `record(anchor_path)`: para el validador de anclas.
-- `cue(kind, key)`, `heartbeat(session_id, started_at)`.
+- `cue(kind, key, record_id, grp)`: cubriente. Una cue de directorio sobre un directorio
+  concurrido casa miles de filas y `evaluate` solo quiere el par; leerlas de la tabla costaba
+  una página por fila. La búsqueda de ancestros pasó de 4,97 ms a 0,48 ms (p99, límite 3).
+- `record(created_at DESC, id DESC) WHERE invalid=0`: el catálogo y cualquier consulta por
+  recencia leen la cabeza de este índice en vez de ordenar el conjunto activo entero. En una
+  tienda al tope del esquema ese orden costaba 3,5 ms de un hook de 10; por el índice, 0,08 ms.
+- `record(invalidated_by) WHERE invalidated_by IS NOT NULL`: el `replaces #n` del catálogo.
+- `heartbeat(session_id, started_at)`.
+
+Los dos últimos son más jóvenes que cualquier tienda en uso; `CREATE INDEX IF NOT EXISTS` en
+`schema.sql` los crea en la primera apertura de escritura, y
+`an_index_added_later_reaches_a_store_that_predates_it` lo fija.
 
 Medido: 50 000 registros → 92 MB, construido en 1,30 s; consulta BM25 top-8 1,433 ms en
 Rust `[I1]`. Escala sublineal: 144x datos, 6x latencia `[H1]`.
@@ -273,6 +284,36 @@ user: for the transport compression codec we go with zstd.
 [muninn:deadend] … algo que se intentó y falló; no repetirlo a ciegas
 [muninn:correction] … un sitio donde te corrigieron
 [muninn:episode] … un extracto literal de una sesión anterior
+```
+
+### 6.1 El catálogo, una vez por sesión
+
+`[muninn:catalog]` lista lo que hay en el registro: cada decisión, regla vigente y corrección
+activa, la más nueva primero, una línea cada una, con `replaces #n` leído de `invalidated_by` y
+`conflict` cuando otro registro activo la contradice. Un registro retirado aporta su id y nada
+de su texto, que es la regla que la línea de linaje de `why` ya seguía. Las entradas de log de
+commit quedan fuera, como en todo el camino de lectura.
+
+Su última línea dice **si es la lista entera o una página reciente de ella**, porque de eso
+depende lo que significa una ausencia. No dice cuántas faltan: contarlas exige recorrer todo el
+conjunto activo — 6 ms de un hook de 10 en una tienda al tope — y contar solo la página leída
+daba un número falso («and 107 older» con 12 405 fuera). Una cifra equivocada es peor que
+ninguna.
+
+`muninn show <id> [<id> …]` es la otra mitad: el agente pide por id en vez de esperar que una
+consulta lo alcance. Lee `served_record`, así que un id retirado no devuelve su texto.
+
+**Por qué existe.** Durante seis rejillas el motor entregó la decisión vigente en 27 celdas de
+27 y el agente actuó en 4 a 9, escribiendo «no hay decisión registrada» con la decisión
+delante. Cinco brazos registrados cambiaron lo que el bloque dice y ninguno lo movió. Un agente
+al que se le da una selección filtrada no puede distinguir una memoria que no tiene nada de una
+consulta que falló. Con el catálogo: 39 de 54 contra 25 de 54 de claude-mem, Fisher exacto
+p = 0,0105, con `off` en 0/54 `[h2h-v13]`.
+
+**Lo que cuesta:** el contexto inyectado sube a 2,504 [2,353, 2,554] veces el de claude-mem,
+que es la peor cifra que publica este motor.
+
+```
 ```
 
 Dos marcas sobre esos tipos: `[muninn:decision:conflict with #n]` cuando dos registros activos

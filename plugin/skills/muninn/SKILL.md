@@ -1,6 +1,6 @@
 ---
 name: muninn
-description: Use when a `[muninn:...]` block appears in context, when the user asks why a decision was made, when the same failure repeats, or when memory seems missing. Explains how to read Muninn blocks and when to run `muninn why` / `muninn status`.
+description: Use when a `[muninn:...]` block appears in context, when the user asks why a decision was made, when the same failure repeats, or when memory seems missing. Explains how to read Muninn blocks and the catalogue, and when to run `muninn show` / `muninn why` / `muninn status`.
 ---
 
 # Muninn
@@ -16,6 +16,16 @@ Every block carries provenance and a trust level (0–3, derived from origin, ne
 - `episode`: a literal excerpt of an earlier session (what was said, concluded, ran). Use its facts and numbers before searching or re-measuring.
 - `:conflict with #n` on any kind: two active records disagree. Ask the user; never pick by recency.
 - `unverified`: a compaction summary claimed success that no exit code supports. Re-run the check.
+
+## The catalogue
+`[muninn:catalog]` arrives once per session and lists what is on record — every active
+decision, standing rule and correction, newest first, one line each, with `replaces #n` where
+one retired another and `conflict` where two active records disagree. Its last line says
+whether it is the whole list or a recent page of it, and that is what an absence from it means:
+complete, and a subject missing from it has nothing recorded; truncated, and it may.
+
+Pull any entry in full with `muninn show <id> [<id> …]`. A retired id returns nothing, by
+design — retired records are never served.
 
 ## Asking
 `muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and ends with `sufficient` or `insufficient`. Quote records, do not paraphrase them into certainty.
