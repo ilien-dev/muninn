@@ -225,7 +225,7 @@ pub fn embed_pending(db: &Db, emb: &Embedder, rebuild: bool) -> Result<EmbedStat
 /// record of the same kind is a variant of it (a compaction summary restated, a chunk
 /// repeated across sessions): it is retired as `superseded` by the older one and never
 /// competes with it for the budget. Typed records keep their own subject rule
-/// (`semantic_duplicate`); this pass covers episodes across subjects.
+/// same (kind, subject); this pass covers records across subjects.
 pub fn retire_variants(db: &Db, new_ids: &[i64], model_id: &str) -> Result<usize> {
     let mut retired = 0usize;
     let mut sel = db.conn.prepare("SELECT v.vec, r.kind FROM record_vec v JOIN record r ON r.id = v.record_id WHERE v.record_id = ?1 AND v.model_id = ?2")?;
@@ -293,31 +293,6 @@ pub fn knn(db: &Db, query: &[f32], k: usize, model_id: &str) -> Result<Vec<Neigh
     Ok(out)
 }
 
-/// An active record with the same (kind, subject) whose vector is within `DUP_COSINE`
-/// of `vec`: the new text is a variant of it, not a new fact.
-pub fn semantic_duplicate(
-    db: &Db,
-    kind: &str,
-    subject: &str,
-    vec: &[f32],
-    model_id: &str,
-) -> Result<Option<(i64, f32)>> {
-    let mut stmt = db.conn.prepare(
-        "SELECT v.record_id, v.vec FROM record_vec v JOIN record r ON r.id = v.record_id \
-         WHERE r.invalid = 0 AND r.kind = ?1 AND r.subject = ?2 AND v.model_id = ?3 ORDER BY v.record_id",
-    )?;
-    let best = stmt
-        .query_map(rusqlite::params![kind, subject, model_id], |r| {
-            let id: i64 = r.get(0)?;
-            let blob: Vec<u8> = r.get(1)?;
-            Ok((id, dot(vec, &from_blob(&blob))))
-        })?
-        .filter_map(|r| r.ok())
-        .filter(|(_, s)| *s >= DUP_COSINE)
-        .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
-    Ok(best)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,24 +345,5 @@ mod tests {
             a.iter().all(|n| n.id != 3),
             "python grammar is not a backoff neighbour: {a:?}"
         );
-        // a near-identical restatement is a duplicate; an unrelated text is not
-        let d = semantic_duplicate(
-            &db,
-            "decision",
-            "retry.policy",
-            &emb.encode_one("retry with exponential backoff"),
-            &emb.model_id,
-        )
-        .unwrap();
-        assert!(d.is_some());
-        let n = semantic_duplicate(
-            &db,
-            "decision",
-            "retry.policy",
-            &emb.encode_one("completely unrelated sentence about gardening tools"),
-            &emb.model_id,
-        )
-        .unwrap();
-        assert!(n.is_none(), "{n:?}");
     }
 }
