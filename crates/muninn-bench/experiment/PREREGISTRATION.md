@@ -3246,7 +3246,7 @@ until that runs.
 # Pre-registration — v6: v5 again, with the deletion guard
 
 Registered 2026-09-21, before the run. Identical to v5 in every respect — same fixture, same
-arms (`off`, `muninn-floor2-fixed`, `claude-mem`), same three runs, same phrasings, same
+arms (`off`, `muninn-kept`, `claude-mem`), same three runs, same phrasings, same
 oracles, same `off` threshold of 6/27 — with one change to the engine: a deleted file retires
 nothing.
 
