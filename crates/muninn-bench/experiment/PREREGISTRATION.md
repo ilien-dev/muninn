@@ -3593,3 +3593,36 @@ One benchmark, one fixture, one competitor at one version, 54 cells an arm. It s
 neither memory has seen — Muninn is better at getting the agent to act on the current answer.
 It says nothing about the other things a memory is for, and 54 cells do not estimate a
 population.
+
+## v8's result, and a registered rule that was wrong
+
+| arm | replacement pass | injected context / claude-mem |
+|---|---|---|
+| muninn-catalog (boot summary 1 768 chars) | **41/54** | 2.587 [2.489, 2.693] |
+| muninn-terse (boot summary 594 chars) | **35/54** | **2.018 [1.858, 2.151]** |
+| claude-mem 13.24.23 | 21/54 | — |
+
+The registered rule was: *adopted only if `pass(terse) − pass(catalog)` is not significant at
+α = 0.05.* It reads **p = 0.292**, so by its own words the terse summary is adopted.
+
+**It is not adopted, and the rule is the thing that was wrong.** A null test rewards low power:
+the point estimate is six answers worse, and the same six-cell difference reads p = 0.015 at
+216 cells. "Not significant at 54 cells" is not evidence that the shorter summary costs
+nothing — it is the test failing to see a difference it was never powered to see. A
+non-inferiority question needs a margin and a powered design, and this was neither. Writing it
+as a null test was a mistake made when registering it, not a result.
+
+So the conservative reading stands: the evidence points to the shorter summary costing six of
+fifty-four answers to save 0.57× of window, and the pass rate is what the tool is for. **The
+1 768-character summary stays.** Both figures are published; nothing is re-run to get a better
+one.
+
+Worth recording beside it: the terse build still beats claude-mem, 35/54 against 21/54,
+p = 0.012. The catalogue is doing the work in both.
+
+### The window cost is therefore unresolved
+
+2.587 [2.489, 2.693] stands as Muninn's worst published figure. What v8 did establish is where
+it lives — the boot summary is a third of it and cutting it is not free. Any future attempt at
+this number has to come from somewhere that is not the instructions, and has to be designed as
+a non-inferiority test with a stated margin, not as a null test.
