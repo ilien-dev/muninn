@@ -2773,3 +2773,157 @@ This is the fifth build measured on one grid of 27 cells, each prompted by readi
 previous one's transcripts. The sequence is honest — every arm pinned and registered before
 it ran, every result published including three that went the wrong way — and it is still one
 grid. A figure from it is a reading of these 27 cells, not a replication.
+
+## Result
+
+**5/27**, against 9/27 for the fifth arm, 6/27 for the original and 18/27 for the same engine
+with no commits in the grid. Exact Fisher against `muninn-why` is 0.24 and against
+`muninn-loop8 | nocode` 9 × 10⁻⁴: with the commit log out of the hook, the code condition
+still costs almost everything the plain condition scores. Delivered in 27 cells of 27, used
+in 5.
+
+The fourth registered hypothesis about this condition, and it is wrong in a way that names
+the fifth. The arm excluded records whose subject is `commit:<hash>` — and said so, in the
+sentence above that keeps `said:change:…` records in the hook deliberately, on the grounds
+that a record stating what a file now holds is not a log entry. Counting what the cells were
+actually given says that assumption is where the loss is:
+
+| condition | arm | records delivered / cell | commit records / cell | of those, about the cell's own topic |
+|---|---|---|---|---|
+| nocode | muninn-loop8 | 4.0 | 0.2 | 0 of 6 |
+| code | muninn-loop8 | 7.9 | 5.4 | 0 of 145 |
+| code | muninn-now | 8.0 | 5.4 | 12 of 147 |
+| code | muninn-kinds | 7.8 | 5.3 | 12 of 144 |
+| code | muninn-why | 8.0 | 5.7 | 12 of 155 |
+| code | muninn-quiet | 7.3 | 4.0 | 12 of 108 |
+
+The code condition roughly doubles the block, and about nine in ten of what it adds are
+commit-confirmation records **for other decisions** — a cell asked about the TLS backend is
+given, under its own answer, four trust-2 records saying what the compression, version-scheme,
+password-hashing and async-runtime files now hold. Excluding `commit:<hash>` took 1.4 records
+per cell off that and left the rest.
+
+---
+
+# Pre-registration — loop 11: what the code condition puts in the block
+
+Registered 2026-09-21, before the harness was run for the first time. Written after reading
+the v4 `--code` transcripts (the table above), which is the observation this tests; no cell of
+this harness had been run when this was written.
+
+## Why it is offline
+
+Five builds have now been measured on one grid of 27 cells at roughly five hours a grid, and
+four of the five hypotheses were wrong. A hypothesis about what the *block* contains does not
+need an agent to test it: the block is produced by `muninn recall`, with no model anywhere in
+the path. `loop11/eval_crowding.py` rebuilds the v4 `--code` store — the same frozen phrasings
+(`h2h/v2/seed_phrasings.json`), the same ten tracked decision files, the same swap commits
+with the same uninformative subject `update dependencies` — and asks each of the nine
+replacement tasks its own cell prompt.
+
+It is a replica, not the grid: the assistant's acknowledgements are a fixed synthetic line
+rather than a model's, so absolute counts here are not the grid's counts. What it measures is
+one build against another on an identical store. A candidate that wins here still has to be
+run as a grid arm before any claim is made about the head-to-head.
+
+## Outcomes, fixed before the data
+
+Per replacement task, from the delivered block:
+
+    answered   the current value appears in it              — the gate, must stay 9/9
+    retired    the retired value appears in it              — the gate, must stay 0/9
+    rank       position of the first record stating it      — reported
+    offtopic   commit records that do not state it          — the primary outcome
+    blocks     records delivered, and the token count       — reported
+
+`base` is the current `master` build. Every candidate is reported against it on the same
+store, whatever it shows, including candidates that make `offtopic` worse.
+
+## Decision rule
+
+A candidate is carried to a grid arm only if, over the nine tasks, `answered` stays 9/9,
+`retired` stays 0/9, and `offtopic` falls. No claim about the head-to-head is made from this
+harness: a fall here is a reason to spend a grid, not a result.
+
+## Threat
+
+The primary outcome is one this session chose after seeing that the code condition's blocks
+are mostly off-topic commit records. It is not a blind test of that observation — it is a
+measurement of how far a build can move it, on a store built to reproduce it.
+
+## Result
+
+Two candidates, both measured on the same replica against the same `base`.
+
+| build | answered | retired | rank 1 | records / task | off-topic commit records / task | tokens / task |
+|---|---|---|---|---|---|---|
+| base (`07911e8`) | 9/9 | 0/9 | 9/9 | 6.3 | 4.4 | 409 |
+| rarest-term anchor | **8/9** | 0/9 | 8/9 | 1.6 | 0.0 | 96 |
+| relevance floor 0.5 | 9/9 | 0/9 | 9/9 | 2.2 | **0.6** | 139 |
+
+**The anchor fails the gate.** Requiring the question's rarest word — standard practice, and it
+takes off-topic to zero — loses the cache-eviction answer outright: the rarest word of
+*"…current recorded decision on the cache eviction policy"* is `policy`, which in this store
+occurs in exactly one place, the unrelated "https everywhere" pair. One accidental rare word
+vetoes the right record. Not carried.
+
+**The relevance floor passes.** A hit scoring worse than half the first hit's bm25 is not
+served. Off-topic commit records fall from 4.4 per task to 0.6 and the block from 409 tokens
+to 139, with the gate intact. Where it does not help is where the answer is not clearly the
+best match: `revoke-license` has no commit record of its own, so its answer scores −3.31
+against −3.09 for the intruders and everything is within half of everything.
+
+On this repository's own store the floor is **inert** — five real questions return the same
+three records and the same token counts with it and without it, because a 700-token budget
+already stops at three strong blocks. It bites only where many records tie weakly, which is
+the condition that capturing commits creates.
+
+---
+
+# Pre-registration — v4 seventh arm: a block stops when the matches stop
+
+Registered 2026-09-21, before the arm was seeded and before any of its cells ran.
+
+## What the sixth arm changed, and what reading its cells found
+
+`muninn-quiet` scored 5/27. Counting what the five code-condition arms were actually given
+says the loss is not in what they excluded but in what they kept: the code condition roughly
+doubles the block and about nine in ten of the added records are commit confirmations **for
+other decisions** (the table under the sixth arm's result). Offline, on a replica of that
+store, a question about the compression codec selects the terms `compression, value,
+decisions, decision` and four records about other decisions match on the last three alone,
+because every commit record Muninn writes contains `config/decisions/<id>.json now reads
+"value": …`. They score half what the answer scores and take four of six slots.
+
+## The arm
+
+`muninn-floor`, pinned to the commit named in `FROZEN.jsonl`: the sixth arm plus one change in
+`recall::deliver` — a hit whose bm25 is worse than half the first hit's is not served. The
+first hit always survives, so the block never becomes empty. Nothing else moves: the same
+store, the same capture, the same instructions, the same responder.
+
+Measured offline first (loop 11, above): off-topic records per task 4.4 → 0.6, block 409
+tokens → 139, with the current value still delivered in 9 tasks of 9 and the retired value in
+0 of 9.
+
+## Decision rule, fixed before the data
+
+Two contrasts, outside the registered family and labelled so: `pass(muninn-floor) −
+pass(muninn-quiet)` and `pass(muninn-floor) − pass(muninn-loop8 | nocode)`, exact Fisher, on
+the same replacement cells. The second is the one that matters: the code condition costs this
+engine 12 cells against the plain condition, and the question is how much of that a shorter,
+cleaner block returns. Reported whatever it shows.
+
+## Threat
+
+The sixth build on one grid of 27 cells. Unlike the four before it this one was not prompted
+by reading transcripts but by counting what the blocks contained, and its change was measured
+on an offline replica before the grid was spent — which makes it a better-founded guess, not
+an independent test. A figure from this grid is still a reading of these 27 cells.
+
+## What stops this line
+
+If the floor does not move the code condition materially toward 18/27, the honest reading is
+that the `--code` condition of this grid is not a memory problem this engine can solve by
+changing what it serves, and the next measurement is a fresh grid on unseen wording rather
+than a seventh build on these cells.
