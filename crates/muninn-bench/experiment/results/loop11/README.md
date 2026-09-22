@@ -110,3 +110,34 @@ the exemption returns the answer the floor lost and still delivers a shorter blo
 registered.
 
 `the_floor_never_cuts_something_the_user_said` fails without it.
+
+## The harness was measuring a path the hook does not take
+
+Everything above this heading was measured with `muninn recall`. **The hooks never call it.**
+`hook::deliver_fused` fuses `recall::recall`'s list with the cue hits and renders that;
+`recall::deliver` is the CLI's own path. The floor went into `deliver`, so it moved the CLI
+probe and nothing a cell was given.
+
+The live grid said so before this did. Fifteen cells into the seventh arm, the blocks those
+cells received read 6.7 records and 4.0 commit records each — against 7.3 and 4.0 for the arm
+before it, which is no change. The arm was stopped rather than spend three more hours
+re-measuring an unchanged engine, and the floor moved into `recall::recall`, the function both
+paths route through.
+
+Re-measured, every build through the real `UserPromptSubmit` hook on the same store:
+
+| build | condition | answered | retired | records / task | off-topic / task | tokens / task |
+|---|---|---|---|---|---|---|
+| base (`07911e8`) | code | 9/9 | 0/9 | 6.3 | 4.4 | 372 |
+| floor in `deliver` | code | 9/9 | 0/9 | 6.3 | 4.4 | 372 |
+| floor in `recall` | code | 9/9 | 0/9 | **2.2** | **0.6** | **126** |
+| base | plain | 5/9 | 5/9 | 1.8 | 0.0 | 98 |
+| floor in `recall` | plain | 5/9 | 5/9 | 1.6 | 0.0 | 84 |
+
+The middle row is the whole lesson: identical to base, to the record. A probe that is not the
+path under test reports a change that does not exist, and this one had already passed a gate,
+a test and a commit before the grid caught it.
+
+`loop11/eval_crowding.py` now drives `muninn hook UserPromptSubmit` over stdin. The tables
+above this heading are left as they were measured — they are what a `muninn recall` probe
+says, which is not what a cell receives.

@@ -2940,3 +2940,55 @@ So the floor is not free. It protects the top of the block and will drop a corre
 ranks below a better-matching one. Whether that costs more than the padding it removes is what
 the seventh arm measures; if the arm comes back flat, this addendum is the reason to look at a
 floor that cannot cut a trust-3 record rather than at a seventh instruction change.
+
+## The seventh arm was stopped, and why
+
+Fifteen of its thirty cells had run. Counting the blocks those cells received: 6.7 records and
+4.0 commit records per cell, against 7.3 and 4.0 for the arm before it — no change. The reason
+is a defect in this session's own work, not in the arm.
+
+**The floor was in a function the hooks do not call.** `hook::deliver_fused` fuses
+`recall::recall`'s list with the cue hits; `recall::deliver` is the CLI's path and nothing
+else. The offline harness probed `muninn recall`, so it measured `deliver` and reported a
+change that reached no cell. Re-run through the real `UserPromptSubmit` hook on the same
+store, the pinned arm build is **identical to base, to the record**: 6.3 records per task, 4.4
+off-topic, 372 tokens, both of them.
+
+The arm was stopped rather than spend three more hours measuring an unchanged engine, and its
+fifteen cells are not reported as a result. The floor now lives in `recall::recall`, which both
+paths route through, and the harness drives the hook over stdin. On that path: 6.3 records per
+task → 2.2, off-topic 4.4 → 0.6, 372 tokens → 126, the current value delivered in 9 tasks of 9
+and the retired value in 0 of 9; in the plain condition, no answer lost and a shorter block.
+
+This is the second time in this project a guard was written, gated, tested and committed
+against the wrong path — the schema-2 migration check was the first. Both were caught by a
+measurement rather than by review, and the general rule both point at is the one now written
+into the harness: **probe the path under test, not a convenient one beside it.**
+
+---
+
+# Pre-registration — v4 eighth arm: the relevance floor, on the path the hook takes
+
+Registered 2026-09-21, before the arm was seeded and before any of its cells ran. It replaces
+the seventh, which measured nothing.
+
+## The arm
+
+`muninn-floor2`, pinned to the build named in `FROZEN.jsonl`: the sixth arm plus the floor in
+`recall::recall` — a hit scoring worse than half the first hit's bm25 is not served, and a
+trust-3 record is never cut. Nothing else moves.
+
+Measured offline through the hook first (loop 11): 6.3 records per task → 2.2, off-topic
+4.4 → 0.6, 372 tokens → 126, gate intact in both conditions.
+
+## Decision rule, fixed before the data
+
+Two contrasts, outside the registered family and labelled so: `pass(muninn-floor2) −
+pass(muninn-quiet)` and `pass(muninn-floor2) − pass(muninn-loop8 | nocode)`, exact Fisher, on
+the same replacement cells. The second is the one that matters. Reported whatever it shows.
+
+## What stops this line
+
+If a block with the padding removed does not move the code condition materially toward 18/27,
+then the condition is not something this engine fixes by changing what it serves, and the next
+measurement is a fresh grid on unseen wording rather than a ninth build on these 27 cells.

@@ -113,13 +113,19 @@ def measure(muninn: str, root: Path, env: dict, tasks: list) -> list:
             continue
         new = t["scenario"]["new"].lower().split(" with ")[0]
         old = t["scenario"]["old"].lower()
-        p = subprocess.run([muninn, "--cwd", str(root), "--json", "recall", t["prompt"]],
-                           env=env, capture_output=True, text=True)
+        # the hook, not `muninn recall`: the hooks fuse the lexical list with the cues in
+        # `hook::deliver_fused` and never call the CLI's `deliver`. A first version of this
+        # harness probed `recall` and scored a change that reached no cell.
+        hook = json.dumps({"session_id": f"probe-{t['id']}", "cwd": str(root),
+                           "prompt": t["prompt"], "hook_event_name": "UserPromptSubmit"})
+        p = subprocess.run([muninn, "--cwd", str(root), "hook", "UserPromptSubmit"],
+                           env=env, input=hook, capture_output=True, text=True)
         try:
             d = json.loads(p.stdout or "{}")
         except json.JSONDecodeError:
             d = {}
-        text = d.get("text") or ""
+        ctx = (d.get("hookSpecificOutput") or {}).get("additionalContext")
+        text = ctx if isinstance(ctx, str) else (d.get("additionalContext") or "")
         recs = records(text)
         rank = next((i + 1 for i, r in enumerate(recs) if new in r.lower()), 0)
         out.append({
@@ -130,7 +136,7 @@ def measure(muninn: str, root: Path, env: dict, tasks: list) -> list:
             "blocks": len(recs),
             "commits": sum(bool(COMMITISH.search(r)) for r in recs),
             "offtopic": sum(bool(COMMITISH.search(r)) and new not in r.lower() for r in recs),
-            "tokens": d.get("tokens", 0),
+            "tokens": len(text) // 3,
         })
     return out
 
