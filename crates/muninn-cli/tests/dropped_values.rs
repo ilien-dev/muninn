@@ -281,3 +281,37 @@ fn a_value_removed_from_a_file_that_survives_still_retires() {
         "a value replaced in a file that still exists is still retired"
     );
 }
+
+/// The record a swap writes is keyed on the retired decision's topic *minus the value that
+/// left*. A hyphenated value is tokenised both joined and split, so filtering on one matched
+/// word kept the other half: real stores held `said:change:runtime std` — half of `async-std`
+/// — as the topic of the record that replaced it. The key is indexed and never rendered, so
+/// this is a matching defect rather than a leak, and it is still the retired value in the key
+/// of its own heir.
+#[test]
+fn a_swaps_topic_keeps_no_part_of_the_value_that_left() {
+    let tmp = project("async-std");
+    let root = tmp.path();
+    decision(root, "for the async runtime we are using async-std");
+    std::fs::write(root.join("config/stack.json"), "{\"value\": \"tokio\"}\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    let db = root.join(".muninn/muninn.db");
+    let out = Command::new("sqlite3")
+        .arg(&db)
+        .arg("SELECT subject FROM record WHERE origin='commit_linked' AND subject LIKE 'said:change:%';")
+        .output()
+        .expect("sqlite3");
+    let subjects = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    assert!(
+        !subjects.is_empty(),
+        "the swap wrote its record: {subjects}"
+    );
+    for part in ["async", "std"] {
+        assert!(
+            !subjects.split_whitespace().any(|w| w == part),
+            "no part of the retired value is the heir's topic: {subjects}"
+        );
+    }
+}
