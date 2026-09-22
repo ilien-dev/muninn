@@ -3513,3 +3513,33 @@ Run on v7's fixture with v7's `claude-mem` cells as the comparator, at v7's size
 An equivalence claim from a non-significant test is weak evidence, and at this size it is weak
 indeed: failing to detect a difference is not showing there is none. The rule is written that
 way on purpose — it makes the burden of proof fall on the change, not on keeping what is there.
+
+## The catalogue arm's four remaining failures, read
+
+Three of the four have one cause, and it is **this fixture's own final commit**. The cell's
+repository ends with `move decision config out of the tree`, and the agent reads the removal as
+a revocation:
+
+> Nothing is currently recorded for the async runtime. The project's decision config for this
+> topic (`config/decisions/revoke-async-runtime.json`) was removed from the tree in the "move
+> decision config…" commit.
+
+It is the same mistake the engine was making until today — a deleted file read as a decision
+reversed — now made by the agent instead. The fixture is identical for every arm and `off` is
+the control, so the comparison stands; what it does is cap every arm's ceiling, and it is
+recorded here rather than changed, because changing a fixture in the middle of the run it is
+being measured on is how a grid stops meaning anything. **v7 runs on it unchanged.**
+
+What is Muninn's own part in it: the catalogue renders a commit confirmation as
+`#32 decision · revoke-async-runtime: "value": "tokio"`, naming the file because the record's
+`object` is a bare source line that names nothing. When that file is no longer in the tree, the
+line reads as a decision that lived in a file that is gone — Muninn's own wording inviting the
+reading that loses the cell.
+
+### Candidate, not yet registered as an arm
+
+Render a commit confirmation by the commit that still resolves rather than by a path that may
+not: `#32 decision · "value": "tokio" · commit 8a6e622`. Deterministic, and it cites evidence
+the agent can check in the cell it is standing in. It is written down here so that if it is run
+later it is on record that it was thought of now, before v7 reported; it is **not** run before
+v7, and v7's analysis does not depend on it.
