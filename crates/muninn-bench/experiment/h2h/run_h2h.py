@@ -62,10 +62,12 @@ def next_port() -> int:
 def checkout(dest: Path, seed: bool = False) -> None:
     """`seed`: a seeding checkout, which under --code also holds one tracked file per decision.
 
-    A task cell gets the base checkout and nothing else, exactly as in every other grid. The
-    files and the commits exist only while the sessions are being seeded, because a task cell
-    whose repository contained the current value would be answerable by `grep` and would
-    measure the checkout rather than the memory — every arm would pass, `off` included."""
+    Outside `--code` a task cell gets the base checkout and nothing else, exactly as in every
+    other grid: the decisions exist only in the transcripts, so a cell cannot answer by
+    reading the repository. Under `--code` see `cell_checkout`, which gives the cell the
+    seeding checkout's own history — v4 gave it a fresh one-commit repository, and nineteen of
+    twenty-one failing cells then reasoned from the fact that the commits the memory cited did
+    not exist, which measured the fixture rather than the memory."""
     dest.mkdir(parents=True, exist_ok=True)
     arc = subprocess.run(["git", "-C", str(REPO), "archive", BASE_REF], capture_output=True, check=True).stdout
     subprocess.run(["tar", "-x", "-C", str(dest)], input=arc, check=True)
@@ -75,6 +77,29 @@ def checkout(dest: Path, seed: bool = False) -> None:
         for pair in CODE_PAIRS:
             (d / f"{pair['id']}.json").write_text(json.dumps({"value": pair["old"]}, indent=1) + "\n")
     for a in (["init", "-q"], ["add", "-A"], ["-c", "user.email=cell@h2h", "-c", "user.name=cell", "commit", "-qm", "base"]):
+        subprocess.run(["git", "-C", str(dest), *a], check=True, capture_output=True)
+
+
+def cell_checkout(dest: Path, history: Path) -> None:
+    """The checkout a task cell works in.
+
+    Without `--code`, the base checkout. With it, a copy of the seeding checkout's repository
+    with one further commit that takes `config/decisions/` out of the working tree. The cell
+    then has what a real project has — every commit the memory cites resolves, and `git show`
+    answers — and still cannot read the current value out of a file. What it *can* do is
+    `git log -p`, which is why `off` runs as a registered arm: if a cell with no memory passes
+    on this fixture, the fixture is answering the question and the condition is withdrawn."""
+    if not CODE_PAIRS or not history.exists():
+        checkout(dest)
+        return
+    shutil.rmtree(dest, ignore_errors=True)
+    shutil.copytree(history, dest)
+    d = dest / DECISIONS_DIR
+    if d.exists():
+        shutil.rmtree(d)
+    for a in (["add", "-A"],
+              ["-c", "user.email=cell@h2h", "-c", "user.name=cell", "commit", "-qm",
+               "move decision config out of the tree"]):
         subprocess.run(["git", "-C", str(dest), *a], check=True, capture_output=True)
 
 
@@ -185,6 +210,13 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
                                          "is_error": v.get("is_error"), "secs": round(secs, 1), "settle": json.loads(settled or "{}")}) + "\n")
             snap.mkdir(parents=True, exist_ok=True)
             arm_cmd(arm, "snapshot", env, str(snap))
+            if CODE_PAIRS:
+                # v5: the cells get this checkout's history, so every commit a record cites
+                # resolves where the agent can look. Kept beside the store snapshot so a
+                # resumed run finds it without re-seeding.
+                hist = work / f"hist-r{run}-{arm}"
+                shutil.rmtree(hist, ignore_errors=True)
+                shutil.copytree(co, hist)
             (snap / ".done").write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         finally:
             try:
@@ -210,7 +242,7 @@ def run_cell(cfg: dict, task: dict, arm: str, run: int, out: Path, work: Path) -
         spec: dict = {}
         started = False
         try:
-            checkout(co)
+            cell_checkout(co, work / f"hist-r{run}-{arm}")
             allowed = BASE_TOOLS
             if arm != "off":
                 arm_cmd(arm, "restore", env, str(work / f"snap-r{run}-{arm}"))
