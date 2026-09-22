@@ -274,6 +274,12 @@ impl Hit {
 /// Lexical recall: BM25 over (subject, object, body) with column weights. Retired records are
 /// absent twice over: they leave `record_fts` on invalidation (trigger, `schema.sql`) and the
 /// join is against `served_record`.
+/// A hit scoring worse than this fraction of the first hit's bm25 is padding, not an answer.
+/// Half is the loosest round value that separated the two populations on the v4 `--code`
+/// store (answers at -6.3, everything else at -4.0 and below); it is a preference over the
+/// block's remaining slots, never a reason to serve nothing — the first hit always survives.
+const RELEVANCE_FLOOR: f64 = 0.5;
+
 pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -> Result<Vec<Hit>> {
     if terms.is_empty() {
         return Ok(vec![]);
@@ -453,6 +459,18 @@ pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
 pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery> {
     let terms = select_terms(db, prompt, 8)?;
     let mut hits = recall(db, &terms, 8, exclude)?;
+    // Half as good as the best match, or it is not served. Until now the block filled to its
+    // limit whatever the scores were, so a store that holds one good answer and a dozen weak
+    // ones delivered the answer and then padded it with the weak ones. Measured on the v4
+    // `--code` store: a question about the compression codec matched its answer at -6.39 and
+    // then four records about *other* decisions at -3.09 to -2.68, which took four of six
+    // slots — they share only what every record Muninn writes about a commit shares
+    // (`config/decisions/<id>.json now reads "value": ...`). bm25 here is negative and better
+    // is more negative, so the test is against half the first hit's magnitude.
+    if let Some(best) = hits.first().map(|h| h.score) {
+        let floor = best * RELEVANCE_FLOOR;
+        hits.retain(|h| h.score <= floor);
+    }
     // F1: an unresolved conflict is served as two marked records, never ranked away.
     // The render-matched control arm of the experiment [X1] keeps the layout and
     // switches this marking off together with invalidation.
@@ -514,6 +532,59 @@ mod tests {
         assert!(
             hits.iter().any(|h| h.body.contains("LRU")),
             "and the decision is still there"
+        );
+    }
+
+    /// The block used to fill to its limit whatever the scores were, so a store holding one
+    /// good answer and a dozen records that share a word with the question delivered the
+    /// answer and then padded it with them. On the v4 `--code` store that padding was four of
+    /// six blocks, every one of them about a different decision.
+    #[test]
+    fn padding_that_scores_half_the_answer_is_not_served() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |subject: &str, body: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'commit_linked',2,'s',?1,1)",
+                    rusqlite::params![subject, body],
+                )
+                .unwrap();
+        };
+        // each states a different decision, and all of them share the scaffolding Muninn
+        // itself writes into a commit record
+        for topic in ["versioning", "hashing", "runtime", "license", "wire"] {
+            ins(
+                &format!("said:change:{topic}"),
+                &format!("config/decisions/{topic}.json now reads \"value\": \"something\"\n"),
+            );
+        }
+        ins(
+            "said:change:approach compression",
+            "config/decisions/compression.json now reads \"value\": \"zstd\"\n",
+        );
+        let terms = select_terms(
+            &db,
+            "the current recorded decision on the compression codec",
+            8,
+        )
+        .unwrap();
+        let d = deliver(
+            &db,
+            "the current recorded decision on the compression codec",
+            &HashSet::new(),
+        )
+        .unwrap();
+        assert!(
+            d.text.contains("zstd"),
+            "the answer is served: {terms:?}\n{}",
+            d.text
+        );
+        assert!(
+            !d.text.contains("hashing") && !d.text.contains("versioning"),
+            "and the decisions it did not ask about are not: {terms:?}\n{}",
+            d.text
         );
     }
 
