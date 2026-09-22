@@ -95,13 +95,40 @@ fn is_tagged(s: &str) -> bool {
 
 /// Sentences end at a newline, or at `.`, `!`, `;` followed by whitespace — so
 /// `CLAUDE.md` and `v1.1` stay whole.
+/// The word before this byte, letters only, or empty when there is none.
+fn word_before(b: &[u8], i: usize) -> &[u8] {
+    let mut j = i;
+    while j > 0 && b[j - 1].is_ascii_alphabetic() {
+        j -= 1;
+    }
+    &b[j..i]
+}
+
+/// The first non-space byte after this one.
+fn next_visible(b: &[u8], i: usize) -> Option<u8> {
+    b[i + 1..]
+        .iter()
+        .find(|c| !c.is_ascii_whitespace())
+        .copied()
+}
+
 fn split_sentences(s: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let b = s.as_bytes();
     for (i, &c) in b.iter().enumerate() {
+        // An abbreviation's full stop is not the end of a sentence. This project's own store
+        // holds `CHECKOUT debe llamarse igual (p` — the whole of a record, cut at the `p.` of
+        // `p. ej.` — and the same break splits `e.g.`, `i.e.`, `vs.` and `cf.`. A stop that
+        // closes a word of three letters or fewer *and* is not followed by a capital is an
+        // abbreviation: what comes after `ej.` is a backtick, not a lowercase letter, and what
+        // comes after `así no.` is `Nunca`, which is where a sentence really does begin.
+        let abbrev = c == b'.'
+            && (1..=3).contains(&word_before(b, i).len())
+            && next_visible(b, i).is_some_and(|n| !n.is_ascii_uppercase());
         let end = c == b'\n'
             || (matches!(c, b'.' | b'!' | b';')
+                && !abbrev
                 && b.get(i + 1).is_none_or(|n| n.is_ascii_whitespace()));
         if end {
             let piece = s[start..i].trim();
@@ -1149,5 +1176,32 @@ mod tests {
             ..Default::default()
         });
         assert!(extract(&s2, "abcdef12").iter().all(|x| x.kind != "deadend"));
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::split_sentences;
+
+    /// An abbreviation's full stop is not a sentence boundary. This project's own store holds
+    /// `CHECKOUT debe llamarse igual (p` as the whole of a record — cut at the `p.` of
+    /// `p. ej.` — which is a record that says nothing and a catalogue line spent on it.
+    #[test]
+    fn an_abbreviation_does_not_end_a_sentence() {
+        let s = split_sentences("CHECKOUT debe llamarse igual (p. ej. `gin`) en seed y en tarea");
+        assert_eq!(s.len(), 1, "{s:?}");
+        assert!(s[0].contains("en tarea"), "{s:?}");
+
+        let e = split_sentences("Use tokio, e.g. for the runtime, and keep it");
+        assert_eq!(e.len(), 1, "{e:?}");
+
+        // and a real boundary still is one: the next word is capitalised
+        let r = split_sentences("No, así no. Nunca uses pkill en bash.");
+        assert_eq!(r.len(), 2, "{r:?}");
+        assert!(r[1].starts_with("Nunca"), "{r:?}");
+
+        // a stop after a long word is a boundary whatever follows it
+        let l = split_sentences("we switched to rustls. openssl is gone");
+        assert_eq!(l.len(), 2, "{l:?}");
     }
 }
