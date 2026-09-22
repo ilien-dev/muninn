@@ -3665,3 +3665,22 @@ mistake.
 
 Registered by the author after reading the cells it is meant to fix, on the same 54 cells those
 failures came from. It is a fix aimed at an observed failure, not a blind test of one.
+
+## v9's result — not adopted, and reverted
+
+| arm | replacement pass | injected context / claude-mem |
+|---|---|---|
+| muninn-catalog | 41/54 | 2.587 [2.489, 2.693] |
+| muninn-cited (the commit named in the line) | 43/54 | 2.648 [2.541, 2.763] |
+
+Registered superiority contrast: **exact Fisher p = 0.817**. Two cells is noise, and the line
+costs slightly more window. The rule required significance in its favour; it is not met, so the
+change **does not ship and was reverted from `master`**, where it had been committed labelled
+unmeasured so the work would not be lost.
+
+It was a good reading of three failing cells and it is not a defect fixed: the agent that reads
+the fixture's removal commit as a revocation goes on doing so with the commit hash in front of
+it. What the arm shows is that the catalogue line's wording is not what decides those cells.
+
+This is the third registered hypothesis in this project to be built, measured and thrown away
+(after the prefix back-off and the bare-number quantity path), and the count is kept on purpose.
