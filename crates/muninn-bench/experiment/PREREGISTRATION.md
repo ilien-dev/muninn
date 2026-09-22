@@ -2992,3 +2992,67 @@ the same replacement cells. The second is the one that matters. Reported whateve
 If a block with the padding removed does not move the code condition materially toward 18/27,
 then the condition is not something this engine fixes by changing what it serves, and the next
 measurement is a fresh grid on unseen wording rather than a ninth build on these 27 cells.
+
+## Result
+
+**6/27** — the number the first arm scored, before any of it. Exact Fisher against
+`muninn-loop8` is 1, against `muninn-quiet` 1, against `claude-mem` 2.7 × 10⁻⁵.
+
+The change reached the cells and did what it was built to do. Counted on all 27:
+
+| arm | records / cell | commit records / cell | of those, on the cell's own topic |
+|---|---|---|---|
+| muninn-loop8 | 7.9 | 5.4 | 0 of 145 |
+| muninn-quiet | 7.3 | 4.0 | 12 of 108 |
+| muninn-floor2 | **3.7** | **2.0** | **12 of 54** |
+
+Half the block, half the commit records, and the share of them that is about the cell's own
+question went from one in nine to two in nine. The pass rate did not move by one cell.
+
+Delivered in 27 cells of 27, used in 6.
+
+## The registered stopping condition is met
+
+The six code-condition arms read **6, 4, 7, 9, 5, 6** against 18/27 for the same engine with
+no commits in the grid and 22/27 for claude-mem. Five of them changed what the block contains
+or how it is worded; one changed the responder. None moved it. The pre-registration for this
+arm said what that means, before the data:
+
+> If a block with the padding removed does not move the code condition materially toward
+> 18/27, then the condition is not something this engine fixes by changing what it serves.
+
+So this line is closed. **It is not the technical ceiling of the tool** — it is the ceiling of
+one design decision, and reading claude-mem's own cells says which one.
+
+## What the competitor's cells show, and it is not a better retrieval
+
+claude-mem does not deliver the decision. It delivers an **index of all of them**, sixteen
+lines, every session:
+
+```
+4 3:27p ⚖ OpenSSL Selected as TLS Backend
+5  "    ⚖ TLS Backend Changed from OpenSSL to rustls
+```
+
+The agent then calls `get_observations([4, 5])` and receives a structured record whose facts
+read "Prior decision selected OpenSSL as TLS backend" and "New decision replaces OpenSSL with
+rustls".
+
+Three differences from what Muninn does, and only the first needs a model:
+
+1. **The titles are written by `claude-haiku-4-5` at write time.** Out of scope here by
+   constraint, and the reason Muninn delivers `user: Let's use rustls instead` — the utterance,
+   which says neither what it replaced nor that it is current.
+2. **Nothing is selected away.** The agent sees that #4 and #5 both exist and that #5 is later.
+   Muninn pushes a filtered selection and never shows what it did not pick, so an agent has no
+   way to know whether silence means "nothing recorded" or "not retrieved". Every Muninn arm's
+   agent went looking in the checkout two to three times as often as claude-mem's — 5.4 against
+   2.1 per cell on this arm — which is what you do when you cannot tell those two apart.
+3. **The agent pulls.** It chose the ids. Muninn pushes, and `muninn why` requires the agent to
+   guess a question that matches.
+
+Two and three are deterministic, and Muninn already holds what they need: `subject` and
+`object` carry the topic words and the stated value, `invalidated_by` names which record
+retired which, and the commit capture's own `Swap` struct holds the value that left and the
+value that arrived. That is the next pre-registration, and it is a different design rather
+than a seventh coat of paint on this one.
