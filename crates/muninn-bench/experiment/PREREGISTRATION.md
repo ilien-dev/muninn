@@ -3775,3 +3775,50 @@ Written by the author after reading the cells it is meant to fix. It is also the
 attempt in this project to move a number by changing what Muninn *tells* the agent; five of the
 first six did nothing, and the one that worked (v8, in reverse) only showed that the text is
 not free to remove. That prior is against this arm.
+
+---
+
+# Pre-registration — the closing suite: what ships is what was measured
+
+Registered 2026-09-22, before any cell of it ran, while v10 was still seeding.
+
+## Why it exists
+
+v7's claim — 41/54 against claude-mem's 21/54, p = 1.85 × 10⁻⁴ — was measured on a build that
+no longer exists. Since then the read path has changed three times: the session catalogue now
+marks a record another active one contradicts, its last line says whether the list is complete
+instead of giving a count that was wrong, and four scale defects were fixed in the hooks. Each
+change is gated and tested, and none of them was measured on the grid the claim rests on.
+
+**A claim about a build is only a claim about that build.** The suite below re-measures the
+head-to-head on `master` and, in the same pass, decides the changes that are still candidates.
+
+## The arms, and the order they run in
+
+All on v7's fixture (`--code`, the cell keeps the seeding checkout's history with
+`config/decisions/` removed in a final commit), six runs, 54 replacement cells per arm, the same
+frozen phrasings and Gate 3 oracles, `off` as the validity control at its 12/54 threshold.
+
+1. **`muninn-now2`** — `master` as it stands. *Confirmatory:* `pass − pass(claude-mem)`, exact
+   Fisher, α = 0.05. This is the claim that ships. If it does not reach 0.05, the public claim
+   drops back to "not shown" and v7 is reported as a result that did not survive its own
+   codebase.
+2. **`muninn-stands`** (already pinned) — the two sentences saying a missing file is not a
+   retirement. *Superiority* against `muninn-catalog`, α = 0.05. Adopted only if significant
+   and in its favour.
+3. **`muninn-noprompt`** — `master` with `prompt-delivery off`. Two outcomes, both fixed here:
+   the injected-context ratio against claude-mem (the point of it) and
+   `pass − pass(muninn-now2)`, exact Fisher. **Adopted only if the context ratio falls below
+   2.0 and the pass contrast is not significant *and* its point estimate is not lower.** The
+   third clause is there because v8's rule was written without it and would have shipped a
+   change costing six answers.
+4. **`agentmemory`** — the third competitor, on the current fixture and the current build.
+   Reported, not confirmatory: it was beaten on v1 and v2 by a Muninn that no longer exists.
+
+`claude-mem` is re-seeded in the same grid; v7's cells are not reused.
+
+## What stops this line
+
+If `muninn-now2` holds the claim and every candidate above fails its own rule, then the shipped
+build is the one that is measured, the remaining weaknesses are the published ones, and the
+next thing worth doing is not another arm on this grid.
