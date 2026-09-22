@@ -3822,3 +3822,38 @@ frozen phrasings and Gate 3 oracles, `off` as the validity control at its 12/54 
 If `muninn-now2` holds the claim and every candidate above fails its own rule, then the shipped
 build is the one that is measured, the remaining weaknesses are the published ones, and the
 next thing worth doing is not another arm on this grid.
+
+## v10's result — the plain condition
+
+Fixture valid by its own control: `off` **0/54**, against an invalidating threshold of 12/54.
+
+| arm | replacement pass | retired value written |
+|---|---|---|
+| muninn-catalog | **39/54** | 15/54 |
+| claude-mem 13.24.23 | 33/54 | 13/54 |
+| off | 0/54 | 2/54 |
+
+Registered contrast: exact Fisher **p = 0.308**. By the rule fixed before the data, **this is
+not shown**: a tie stays a tie. What changed is the side the point estimate sits on — the last
+measurement of this condition was 18/27 against 20/27, behind; it is now 39/54 against 33/54,
+ahead, and neither reaches 0.05.
+
+Secondary, as registered: delivered and used 39, delivered and not used 9, not delivered 6.
+The agent asked its memory 0.3 times a cell against claude-mem's 1.3 and went to the checkout
+1.5 times against 2.7 — it had less reason to look.
+
+### How the two tools fail here is not the same failure
+
+| arm | failing cells | of which wrote the retired value |
+|---|---|---|
+| muninn-catalog | 15 | **14** |
+| claude-mem | 21 | 4 |
+
+Almost every Muninn failure in this condition is a stale value served as current: the
+conversational retirement did not fire, both records stayed active, and the agent chose the
+older one. claude-mem fails more often and differently — it does not answer.
+
+That is `[Z5]`, the lexical ceiling, in one column: with no commit to corroborate it, a
+replacement that shares no content word with what it replaces is not matched to it, and 23 of
+30 held-out replacements share none. Loop 8 measures conversation-only retirement at 17/30 and
+this is what that costs on live cells.
