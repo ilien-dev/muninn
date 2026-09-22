@@ -469,7 +469,7 @@ pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery
     // is more negative, so the test is against half the first hit's magnitude.
     if let Some(best) = hits.first().map(|h| h.score) {
         let floor = best * RELEVANCE_FLOOR;
-        hits.retain(|h| h.score <= floor);
+        hits.retain(|h| h.score <= floor || h.trust >= 3);
     }
     // F1: an unresolved conflict is served as two marked records, never ranked away.
     // The render-matched control arm of the experiment [X1] keeps the layout and
@@ -584,6 +584,46 @@ mod tests {
         assert!(
             !d.text.contains("hashing") && !d.text.contains("versioning"),
             "and the decisions it did not ask about are not: {terms:?}\n{}",
+            d.text
+        );
+    }
+
+    /// The floor protects the top of the block, so on its own it drops a correct record that
+    /// ranks below a better-matching one — measured, on the plain condition of the same
+    /// replica, as one answer lost. What the user said outranks how well it matches.
+    #[test]
+    fn the_floor_never_cuts_something_the_user_said() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |subject: &str, trust: i64, body: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?3,?3,'user_said',?2,'s',?1,1)",
+                    rusqlite::params![subject, trust, body],
+                )
+                .unwrap();
+        };
+        // the better match says nothing; the answer is the weaker match, and the user said it
+        ins(
+            "said:state:internal http hosts plain",
+            1,
+            "Architecture allows plain http for internal hosts, internal hosts only\n",
+        );
+        ins(
+            "said:change:internal exception",
+            3,
+            "user: https everywhere, no plaintext exception\n",
+        );
+        let d = deliver(
+            &db,
+            "the current recorded decision on internal hosts",
+            &HashSet::new(),
+        )
+        .unwrap();
+        assert!(
+            d.text.contains("https everywhere"),
+            "the user's own decision survives the floor:\n{}",
             d.text
         );
     }
