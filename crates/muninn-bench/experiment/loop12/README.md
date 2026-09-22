@@ -39,3 +39,27 @@ trigger, 27/30) and the assistant's own reply when it names both values (21% of 
 
 Raw: `name_cosine.txt`, `dev_phrasings.json`, `scenarios.json`, `generation_prompt.txt`,
 `generation_raw.json`.
+
+## And a second thing this set measured, by accident
+
+The ack bridge (`extract::ack_replacement`) was justified by "21% of recorded replies state the
+pair". That figure was right and the reading of it was wrong. Asking a model to reply to these
+45 change messages — first in isolation, then with the earlier message in its context — gives
+**0 of 45** replies that name the value being replaced. It says "switching to Supavisor", never
+"from PgBouncer to Supavisor".
+
+Splitting the recorded grid replies by what was in the session says why:
+
+| the session had | change replies stating the pair |
+|---|---|
+| Muninn injecting the earlier decision | **168 of 630 — 27%** |
+| claude-mem | 37 of 360 — 10% |
+| no memory at all (this set) | **0 of 45 — 0%** |
+
+An assistant names the value it is replacing when something put that value in front of it. So
+the bridge is enabled by delivery, and the case it fires on is the failing one exactly: the
+stale record was served, the reply named it, and it is retired next time the transcript is
+ingested. It is not a property of models in general and it should never have been written down
+as one.
+
+Raw: `acks_no_memory.json`, `acks_in_session.json`, `ack_prompt.txt`, `ack_prompt2.txt`.

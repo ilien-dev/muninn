@@ -13,6 +13,8 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     pub kind: &'static str,
+    /// What the assistant said back in the same turn. Empty unless this is a change.
+    pub ack: String,
     pub subject: String,
     pub relation: String,
     pub object: String,
@@ -116,7 +118,13 @@ fn split_sentences(s: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let b = s.as_bytes();
+    let mut depth = 0i32;
     for (i, &c) in b.iter().enumerate() {
+        match c {
+            b'(' => depth += 1,
+            b')' => depth = (depth - 1).max(0),
+            _ => {}
+        }
         // An abbreviation's full stop is not the end of a sentence. This project's own store
         // holds `CHECKOUT debe llamarse igual (p` — the whole of a record, cut at the `p.` of
         // `p. ej.` — and the same break splits `e.g.`, `i.e.`, `vs.` and `cf.`. A stop that
@@ -126,9 +134,13 @@ fn split_sentences(s: &str) -> Vec<&str> {
         let abbrev = c == b'.'
             && (1..=3).contains(&word_before(b, i).len())
             && next_visible(b, i).is_some_and(|n| !n.is_ascii_uppercase());
+        // Nor is a stop inside an unclosed parenthesis: this store holds an invariant that
+        // begins `…'`) inyectados en evento`, the tail of a sentence whose opening bracket was
+        // split away from it. A newline still ends a line whatever is open.
         let end = c == b'\n'
             || (matches!(c, b'.' | b'!' | b';')
                 && !abbrev
+                && depth == 0
                 && b.get(i + 1).is_none_or(|n| n.is_ascii_whitespace()));
         if end {
             let piece = s[start..i].trim();
@@ -154,6 +166,7 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
         let body = redact(&format!("user: {}\n", truncate_chars(up, 900)));
         out.push(Candidate {
             kind: "correction",
+            ack: String::new(),
             subject: format!("correction:{}#{}", &sid[..sid.len().min(8)], t.index),
             relation: "user_said".into(),
             object: redact(&first_line(up, 160)),
@@ -176,6 +189,7 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
         }
         out.push(Candidate {
             kind: "invariant",
+            ack: String::new(),
             subject: key,
             relation: "must".into(),
             object: redact(sent),
@@ -598,6 +612,87 @@ pub fn names_new_value(old: &str, new: &str) -> bool {
 }
 
 /// `replaces` on two texts, ignoring the label words they have in common.
+/// The value an acknowledgement says was replaced, when it says so in so many words.
+///
+/// `[Z5]`: 23 of 30 held-out replacements share no content word with what they replace, so no
+/// lexical test can pair them, and on the plain head-to-head 14 of Muninn's 15 failing cells
+/// were a stale value served as current. But the assistant's reply in that same turn routinely
+/// names both — "Got it — switching the TLS backend from openssl to rustls" — and that reply
+/// is already captured. This reads only the shape that states a pair: `from X to Y`,
+/// `X instead of Y`, `de X a Y`, `en vez de X`. Nothing is inferred from words merely sharing a
+/// sentence; if the ack does not say it, this returns nothing.
+///
+/// `new_object` is what the user's own sentence decided. The pair is only used when the ack's
+/// *to* side is part of it, which is what ties the sentence to this change rather than to some
+/// other one the assistant mentioned.
+pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
+    static TWO: OnceLock<Vec<Regex>> = OnceLock::new();
+    static ONE: OnceLock<Vec<Regex>> = OnceLock::new();
+    // two-sided: the replaced value first, the replacement second
+    let two = TWO.get_or_init(|| {
+        [
+            r"(?i)\bfrom\s+([\w./@+-]{2,40})\s+(?:to|over to|across to)\s+([\w./@+-]{2,40})",
+            r"(?i)\breplac(?:e|ed|ing)\s+([\w./@+-]{2,40})\s+with\s+([\w./@+-]{2,40})",
+            r"(?i)\bde\s+([\w./@+-]{2,40})\s+a\s+([\w./@+-]{2,40})",
+        ]
+        .iter()
+        .map(|p| Regex::new(p).unwrap())
+        .collect()
+    });
+    // one-sided: only the replaced value is named, so what ties the sentence to this decision
+    // is the replacement appearing *before* the phrase
+    let one = ONE.get_or_init(|| {
+        [
+            r"(?i)\binstead of\s+([\w./@+-]{2,40})",
+            r"(?i)\b(?:en vez de|en lugar de)\s+([\w./@+-]{2,40})",
+        ]
+        .iter()
+        .map(|p| Regex::new(p).unwrap())
+        .collect()
+    });
+    let newn: Vec<String> = topic_words(new_object);
+    let norm = |w: &str| {
+        w.trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase()
+    };
+    let names_new = |t: &str| {
+        let low = t.to_lowercase();
+        newn.iter().any(|w| low.contains(w.as_str()))
+    };
+    let usable = |gone: String| {
+        (gone.len() >= 2 && !STOP.contains(&gone.as_str()) && !newn.contains(&gone)).then_some(gone)
+    };
+    for re in two {
+        for cap in re.captures_iter(ack) {
+            let gone = norm(cap.get(1)?.as_str());
+            let arrived = norm(cap.get(2)?.as_str());
+            // the pair has to be about *this* decision, or an assistant mentioning some other
+            // migration in passing would retire a record nobody touched
+            if !newn
+                .iter()
+                .any(|w| *w == arrived || arrived.contains(w.as_str()))
+            {
+                continue;
+            }
+            if let Some(g) = usable(gone) {
+                return Some(g);
+            }
+        }
+    }
+    for re in one {
+        for cap in re.captures_iter(ack) {
+            let m = cap.get(0)?;
+            if !names_new(&ack[..m.start()]) {
+                continue;
+            }
+            if let Some(g) = usable(norm(cap.get(1)?.as_str())) {
+                return Some(g);
+            }
+        }
+    }
+    None
+}
+
 pub fn replaces_text(old: &str, new: &str, announces_change: bool) -> bool {
     let (lo, ln) = (label_words(old), label_words(new));
     let common: Vec<String> = lo.into_iter().filter(|w| ln.contains(w)).collect();
@@ -653,6 +748,11 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
         }
         out.push(Candidate {
             kind: "decision",
+            ack: if change {
+                t.assistant_text.clone()
+            } else {
+                String::new()
+            },
             // the supersession key is the content-word set; the flag rides in the subject
             subject: format!(
                 "said:{}:{}",
@@ -681,6 +781,7 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
             out.truncate(before);
             out.push(Candidate {
                 kind: "decision",
+                ack: t.assistant_text.clone(),
                 subject: format!("said:change:{}", words.join(" ")),
                 relation: "user_decision".into(),
                 object: redact(&object),
@@ -719,6 +820,7 @@ fn commit_candidates(t: &Turn, out: &mut Vec<Candidate>) {
             };
             out.push(Candidate {
                 kind: "decision",
+                ack: String::new(),
                 subject: format!("commit:{short}"),
                 relation: "is".into(),
                 object: redact(truncate_chars(msg, 160)),
@@ -802,6 +904,7 @@ fn deadend_candidates(session: &Session, out: &mut Vec<Candidate>) {
                 .unwrap_or_else(|| "error".into());
             out.push(Candidate {
                 kind: "deadend",
+                ack: String::new(),
                 subject: format!("cmd:{}", h.cmd),
                 relation: "tried_and_failed".into(),
                 object: format!("exit {exit}, {} failed run(s)", h.fails),
@@ -1203,5 +1306,90 @@ mod split_tests {
         // a stop after a long word is a boundary whatever follows it
         let l = split_sentences("we switched to rustls. openssl is gone");
         assert_eq!(l.len(), 2, "{l:?}");
+
+        // and a stop inside an unclosed bracket keeps the tail with its own sentence
+        let b = split_sentences("the oracle (see docs/spec.md. it is hidden) fires on merge");
+        assert_eq!(b.len(), 1, "{b:?}");
+        assert!(b[0].starts_with("the oracle"), "{b:?}");
+    }
+}
+
+#[cfg(test)]
+mod ack_tests {
+    use super::ack_replacement;
+
+    /// `[Z5]`: 23 of 30 held-out replacements share no content word with what they replace, so
+    /// no lexical test pairs them, and on the plain head-to-head 14 of Muninn's 15 failing
+    /// cells were a stale value served as current. The assistant's reply in the same turn
+    /// sometimes names both, and how often depends on what it was shown — measured on 1 035
+    /// replies recorded by earlier grids, written before this existed:
+    ///
+    ///     with Muninn injecting the earlier decision   168 of 630   27%
+    ///     with claude-mem in the session                37 of 360   10%
+    ///     with no memory at all (loop 12, 45 pairs)      0 of  45    0%
+    ///
+    /// So the mechanism is enabled by delivery: an assistant names the value it is replacing
+    /// when something put that value in front of it. That is the failing case exactly — the
+    /// stale record was served — and it is why the reach is not a property of models in
+    /// general, and why it is worth having.
+    #[test]
+    fn an_acknowledgement_that_names_both_values_says_which_one_went() {
+        let f = |ack: &str, new: &str| ack_replacement(ack, new);
+        assert_eq!(
+            f(
+                "Got it, switching the TLS backend from openssl to rustls.",
+                "Let's use rustls instead"
+            ),
+            Some("openssl".into())
+        );
+        assert_eq!(
+            f(
+                "Got it, switching to argon2id for password hashing instead of bcrypt.",
+                "Going with argon2id for better security"
+            ),
+            Some("bcrypt".into())
+        );
+        assert_eq!(
+            f(
+                "Vale, cambiamos de gzip a zstd para la compresión.",
+                "Cambiamos a zstd"
+            ),
+            Some("gzip".into())
+        );
+    }
+
+    /// The shapes that say nothing are the majority, and they must stay silent rather than
+    /// guess: a retirement nobody stated is the worst thing this can do.
+    #[test]
+    fn an_acknowledgement_that_names_only_the_new_value_says_nothing() {
+        assert_eq!(
+            ack_replacement(
+                "Got it, switching to tokio.",
+                "Actually tokio has a better ecosystem"
+            ),
+            None
+        );
+        assert_eq!(
+            ack_replacement(
+                "Got it, using HTTPS everywhere with no plaintext exceptions.",
+                "https everywhere"
+            ),
+            None
+        );
+        assert_eq!(ack_replacement("Noted.", "Let's use rustls instead"), None);
+    }
+
+    /// And a pair about something else is not this decision's pair: the replacement side has to
+    /// be what the user actually chose, or an assistant mentioning an unrelated migration in
+    /// passing would retire a record nobody touched.
+    #[test]
+    fn a_pair_about_another_change_is_not_this_ones() {
+        assert_eq!(
+            ack_replacement(
+                "Got it — rustls it is. Unrelated: we moved from webpack to vite last week.",
+                "Let's use rustls instead"
+            ),
+            None
+        );
     }
 }
