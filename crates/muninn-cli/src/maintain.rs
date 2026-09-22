@@ -300,6 +300,14 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
     let mut commits: Vec<Commit> = Vec::new();
     let mut hunk = Hunk::default();
     let mut file = String::new();
+    // A file whose destination is /dev/null was deleted, and a value that disappeared with
+    // its file is not evidence that the decision changed — the file may have been moved,
+    // renamed past git's similarity threshold, or split. Retiring on it loses a decision
+    // with no heir: measured on the v5 grid, one commit removing `config/decisions/` retired
+    // five live decisions, four of them the only record of their answer, and the cells that
+    // asked those four questions were then given nothing. False retirement is the worst thing
+    // a memory can do, and loop 8's gate is 0/30; a deleted file buys the conservative side.
+    let mut file_gone = false;
     let max_lines = if first_pass {
         FIRST_PASS_DIFF_LINES
     } else {
@@ -339,6 +347,12 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         if let Some(path) = line.strip_prefix("+++ b/") {
             close_hunk(&mut commits, &mut hunk, &file);
             file = path.trim().to_string();
+            file_gone = false;
+            continue;
+        }
+        if line.starts_with("+++ /dev/null") {
+            close_hunk(&mut commits, &mut hunk, &file);
+            file_gone = true;
             continue;
         }
         if line.starts_with("@@")
@@ -350,6 +364,9 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             continue;
         }
         if let Some(rest) = line.strip_prefix('-') {
+            if file_gone {
+                continue;
+            }
             code_tokens(rest, &mut commits.last_mut().unwrap().removed);
             code_tokens(rest, &mut hunk.out);
             hunk.was = rest.trim().to_string();
