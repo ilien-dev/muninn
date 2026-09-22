@@ -3626,3 +3626,42 @@ p = 0.012. The catalogue is doing the work in both.
 it lives — the boot summary is a third of it and cutting it is not free. Any future attempt at
 this number has to come from somewhere that is not the instructions, and has to be designed as
 a non-inferiority test with a stated margin, not as a null test.
+
+---
+
+# Pre-registration — v9: the catalogue cites the commit
+
+Registered 2026-09-21, before the arm ran. The change was written down as a candidate in this
+file **before v7 reported**, in "The catalogue arm's four remaining failures, read".
+
+## The change
+
+A commit confirmation's catalogue line cites the commit it was read from, beside the file:
+
+    #35 decision · revoke-version-scheme: "value": "semver" · commit b0198db
+
+Three of the catalogue arm's four remaining v6 failures were an agent reading the fixture's own
+removal commit as a revocation — "the project's decision config for this topic … was removed
+from the tree". The file the line names is not in that tree; the commit is. Nothing else
+changes, and it costs about 90 characters across a whole catalogue.
+
+The record's own subject would be a better subject line and cannot be used: `said:change:backend
+openssl rustls tls` contains the retired value, and printing it would repeat the leak the
+`topic:` line was removed for.
+
+## Decision rule, fixed before the data
+
+`muninn-cited` on v7's fixture, at v7's size, against v7's own `muninn-catalog` cells.
+
+**Primary:** `pass(muninn-cited) − pass(muninn-catalog)`, exact Fisher. This is a
+**superiority** test, not the null test v8 got wrong: the change is adopted only if it is
+significant at α = 0.05 **and** in its favour. A change that cannot be shown to help does not
+ship, which is the opposite burden to v8's rule and the reason that rule is now on record as a
+mistake.
+
+**Secondary, reported:** the injected-context ratio, which this should barely move.
+
+## Threat
+
+Registered by the author after reading the cells it is meant to fix, on the same 54 cells those
+failures came from. It is a fix aimed at an observed failure, not a blind test of one.
