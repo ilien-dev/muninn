@@ -3937,3 +3937,58 @@ against `muninn-now2`, and `muninn-stands` is now the better base. Shipping both
 measuring the pair is the "five changes at once" that this whole suite exists to avoid. Stage 3
 runs `master` **with the sentences and the prompt block off** against the same cells, and that
 decides the default.
+
+## The closing suite, stage 3 — what ships, and the third competitor
+
+| arm | replacement pass | injected context / claude-mem |
+|---|---|---|
+| **muninn-stands** | **51/54** | 2.593 [2.468, 2.694] |
+| muninn-final (stands + prompt block off) | 45/50 | **1.840 [1.826, 1.841]** |
+| muninn-noprompt (now2 + prompt block off) | 45/54 | 1.754 [1.747, 1.761] |
+| muninn-now2 | 39/54 | 2.504 [2.353, 2.554] |
+| claude-mem 13.24.23 | 25/54 | — |
+| **agentmemory 0.9.29** | **1/49** | — |
+| off | 0/54 | — |
+
+Nine cells of run 5 are missing, four from `muninn-final` and five from `agentmemory`: the
+launcher ended before that run finished. Both arms lose cells from the same run, and neither
+contrast is close enough for nine cells to reach.
+
+### `prompt-delivery off` is not adopted, and the third clause is why
+
+The registered rule: adopted only if the context ratio falls below 2.0, **and** the pass
+contrast is not significant, **and** its point estimate is not lower. On the pair that would
+actually ship:
+
+    context   1.840 [1.826, 1.841]   below 2.0      ✓
+    pass      45/50 vs 51/54, p = 0.48, not significant  ✓
+    estimate  0.900 against 0.944 — lower           ✗
+
+Two of three. **It does not ship**, and the switch stays with its default on. That third clause
+exists because v8's rule was written without it and would have adopted a change costing six
+answers on a non-significant test; this is the same shape and it is caught this time.
+
+The window cost therefore stands where it is. What the arm establishes is what the option is
+worth if anyone wants it: `muninn config prompt-delivery off` trades about four answers in
+fifty for a third of the injected context, and both figures are measured.
+
+### The third competitor
+
+`agentmemory 0.9.29`, on the current fixture and the current build: **1/49** against
+`muninn-stands`' 51/54, exact Fisher **p = 1.6 × 10⁻²⁴**. It was last measured on v1 and v2
+against a Muninn that no longer exists (12/27 and 9/27 then); this is the first time it has
+faced the shipped build on the shipped fixture.
+
+### Where the head-to-head lands
+
+| | pass | against muninn-stands |
+|---|---|---|
+| **muninn-stands** | **51/54** | — |
+| claude-mem 13.24.23 | 25/54 | p = 3.3 × 10⁻⁸ |
+| agentmemory 0.9.29 | 1/49 | p = 1.6 × 10⁻²⁴ |
+| off (no memory) | 0/54 | — |
+
+`mem0` and the harness's native memory are not here, for reasons measured rather than assumed:
+Mem0's own extractor returns `{"facts": []}` on 0 of 4 sentences of this kind under its own
+documented local model, and Claude Code's auto memory does not operate in the `-p` sessions
+every cell of every arm is.
