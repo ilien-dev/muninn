@@ -222,7 +222,7 @@ fn change_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch(?:ed|ing)\b|\bswitch\b.{0,20}?\b(?:to|over|back|out)\b|\bswap(?:ped|ping)\b|\bswap\b.{0,30}?\b(?:to|for|with|out|in)\b|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat(?:e|ed|es|ing)\b|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac(?:e|ed|es|ing)\b|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bon second thoughts?\b|\bsecond thoughts\b|\breconsider|\bon reflection\b|\brethink|\bchang(?:ed|ing) (?:my|our) minds?\b|\bchanging course\b|\bwithdraw|\bretract|\bnever ?mind\b|\bforget (?:it|that|this|about)\b|\bcancel\b|\bpensándolo bien\b|\bpensandolo bien\b|\bme retracto\b|\bolvida (?:eso|lo)\b|\bahora\b|\bcambi(?:a|an|amos|ar|aron|ado|ando|é|e)\b|\bcambio (?:a|de|al)\b|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra(?:mos|r|ron|ndo|do)\b|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz(?:a|an|amos|ar|ado|ando)\b|\bsustitu(?:ye|yen|imos|ir|ido|yendo)\b|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
+            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch(?:ed|ing)\b|\bswitch\b.{0,20}?\b(?:to|over|back|out)\b|\bswap(?:ped|ping)\b|\bswap\b.{0,30}?\b(?:to|for|with|out|in)\b|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat(?:e|ed|es|ing)\b|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac(?:e|ed|es|ing)\b|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bon second thoughts?\b|\bsecond thoughts\b|\breconsider|\bon reflection\b|\brethink|\bchang(?:ed|ing) (?:my|our) minds?\b|\bchanging course\b|\bwithdraw|\bretract|\bnever ?mind\b|\bforget (?:it|that|this|about)\b|\bcancel\b|\bpensándolo bien\b|\bpensandolo bien\b|\bme retracto\b|\bolvida (?:eso|lo)\b|\bahora\b(?:\s+\w+){0,2}?\s+(?:es|son|usamos|usaremos|usa|usan|va|vamos|toca|queda|quedan|se usa|se usan|sera|será)\b|\bcambi(?:a|an|amos|ar|aron|ado|ando|é|e)\b|\bcambio (?:a|de|al)\b|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra(?:mos|r|ron|ndo|do)\b|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz(?:a|an|amos|ar|ado|ando)\b|\bsustitu(?:ye|yen|imos|ir|ido|yendo)\b|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
         )
         .unwrap()
     })
@@ -1390,6 +1390,47 @@ mod ack_tests {
                 "Let's use rustls instead"
             ),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod ahora_tests {
+    use super::{decision_candidates, Candidate};
+    use crate::model::Turn;
+
+    fn decisions(msg: &str) -> Vec<Candidate> {
+        let t = Turn {
+            index: 0,
+            user_prompt: msg.into(),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        decision_candidates(&t, msg, &mut out);
+        out
+    }
+
+    /// `ahora` is one of the commonest words in Spanish and it was a change marker on its own.
+    /// This project's own store paid for it: a 36 MB transcript of ninety-one turns produced
+    /// exactly one decision — `"Ahora dime una cosa"`, the opening of a question — keyed
+    /// `said:change:` over forty topic words, and because a change supersedes, it retired two
+    /// episodes on its way in.
+    #[test]
+    fn ahora_alone_does_not_announce_a_change() {
+        let d = decisions(
+            "Ahora dime una cosa. Que pasaria en un escenario donde alguien instala el plugin \
+             y no quiere poner instrucciones en su CLAUDE.md",
+        );
+        assert!(d.is_empty(), "a question is not a decision: {d:?}");
+    }
+
+    /// And `ahora` introducing a state still is one, which is what it was in the list for.
+    #[test]
+    fn ahora_introducing_a_state_still_announces_one() {
+        let d = decisions("Ahora usamos zstd para la compresión de transporte");
+        assert!(
+            d.iter().any(|c| c.subject.starts_with("said:change:")),
+            "a stated change is still captured: {d:?}"
         );
     }
 }
