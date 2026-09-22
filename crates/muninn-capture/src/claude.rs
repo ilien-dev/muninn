@@ -6,7 +6,7 @@
 //! shapes never fail the parse: a torn or foreign line is dropped.
 
 use crate::model::{Session, ToolCall, Turn};
-use muninn_core::sanitize::{clean_text, truncate_chars};
+use muninn_core::sanitize::{clean_text, strip_harness_blocks, truncate_chars};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, Seek, SeekFrom};
@@ -186,7 +186,7 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                     if feedback.is_empty() {
                         continue;
                     }
-                    let prompt = clean_text(&feedback.join("\n"));
+                    let prompt = clean_text(&strip_harness_blocks(&feedback.join("\n")));
                     if let Some(mut t) = current.take() {
                         t.end_offset = t.end_offset.max(session.end_offset);
                         session.turns.push(t);
@@ -202,7 +202,7 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                     continue;
                 }
             }
-            let prompt = clean_text(&text_of(&content));
+            let prompt = clean_text(&strip_harness_blocks(&text_of(&content)));
             if prompt.trim().is_empty() {
                 continue;
             }
