@@ -207,6 +207,31 @@ fn session_start(
             text.push('\n');
             text.push_str(&d);
         }
+        // The catalogue: one line per decision on record, once per session. Every other
+        // delivery answers a question; this answers the one an agent cannot ask, because
+        // asking it means already knowing what is there. On the v4 and v5 grids the engine
+        // delivered the current decision in 27 cells of 27 and the agent wrote "no current
+        // recorded decision" in most of them — it had a filtered selection and no way to tell
+        // a memory that holds nothing from a query that missed, and it went to the checkout
+        // two to three times as often as the competitor's agent, which is handed a complete
+        // catalogue every session and pulls what it wants by id.
+        if let Ok(c) = muninn_core::recall::catalog(db, muninn_core::caps::BUDGET_CATALOG_TOKENS) {
+            if !c.text.is_empty() {
+                text.push('\n');
+                text.push_str(&c.text);
+                crate::delivery::append(
+                    paths,
+                    &crate::delivery::Line {
+                        at: now_ms(),
+                        session: _input.session_id.clone(),
+                        arm: arm(),
+                        ids: c.ids.clone(),
+                        tokens: c.tokens,
+                        reason: "catalog".into(),
+                    },
+                );
+            }
+        }
     }
     Ok(Some(additional_context("SessionStart", &text)))
 }

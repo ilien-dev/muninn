@@ -3264,3 +3264,70 @@ the grid — v5 by nineteen of twenty-one cells quoting the missing commits, v6 
 active decisions drop from 21 to 16 when a directory is removed — and that every void grid is
 published with its numbers. If v6 comes back a loss on a valid fixture with no defect behind
 it, that is the result.
+
+---
+
+# Pre-registration — the catalogue: what is on record, once per session
+
+Registered 2026-09-21, while v6 was still seeding. **v6 had produced no cells** when this was
+written; the hypothesis comes from v4's and v5's cells, quoted below, not from v6.
+
+## What the failing cells actually say
+
+The engine delivered the current decision in 27 cells of 27 across five v4 arms, and the cells
+wrote:
+
+> This project has no current recorded decision on the TLS backend.
+
+> No current decision on the project's source license is recorded: the license entry in the
+> project's decision records was revoked, and no replacement value has been recorded since.
+
+In the second one `muninn why` had answered **`sufficient: #39 (user_said, trust 3) answers
+directly`**, twice, with the lineage line `#37(superseded) ← #39` under it.
+
+An agent given a filtered selection cannot tell a memory that holds nothing about a subject
+from a query that missed it, and it acts on the first reading. The measurement that says this
+is the repository-look column: every Muninn arm's agent went digging in the checkout two to
+three times as often as claude-mem's — 5.4 against 2.1 per cell on the eighth arm.
+
+claude-mem does not deliver the decision at all. It delivers **an index of every one of them**,
+sixteen lines, every session, and the agent then asks for the two it wants by id. Its titles
+are written by `claude-haiku-4-5` at write time, which is out of scope here; the index and the
+pull are not.
+
+## What was built
+
+Deterministic, no model, nothing inferred:
+
+- `[muninn:catalog]` — one line per active `decision`, `invariant` and `correction`, newest
+  first, under a 300-token budget, saying how many it did not list. The line is the record's
+  own `object`; `replaces #n` is read from `invalidated_by`. A retired record contributes its
+  id and none of its text, which is the rule `why`'s lineage line already follows. Commit log
+  entries (`commit:<hash>`) stay out, as they do everywhere on the read path; a commit
+  confirmation is named by the file it is anchored to, because its `object` is a source line
+  (`"value": "semver"`) that names nothing by itself.
+- `muninn show <id> [<id> …]` — the pull half, reading `served_record`, so a retired id returns
+  "no served record with that id" rather than its text.
+- The boot summary says both, and the sentence forbidding the agent to "ask for all memory" is
+  gone: the catalogue *is* all memory, so that instruction now contradicts what it is given.
+
+On this repository's own store — 594 active records, 27 catalogue candidates — the block is 992
+characters and ends "… and 17 older, not listed".
+
+## Decision rule, fixed before the data
+
+An arm on the v6 fixture, `muninn-catalog`, against the same `claude-mem` and the same `off`.
+Registered contrast: `pass(muninn-catalog) − pass(claude-mem)` on the replacement cells, exact
+Fisher. Two secondary outcomes, both reported whatever they show: the repository-look count per
+cell (the catalogue's stated purpose is that an agent stops digging), and the context-character
+ratio, which this change **increases** by ~330 tokens once per session.
+
+The catalogue is kept only if it moves the pass rate. It costs context on every session and
+the project's published weakness is already that it costs more context than the competitor, so
+"it is a nice idea" does not earn it a place.
+
+## Threat
+
+This is a different design, not a seventh coat of paint, and it is the first change in this
+line that was not aimed at what the block says but at what the agent can know. It is still one
+27-cell grid, and it is being read by the person who built it.

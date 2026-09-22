@@ -477,6 +477,134 @@ pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
 }
 
 /// The whole read path for one prompt.
+/// A catalogue row: id, kind, the record's own text, and the file a commit confirmation is
+/// anchored to.
+type CatalogRow = (i64, String, String, Option<String>);
+
+/// One line per active decision, newest first: what it says, and which record it retired.
+///
+/// Every other delivery path answers a question. This one answers a question the agent cannot
+/// ask, because asking it requires knowing what is there: *what is recorded at all*. Measured
+/// on the v4 and v5 grids, the engine put the current decision in front of the agent in 27
+/// cells of 27 and the agent wrote "no current recorded decision" in most of them — it had a
+/// filtered selection with no way to tell a memory that holds nothing from one whose query
+/// missed, and it went to the checkout two to three times as often as the competitor's agent,
+/// which is given a complete catalogue every session and pulls what it wants by id.
+///
+/// Deterministic and model-free: the line is the record's own `object`, and `replaces #n` is
+/// read from `invalidated_by`. Retired rows contribute their id and nothing else — no text of
+/// theirs is rendered, which is the same rule `why`'s lineage line already follows.
+pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
+    let mut stmt = db.conn.prepare(
+        "SELECT r.id, r.kind, r.object, \
+                CASE WHEN r.origin = 'commit_linked' THEN r.anchor_path END AS anchored \
+         FROM served_record r \
+         WHERE r.kind IN ('decision', 'invariant', 'correction') \
+           AND r.subject NOT LIKE 'commit:%' \
+         ORDER BY r.created_at DESC, r.id DESC LIMIT 120",
+    )?;
+    let rows: Vec<CatalogRow> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    // Which record retired which, in one grouped pass. As a correlated subquery this ran once
+    // per row against a column with no index and took SessionStart's p95 to 439 ms against a
+    // limit of 10; `record_heir` indexes it, and one pass needs no index at all.
+    let mut heirs: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    {
+        let mut h = db.conn.prepare(
+            "SELECT invalidated_by, group_concat(id) FROM record \
+             WHERE invalidated_by IS NOT NULL GROUP BY invalidated_by",
+        )?;
+        for (heir, retired) in h
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+            .filter_map(|r| r.ok())
+        {
+            heirs.insert(heir, retired);
+        }
+    }
+    let mut text = String::new();
+    let mut ids = Vec::new();
+    let cap = budget * 3;
+    let mut cut = 0usize;
+    for (id, kind, object, anchored) in &rows {
+        let flat = object.trim().replace('\n', " ");
+        let short = crate::sanitize::truncate_chars(&flat, 72);
+        let one = if short.len() < flat.len() {
+            format!("{short}\u{2026}")
+        } else {
+            short.to_string()
+        };
+        // a commit confirmation's `object` is the source line it found (`"value": "semver"`),
+        // which names nothing on its own; the file it is anchored to is what names the subject
+        let one = match anchored
+            .as_deref()
+            .and_then(|a| std::path::Path::new(a).file_stem())
+            .and_then(|st| st.to_str())
+        {
+            Some(stem) => format!("{stem}: {one}"),
+            None => one,
+        };
+        let repl = match heirs.get(id) {
+            Some(r) => {
+                let list: Vec<String> = r.split(',').map(|i| format!("#{i}")).collect();
+                format!(" \u{b7} replaces {}", list.join(","))
+            }
+            None => String::new(),
+        };
+        let line = format!("#{id} {kind} \u{b7} {one}{repl}\n");
+        if text.len() + line.len() > cap {
+            cut += 1;
+            continue;
+        }
+        text.push_str(&line);
+        ids.push(*id);
+    }
+    if text.is_empty() {
+        return Ok(Delivery {
+            text,
+            ids,
+            tokens: 0,
+        });
+    }
+    let more = if cut > 0 {
+        format!("\u{2026} and {cut} older, not listed. ")
+    } else {
+        String::new()
+    };
+    let text = format!(
+        "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
+         corrections\n{text}{more}Ask for any of them by id: `muninn show <id> [<id> \u{2026}]`.\n"
+    );
+    let tokens = text.len() / 3;
+    Ok(Delivery { text, ids, tokens })
+}
+
+/// The records with these ids, rendered as blocks. The pull half of the catalogue: the agent
+/// names what it wants instead of hoping a query reaches it. `served_record` only, so a
+/// retired id returns nothing rather than its text.
+pub fn show(db: &Db, ids: &[i64], budget: usize) -> Result<Delivery> {
+    if ids.is_empty() {
+        return Ok(Delivery {
+            text: String::new(),
+            ids: vec![],
+            tokens: 0,
+        });
+    }
+    let places = std::iter::repeat_n("?", ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut stmt = db.conn.prepare(&format!(
+        "SELECT {SERVED_COLS}, r.transcript_ref, 0.0 AS score FROM served_record r          WHERE r.id IN ({places}) ORDER BY r.created_at DESC, r.id DESC"
+    ))?;
+    let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+    let hits: Vec<Hit> = stmt
+        .query_map(params.as_slice(), |r| Hit::from_served_row(r, 0.0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(render(&hits, budget, &[]))
+}
+
 pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery> {
     let terms = select_terms(db, prompt, 8)?;
     let mut hits = recall(db, &terms, 8, exclude)?;
@@ -634,6 +762,85 @@ mod tests {
             d.text.contains("https everywhere"),
             "the user's own decision survives the floor:\n{}",
             d.text
+        );
+    }
+
+    /// The catalogue exists so an agent can tell a memory that holds nothing about a subject
+    /// from a query that missed it. Its three properties: every active record of the three
+    /// kinds is in it, a record that retired another says so by id, and a retired record
+    /// contributes its id and none of its text.
+    #[test]
+    fn the_catalogue_lists_what_is_on_record_and_what_replaced_what() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |kind: &str, subject: &str, object: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,'is',?3,?3,'user_said',3,'s',?2,1)",
+                    rusqlite::params![kind, subject, object],
+                )
+                .unwrap();
+            db.conn.last_insert_rowid()
+        };
+        let old = ins("decision", "said:state:tls", "TLS backend: openssl");
+        let new = ins("decision", "said:change:tls", "Let's use rustls instead");
+        ins(
+            "invariant",
+            "said:rule:https",
+            "https everywhere, no plaintext exception",
+        );
+        ins("episode", "session:s#0", "some conversation");
+        ins("decision", "commit:abc1234", "update dependencies");
+        db.conn
+            .execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 WHERE id=?1",
+                rusqlite::params![old, new],
+            )
+            .unwrap();
+        let c = catalog(&db, 300).unwrap();
+        assert!(
+            c.text.contains("Let's use rustls instead"),
+            "the active decision is listed:\n{}",
+            c.text
+        );
+        assert!(
+            c.text.contains("https everywhere"),
+            "and so is the rule that stands:\n{}",
+            c.text
+        );
+        assert!(
+            c.text.contains(&format!("replaces #{old}")),
+            "the record it retired is named by id:\n{}",
+            c.text
+        );
+        assert!(
+            !c.text.contains("openssl"),
+            "and the retired record's own text is not in it:\n{}",
+            c.text
+        );
+        assert!(
+            !c.text.contains("some conversation"),
+            "an episode is not a catalogue entry:\n{}",
+            c.text
+        );
+        assert!(
+            !c.text.contains("update dependencies"),
+            "nor is a commit log entry:\n{}",
+            c.text
+        );
+        // the pull half: named by id, and a retired id yields nothing rather than its text
+        let d = show(&db, &[new], 700).unwrap();
+        assert!(
+            d.text.contains("rustls"),
+            "show returns the record:\n{}",
+            d.text
+        );
+        let r = show(&db, &[old], 700).unwrap();
+        assert!(
+            r.text.is_empty(),
+            "a retired id is not servable, not even by name:\n{}",
+            r.text
         );
     }
 

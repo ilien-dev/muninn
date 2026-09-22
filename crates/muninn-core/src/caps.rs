@@ -11,6 +11,10 @@ pub const MAX_BODY_CHARS: usize = 2_000;
 pub const BUDGET_TURN_TOKENS: usize = 700;
 /// Delivered tokens per block.
 pub const BUDGET_BLOCK_TOKENS: usize = 200;
+
+/// The catalogue of decisions delivered once per session: one line each, so an agent can see
+/// what is recorded instead of inferring it from what a query happened to return.
+pub const BUDGET_CATALOG_TOKENS: usize = 300;
 /// `index.md` limits (the native memory's own numbers, kept for compatibility).
 pub const INDEX_MAX_LINES: usize = 200;
 pub const INDEX_MAX_BYTES: usize = 25_000;
