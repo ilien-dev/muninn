@@ -3366,3 +3366,50 @@ The rule fixed before the data was: *below the 2.136 that `muninn-loop8` scored,
 interval excluding it.* 2.054 < 2.136, so the interval excludes it and **the floor stays**. It
 is the one change in this whole line that pays: it moved no cell, and it took a published
 weakness from 2.14× the competitor's window cost to 1.84×.
+
+## The catalogue arm's result
+
+Same grid, same fixture, same `claude-mem` and `off` cells, the engine differing from
+`muninn-kept` only by the catalogue and `muninn show`.
+
+| arm | replacement pass | retired value written | used | delivered, not used | not delivered | repository looks / cell |
+|---|---|---|---|---|---|---|
+| **muninn-catalog** | **23/27** | 6/27 | 23 | 4 | 0 | **4.0** |
+| muninn-kept | 8/27 | 2/27 | 8 | 19 | 0 | 5.3 |
+| claude-mem 13.24.23 | 16/27 | 3/27 | 13 | 9 | 2 | 4.6 |
+| off | 1/27 | 1/27 | — | — | — | — |
+
+- **Registered contrast, `pass(muninn-catalog) − pass(claude-mem)`: 23/27 against 16/27, exact
+  Fisher p = 0.066.** The point estimate is in Muninn's favour for the first time in this
+  condition and **it does not reach the 0.05 the pre-registration fixed**. Twenty-seven cells
+  do not establish superiority, and this is not a claim of one.
+- Within the tool, on the same cells, the change is not ambiguous: **23/27 against 8/27,
+  p = 7.7 × 10⁻⁵**. The catalogue is what moved it.
+- The mechanism is the one it was built for. Every Muninn arm before it delivered the answer in
+  27 cells of 27 and the agent used it in 4 to 9; here it is used in **23**, and the agent went
+  to the checkout 4.0 times a cell instead of 5.3.
+
+### What it costs, published against it
+
+Median `hook_additional_context` per cell, paired: **2.443 [2.342, 2.616]** against
+`muninn-kept`'s 1.844 [1.627, 2.054]. The catalogue undoes the relevance floor's saving and
+then some — Muninn now occupies about two and a half times the window claude-mem does, the
+worst figure any arm has recorded. Its registered condition was "kept only if it moves the pass
+rate"; it moves it by fifteen cells, so it stays, and the cost is the headline weakness now.
+
+### The retired-value column, checked rather than assumed
+
+It reads 6/27 against 2/27, so it was checked before anything else. **No F1 violation.** All
+six cells passed the oracle: each states the current value and mentions the old one as history
+("This supersedes the project's earlier bcrypt-based decision"). In the store the originals are
+retired — `gzip`, `bcrypt`, `openssl` all `invalid=1` — and what Muninn served is the *change*
+episode, an active record whose literal text names both values because the model's own
+acknowledgement did ("Got it — switching from gzip to zstd"). The cell's own `git log -p` holds
+them too, by the v6 fixture's design; `off` wrote a retired value in 1 cell of 27 and
+claude-mem in 3 with no memory path to it at all.
+
+One real miss found while checking: `#42 episode · Architecture allows plain http allowed for
+internal hosts` is **active** in the seeded store. That phrasing produced no `decision` record,
+so there was nothing for the replacement to supersede and the episode alone was not retired.
+It is the disclosed limitation — what is not captured as a decision is not retired as one —
+and it is now a measured instance of it rather than a caveat.
