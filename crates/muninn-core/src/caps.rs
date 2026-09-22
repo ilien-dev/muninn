@@ -23,6 +23,8 @@ pub const BOOT_BLOCK_MAX_TOKENS: usize = 1_000;
 pub const BOOT_BLOCK_MAX_CHARS: usize = 3_500;
 /// The compact boot summary the SessionStart hook injects (the shipped default).
 pub const BOOT_HOOK_MAX_TOKENS: usize = 500;
-pub const BOOT_HOOK_MAX_CHARS: usize = 1_800;
+// 500 tokens at the 3.92 characters a token the summary measures. The binding budget is the
+// token one; this is the same budget written in the unit the check counts in.
+pub const BOOT_HOOK_MAX_CHARS: usize = 1_950;
 /// Bytes of heartbeat log the health gate inspects.
 pub const HEARTBEAT_TAIL_BYTES: u64 = 256 * 1024;
