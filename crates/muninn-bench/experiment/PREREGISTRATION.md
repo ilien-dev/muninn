@@ -3165,3 +3165,102 @@ is reverted, and the revert is published with this paragraph.
 
 **Threat:** registered after seeing the post-hoc v4 figure, which is what suggested it. It is a
 replication of that figure on a different fixture, not an independent test of it.
+
+## v5's result, and why it is void
+
+The fixture is valid by its own registered control: `off` — no memory at all — scored **2/27**,
+below the 6/27 threshold written before the run. So the checkout does not answer the question
+and the condition measures the memory.
+
+| arm | replacement pass | retired value written |
+|---|---|---|
+| claude-mem 13.24.23 | 13/27 | 3/27 |
+| muninn-floor2 | 4/27 | 0/27 |
+| off | 2/27 | 2/27 |
+
+Registered contrast: exact Fisher p = 0.018. **Fixing the fixture did not vindicate Muninn.**
+The v4 reading — that the condition penalised checkable provenance — was a fair criticism of
+that fixture and it is not an excuse: with the provenance checkable, the engine still loses.
+
+And then the decomposition said something v4's never did: **not delivered in 11 cells of 27**,
+against 0 of 27 for the same build on v4. The memory put nothing in front of the agent.
+
+### The defect the grid found
+
+The v5 cell's checkout ends with a commit that removes `config/decisions/` from the working
+tree. `capture_dropped_values` reads every `-` line of a diff as a value the code stopped
+holding — including the lines of a file that was **deleted**. Reproduced on the actual v5
+store with the actual v5 checkout: active decisions 21 → 16, and the records retired are
+
+```
+10 decision superseded  Actually LRU with a 300-second TTL would be better
+14 decision superseded  Going with argon2id for better security
+19 decision superseded  Let's use rustls instead
+24 decision superseded  Switching to cbor - it's more compact
+30 decision superseded  Actually tokio has a better ecosystem
+ 9 episode  superseded  … and the episode behind each of them
+```
+
+Six topics, the current decision and its source episode each time, `invalidated_by` NULL —
+retired with no heir, so nothing replaced them in the block. One commit that moves a config
+directory erases the memory of six decisions and of the conversations that produced them.
+In a real project that is renaming a file.
+
+**So v5's pass rates are not a measurement of the memory either.** Eleven of its Muninn cells
+were answered by a store that had just deleted its own answer. The grid is void as a
+comparison and published as what it is: the run that found this.
+
+### The fix, and what it costs
+
+A file whose diff destination is `/dev/null` was deleted, and a value that disappeared with
+its file is not evidence that the decision changed — it may have moved, been renamed past
+git's similarity threshold, or been split. Its `-` lines no longer feed the retirement bag.
+False retirement is the worst thing a memory can do and loop 8's gate is 0/30, so a deleted
+file takes the conservative side.
+
+Measured before and after on loop 8, same held-out phrasings, same four conditions, same
+binary except the guard:
+
+| condition | retired (of 30) | delivered | retired value served |
+|---|---|---|---|
+| code / adjacent | 27 → 27 | 23 → 23 | 0 → 0 |
+| code / blocks | 27 → 27 | 23 → 24 | 0 → 0 |
+| both / adjacent | 27 → 27 | 20 → 21 | 0 → 0 |
+| both / blocks | 27 → 27 | 19 → 18 | 0 → 0 |
+
+It costs nothing: retirement is unchanged in every condition and delivery moves within ±1.
+`a_deleted_file_retires_nothing` fails without it, and
+`a_value_removed_from_a_file_that_survives_still_retires` fails if the guard is widened into
+one.
+
+### The context-size outcome registered on v5 is void with it
+
+Eleven of twenty-seven Muninn cells received an empty block, and an empty block costs zero
+characters. The median it produced — 1.878 [1.590, 2.225] — is a median over a sample the
+defect deflated, so it neither meets nor fails the rule registered for it. The floor's revert
+condition is **still pending**, carried to v6 unchanged, and the floor stays in place only
+until that runs.
+
+---
+
+# Pre-registration — v6: v5 again, with the deletion guard
+
+Registered 2026-09-21, before the run. Identical to v5 in every respect — same fixture, same
+arms (`off`, `muninn-floor2-fixed`, `claude-mem`), same three runs, same phrasings, same
+oracles, same `off` threshold of 6/27 — with one change to the engine: a deleted file retires
+nothing.
+
+Registered contrast: `pass(muninn) − pass(claude-mem)` on the replacement cells, exact Fisher.
+Registered secondary outcome, carried from v5 unchanged: median `hook_additional_context`
+characters per cell, paired, `muninn / claude-mem`; the relevance floor stays only if the
+ratio is below 2.136 with its interval excluding it, and is reverted otherwise.
+
+## Threat
+
+This is the second fixture change and the second re-run, both after results that went against
+the tool. What stops it being an indefinite search for a grid that flatters: the `off` control
+with its threshold fixed, the fact that each re-run was forced by a defect reproduced outside
+the grid — v5 by nineteen of twenty-one cells quoting the missing commits, v6 by a store whose
+active decisions drop from 21 to 16 when a directory is removed — and that every void grid is
+published with its numbers. If v6 comes back a loss on a valid fixture with no defect behind
+it, that is the result.

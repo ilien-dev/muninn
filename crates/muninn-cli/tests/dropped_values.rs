@@ -243,3 +243,41 @@ fn a_hyphenated_value_matches_the_decision_that_named_it() {
         "a record's words come from text with the hyphen removed; the diff keeps it"
     );
 }
+
+/// A file that was deleted is not a decision that was reversed: the value may have moved,
+/// been renamed past git's similarity threshold, or been split across new files. Measured on
+/// the v5 head-to-head: one commit removing `config/decisions/` retired five live decisions,
+/// four of them the only record of their answer, and the cells that asked those four
+/// questions were then given nothing at all.
+#[test]
+fn a_deleted_file_retires_nothing() {
+    let tmp = project("openssl");
+    let root = tmp.path();
+    decision(root, "use openssl for the tls backend");
+    // the whole file goes, as a move or a rename past the similarity threshold would look
+    std::fs::remove_file(root.join("config/stack.json")).unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "move the stack config elsewhere"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        active(root, "openssl"),
+        "the decision survives its file being deleted"
+    );
+}
+
+/// And the trigger still fires when the file survives: the guard above is about deletion, not
+/// about removal. Without this the previous test passes on a broken capture path.
+#[test]
+fn a_value_removed_from_a_file_that_survives_still_retires() {
+    let tmp = project("openssl");
+    let root = tmp.path();
+    decision(root, "use openssl for the tls backend");
+    std::fs::write(root.join("config/stack.json"), "{\"value\": \"rustls\"}\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        !active(root, "openssl"),
+        "a value replaced in a file that still exists is still retired"
+    );
+}
