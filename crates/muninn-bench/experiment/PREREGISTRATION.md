@@ -3056,3 +3056,83 @@ Two and three are deterministic, and Muninn already holds what they need: `subje
 retired which, and the commit capture's own `Swap` struct holds the value that left and the
 value that arrived. That is the next pre-registration, and it is a different design rather
 than a seventh coat of paint on this one.
+
+## Reading the eighth arm's failing cells: the condition cannot measure what it was built to
+
+Nineteen of the twenty-one failing cells reason, in the agent's own words, from the fact that
+**the evidence Muninn cites does not exist in the repository it is standing in**:
+
+> Confirmed: this repo has no `config/decisions/` files and no commit history beyond the single
+> "base" commit — the commit hashes and decision files cited in the injected memory don't exist.
+
+> One flag: the injected muninn context claimed a decision (`argon2id`) recorded via commit
+> `0b3ba7d` modifying `config/decisions/revoke-password-hashing.json` …
+
+> … commit `63e2572` doesn't exist anywhere in this repo (not in history, not dangling, not
+> reachable) …
+
+The agent checks the provenance, finds it absent, concludes the memory is unreliable, and then
+discounts the whole block — including the trust-3 record of what the user said, which is not a
+commit record and is correct. The license cell is the clearest: `muninn why` answered
+**`sufficient: #39 (user_said, trust 3) answers directly`** with the lineage line
+`#37(superseded) ← #39`, twice, and the cell wrote "no current decision … is recorded".
+
+This is the fixture, not the engine. `run_h2h.py` seeds in a checkout that holds the decision
+files and the swap commits, and gives each task cell a **fresh checkout with a single `base`
+commit** — deliberately, so that a cell could not answer by `grep`. The consequence was not
+foreseen: every commit-linked record then cites a commit that does not exist where the agent
+can look, so the grid asks a memory to remember commits and then deletes them underneath it.
+
+It penalises exactly the property Muninn is built on. claude-mem's records cite no hashes and
+no paths — they are model-written narratives with nothing to check — so there is nothing for
+the agent to falsify, and the same condition costs it nothing (22/27 with the commits, 20/27
+without, p = 0.74).
+
+**The six `--code` arms are withdrawn as a measurement of the memory.** They are published,
+with their numbers and this reading, as what they are: six builds measured against a fixture
+that was invalid for the arm under test. The head-to-head figure that stands is the plain
+condition, where the evidence a record cites is a transcript the agent cannot read either way
+and both memories are on equal footing:
+
+**Muninn 18/27, claude-mem 20/27, exact Fisher p = 0.77.** A tie at this size, and it is not a
+claim of parity: 27 cells cannot establish one.
+
+---
+
+# Pre-registration — v5: the decisions are in the code, and the history is still there
+
+Registered 2026-09-21, before the fixture was changed and before any cell of it ran.
+
+## What changes, and only this
+
+`run_h2h.py --code` currently builds the task cell's checkout from `git archive` plus one
+`base` commit. It will instead give the cell **the seeding checkout's own history**, with a
+final commit that removes `config/decisions/` from the working tree. So:
+
+- every commit a record cites resolves (`git show <hash>` works) — the memory's provenance is
+  checkable, as it is in a real project;
+- the working tree holds no decision file, so a cell cannot answer by reading one;
+- `git log -p` still reveals the values to an agent that goes looking, which is the point of
+  the `off` control.
+
+## The control that decides whether the fixture is valid
+
+`off` — no memory at all — runs as a registered arm. If `off` passes materially above zero on
+the replacement cells, the checkout answers the question and the condition measures the
+repository rather than the memory; the condition is then withdrawn again and said so. The
+threshold is fixed here: **`off` ≥ 6/27 invalidates it.**
+
+## Arms and decision rule, fixed before the data
+
+Arms: `off`, `muninn-floor2` (the current build), `claude-mem`. Three runs, the same nine
+replacement tasks, the same frozen phrasings, the same Gate 3 oracles.
+
+Registered contrast: `pass(muninn-floor2) − pass(claude-mem)` on the replacement cells, exact
+Fisher. Reported whatever it shows, including a loss.
+
+## Threat
+
+The fixture is being changed after six arms failed on the old one, by the author of both. What
+protects it is the `off` control with its threshold written above, and the fact that the reason
+for the change is a quotation from nineteen of twenty-one failing cells rather than a judgement
+about them.
