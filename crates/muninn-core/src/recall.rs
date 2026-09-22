@@ -528,6 +528,19 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             heirs.insert(heir, retired);
         }
     }
+    // Two active records with the same key and different values are a conflict, and the
+    // block renderer has marked them since F1 was built. The catalogue did not, so the one
+    // place an agent is shown everything at once was the one place it could not see that two
+    // of them disagree. Asked once per line that is actually emitted — about thirteen of the
+    // hundred and twenty read — and as an existence test, not a count: over the whole page,
+    // counting them cost 43 ms of a 10 ms hook on a store whose subjects repeat.
+    let mut clash_q = db.conn.prepare(
+        "SELECT EXISTS(SELECT 1 FROM record r JOIN record o \
+                         ON o.subject = r.subject AND o.relation = r.relation \
+                        AND o.kind = r.kind \
+                       WHERE r.id = ?1 AND o.id <> r.id AND o.invalid = 0 \
+                         AND o.object <> r.object AND r.kind <> 'episode')",
+    )?;
     let mut text = String::new();
     let mut ids = Vec::new();
     let cap = budget * 3;
@@ -557,11 +570,18 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             }
             None => String::new(),
         };
+        const CLASH: &str = " \u{b7} conflict: another active record disagrees, ask";
         let line = format!("#{id} {kind} \u{b7} {one}{repl}\n");
-        if text.len() + line.len() > cap {
+        if text.len() + line.len() + CLASH.len() > cap {
             cut += 1;
             continue;
         }
+        let clashes = clash_q.query_row([id], |r| r.get::<_, i64>(0)).unwrap_or(0) != 0;
+        let line = if clashes {
+            format!("#{id} {kind} \u{b7} {one}{repl}{CLASH}\n")
+        } else {
+            line
+        };
         text.push_str(&line);
         ids.push(*id);
     }
@@ -915,6 +935,51 @@ mod tests {
             c2.text.contains("the only decision"),
             "and the probe row past the page is never rendered as an entry:\n{}",
             c2.text
+        );
+    }
+
+    /// Two active records with the same key and different values are a conflict, and the
+    /// renderer has marked them since F1 was built. The catalogue did not, so the one place
+    /// an agent is shown everything at once was the one place it could not see that two of
+    /// them disagree — and it would have picked one.
+    #[test]
+    fn the_catalogue_marks_a_record_another_active_one_contradicts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |subject: &str, object: &str, h: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?3,1)",
+                    rusqlite::params![subject, object, h],
+                )
+                .unwrap();
+        };
+        ins("said:state:tls", "we use openssl", "a");
+        ins("said:state:tls", "we use rustls", "b");
+        ins("said:state:cache", "we use redis", "c");
+        let c = catalog(&db, 300).unwrap();
+        let line_of = |needle: &str| {
+            c.text
+                .lines()
+                .find(|l| l.contains(needle))
+                .unwrap_or("")
+                .to_string()
+        };
+        assert!(
+            line_of("openssl").contains("conflict"),
+            "both sides of the disagreement are marked:\n{}",
+            c.text
+        );
+        assert!(
+            line_of("rustls").contains("conflict"),
+            "both sides of the disagreement are marked:\n{}",
+            c.text
+        );
+        assert!(
+            !line_of("redis").contains("conflict"),
+            "and a record nothing contradicts is not:\n{}",
+            c.text
         );
     }
 
