@@ -479,7 +479,7 @@ pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
 /// The whole read path for one prompt.
 /// A catalogue row: id, kind, the record's own text, and the file a commit confirmation is
 /// anchored to.
-type CatalogRow = (i64, String, String, Option<String>, Option<String>);
+type CatalogRow = (i64, String, String, Option<String>);
 
 /// One line per active decision, newest first: what it says, and which record it retired.
 ///
@@ -497,17 +497,14 @@ type CatalogRow = (i64, String, String, Option<String>, Option<String>);
 pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let mut stmt = db.conn.prepare(
         "SELECT r.id, r.kind, r.object, \
-                CASE WHEN r.origin = 'commit_linked' THEN r.anchor_path END AS anchored, \
-                CASE WHEN r.origin = 'commit_linked' THEN r.transcript_ref END AS seen_in \
+                CASE WHEN r.origin = 'commit_linked' THEN r.anchor_path END AS anchored \
          FROM served_record r \
          WHERE r.kind IN ('decision', 'invariant', 'correction') \
            AND r.subject NOT LIKE 'commit:%' \
          ORDER BY r.created_at DESC, r.id DESC LIMIT 120",
     )?;
     let rows: Vec<CatalogRow> = stmt
-        .query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-        })?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .filter_map(|r| r.ok())
         .collect();
     // Which record retired which, in one grouped pass. As a correlated subquery this ran once
@@ -530,7 +527,7 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let mut ids = Vec::new();
     let cap = budget * 3;
     let mut cut = 0usize;
-    for (id, kind, object, anchored, seen_in) in &rows {
+    for (id, kind, object, anchored) in &rows {
         let flat = object.trim().replace('\n', " ");
         let short = crate::sanitize::truncate_chars(&flat, 72);
         let one = if short.len() < flat.len() {
@@ -555,16 +552,7 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             }
             None => String::new(),
         };
-        // A commit confirmation names the file it was read from, and in a checkout where that
-        // file has since moved the line reads as a decision that lived somewhere now gone —
-        // three of the catalogue arm's four remaining failures are an agent reasoning exactly
-        // that from the fixture's own removal commit. The commit still resolves, so cite it:
-        // it is the piece of this record's provenance the agent can check where it stands.
-        let seen = match seen_in.as_deref().and_then(|t| t.strip_prefix("git:")) {
-            Some(h) => format!(" \u{b7} commit {}", &h[..h.len().min(7)]),
-            None => String::new(),
-        };
-        let line = format!("#{id} {kind} \u{b7} {one}{repl}{seen}\n");
+        let line = format!("#{id} {kind} \u{b7} {one}{repl}\n");
         if text.len() + line.len() > cap {
             cut += 1;
             continue;
