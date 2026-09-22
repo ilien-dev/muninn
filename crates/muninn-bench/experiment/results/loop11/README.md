@@ -58,4 +58,33 @@ records tie weakly, which is what capturing commits creates.
 
 ## Raw data
 
-`results-base.json`, `results-anchor.json`, `results-floor50.json` — one row per task.
+
+
+## What the floor costs, measured after the registration
+
+Not part of the registered decision rule — run after it, on a condition it did not name, and
+reported because it goes against the change. The same replica **without** the commits, which
+is the condition the live grid scores 18/27 on:
+
+| build | answered | retired | records / task | tokens / task |
+|---|---|---|---|---|
+| base (`07911e8`) | 5/9 | 5/9 | 1.8 | 109 |
+| relevance floor 0.5 | **4/9** | 5/9 | 1.3 | 80 |
+
+**The floor loses an answer here.** On `revoke-internal-http` the base block holds three
+records and the one stating "https everywhere" is not the first; the floor cuts it for scoring
+under half of the first. That is the floor's shape: it protects the top of the block and will
+drop a correct record that ranks below a better-matching one.
+
+Read the absolute numbers with care — they are much worse than the live grid's plain condition
+for a reason this harness cannot fix. In the grid the model's own acknowledgement restates the
+change ("Got it — switching TLS backend from openssl to rustls"), and that sentence is a
+record; here every acknowledgement is the fixed line `Noted.`, so the only text carrying the
+new value is the user's message. The store is thinner than the grid's, which is why base
+answers 5 of 9 rather than 9 of 9. The comparison between the two builds on that identical
+store still holds.
+
+## Raw data
+
+`results-base.json`, `results-anchor.json`, `results-floor50.json` — the registered condition;
+`results-base-nocommits.json`, `results-floor50-nocommits.json` — the check above.
