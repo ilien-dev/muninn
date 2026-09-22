@@ -133,7 +133,9 @@ CREATE TABLE IF NOT EXISTS cue (
     key         TEXT    NOT NULL,
     grp         INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS cue_lookup ON cue(kind, key);
+-- covering: `evaluate` wants (record_id, grp) for a (kind, key), and a dir cue on a busy
+-- directory matches thousands of rows, so reading them out of the table costs a page each.
+CREATE INDEX IF NOT EXISTS cue_lookup ON cue(kind, key, record_id, grp);
 CREATE INDEX IF NOT EXISTS cue_record ON cue(record_id);
 
 -- 2.3 rule: project rules and their enforcement state (F2).

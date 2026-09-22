@@ -420,10 +420,6 @@ pub fn evaluate_capped(
     }
     let mut event_dropped = 0usize;
     if !ctx.event.is_empty() {
-        let total = db.count(
-            "SELECT count(*) FROM cue c JOIN served_record r ON r.id = c.record_id \
-             WHERE c.kind = 'event' AND c.key = ?1",
-        );
         let mut st_ev = db.conn.prepare_cached(
             "SELECT c.record_id, c.grp FROM cue c JOIN served_record r ON r.id = c.record_id \
              WHERE c.kind = 'event' AND c.key = ?1 \
@@ -444,8 +440,17 @@ pub fn evaluate_capped(
                 .or_default()
                 .push(format!("event:{}", ctx.event));
         }
-        if let Ok(t) = total {
-            event_dropped = (t as usize).saturating_sub(n);
+        // Only when the cap was actually reached is anything missing, and only then is the
+        // count worth its join: on a store below the cap this is never run.
+        if n >= cap {
+            if let Ok(t) = db.conn.query_row(
+                "SELECT count(*) FROM cue c JOIN served_record r ON r.id = c.record_id \
+                 WHERE c.kind = 'event' AND c.key = ?1",
+                [ctx.event.as_str()],
+                |r| r.get::<_, i64>(0),
+            ) {
+                event_dropped = (t as usize).saturating_sub(n);
+            }
         }
     }
     if matched.is_empty() {

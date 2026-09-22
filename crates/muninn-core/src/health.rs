@@ -579,6 +579,11 @@ pub fn run(
             let model = db.meta_get("embed_model").ok().flatten();
             if !has_table || model.is_none() {
                 check(10, "embed", Status::Cold, "sidecar not enabled (no model)", None)
+            } else if !live {
+                // Coverage costs a join over every vector — 3.1 ms of a 10 ms hook on a store
+                // at the schema's cap — and it says nothing about the read path, which never
+                // touches the sidecar. The full report still counts them.
+                check(10, "embed", Status::Green, "sidecar enabled", None)
             } else {
                 let active = db.count("SELECT count(*) FROM record WHERE invalid=0").unwrap_or(0);
                 let vecs = db
