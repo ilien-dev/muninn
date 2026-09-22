@@ -3871,3 +3871,23 @@ it does not ship.
 `BOOT_HOOK_MAX_CHARS` moves 1 800 → 1 950 in that arm only, which is the same 500-token budget
 written in the unit the check counts in; the token limit does not move and the arm measures
 1 919 characters, 486 tokens.
+
+## The closing suite, stage 1 — the claim on the build that ships
+
+Fixture valid by its own control: `off` **0/54**, against an invalidating threshold of 12/54.
+
+| arm | replacement pass | retired value written |
+|---|---|---|
+| **muninn-now2** (`master`) | **39/54** | 6/54 |
+| claude-mem 13.24.23 | 25/54 | 10/54 |
+| off | 0/54 | 3/54 |
+
+**Registered confirmatory contrast: exact Fisher p = 0.0105**, threshold α = 0.05 fixed before
+the data. **Met.** The claim survives its own codebase: v7 measured 41/54 against 21/54 on a
+build that no longer exists, and after six changes to the read path the same grid reads 39/54
+against 25/54. Both arms moved — claude-mem drew better this time — and the gap is narrower,
+which is what a second grid is for.
+
+Delivered in 54 cells of 54 and acted on in 39; claude-mem delivered in 44 and its agent acted
+on 20. Median injected context 2.504 [2.353, 2.554] times claude-mem's, unchanged as the one
+number that goes against us.
