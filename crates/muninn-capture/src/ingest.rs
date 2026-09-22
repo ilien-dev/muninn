@@ -267,6 +267,76 @@ fn supersede_said(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Resu
 /// word outside its quantities). A statement that names its own subject ("the search path
 /// retries 5 times") is not a bare correction of something earlier and is left to the
 /// lexical rules. The most recent record holding that unit is the one replaced.
+/// Retire what the assistant's own acknowledgement says was replaced.
+///
+/// `[Z5]` is the lexical ceiling: 23 of 30 held-out replacements share no content word with
+/// what they replace, so `supersede_said` cannot pair them, and on the plain head-to-head 14 of
+/// Muninn's 15 failing cells were a stale value served as current. The reply in the same turn
+/// routinely names both values — "Got it — switching the TLS backend from openssl to rustls" —
+/// and it is already captured. `ack_replacement` reads only the shapes that state a pair, and
+/// only when the pair's replacement side is part of what the user actually decided.
+///
+/// How often a reply states the pair depends on what the assistant was shown: 27% of recorded
+/// change replies in sessions where Muninn was injecting the earlier decision, 10% with
+/// claude-mem, and 0 of 45 with no memory in the loop at all. Delivery of the stale record is
+/// what makes its retirement possible, which is exactly the case this is for.
+///
+/// Two further guards, because false retirement is the worst thing this can do and loop 8's
+/// gate is 0 of 30: the named value must be a whole word of the record it retires, and at most
+/// one record is retired — the shortest match, which is the one whose subject the value is.
+fn supersede_via_ack(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<usize> {
+    if c.relation != "user_decision" || c.ack.is_empty() {
+        return Ok(0);
+    }
+    let new_object: String = tx
+        .query_row("SELECT object FROM record WHERE id=?1", [new_id], |r| {
+            r.get(0)
+        })
+        .unwrap_or_default();
+    let Some(gone) = crate::extract::ack_replacement(&c.ack, &new_object) else {
+        return Ok(0);
+    };
+    let holds = |text: &str| {
+        text.to_lowercase()
+            .split(|ch: char| !ch.is_alphanumeric() && ch != '.' && ch != '-' && ch != '_')
+            .any(|w| w == gone)
+    };
+    if holds(&new_object) {
+        return Ok(0);
+    }
+    let olds: Vec<(i64, String, Option<String>)> = {
+        let mut st = tx.prepare(
+            "SELECT id, object, transcript_ref FROM record WHERE invalid=0 AND kind='decision' \
+             AND relation='user_decision' AND id<>?1",
+        )?;
+        let rows = st.query_map([new_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.flatten().collect()
+    };
+    let Some((id, _, tref)) = olds
+        .into_iter()
+        .filter(|(_, object, _)| holds(object))
+        .min_by_key(|(_, object, _)| object.len())
+    else {
+        return Ok(0);
+    };
+    let mut n = tx.execute(
+        "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 \
+         WHERE id=?2 AND invalid=0",
+        rusqlite::params![new_id, id],
+    )?;
+    if n > 0 {
+        if let Some(tref) = tref {
+            n += tx.execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 \
+                 WHERE invalid=0 AND kind='episode' AND transcript_ref=?2 AND length(body) <= 700",
+                rusqlite::params![new_id, tref],
+            )?;
+        }
+        crate::ingest::inherit_topic(tx, new_id)?;
+    }
+    Ok(n)
+}
+
 fn supersede_quantity(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<usize> {
     if c.kind == "episode" {
         // the episode of the same turn carries the same sentence; acting on both would
@@ -527,6 +597,7 @@ pub fn ingest_transcript_with(
                 stats.superseded += supersede(&tx, id, &c)?;
                 stats.superseded += supersede_said(&tx, id, &c)?;
                 stats.superseded += supersede_quantity(&tx, id, &c)?;
+                stats.superseded += supersede_via_ack(&tx, id, &c)?;
             } else {
                 stats.duplicates += 1;
             }
@@ -651,6 +722,9 @@ mod tests {
 
     fn user(s: &str) -> serde_json::Value {
         serde_json::json!({"type":"user","sessionId":"s1","timestamp":"2026-09-12T14:03:11.084Z","message":{"role":"user","content":s}})
+    }
+    fn assistant(s: &str) -> serde_json::Value {
+        serde_json::json!({"type":"assistant","sessionId":"s1","message":{"role":"assistant","content":[{"type":"text","text":s}]}})
     }
     fn tool_use(id: &str, cmd: &str) -> serde_json::Value {
         serde_json::json!({"type":"assistant","sessionId":"s1","message":{"role":"assistant","content":[{"type":"tool_use","id":id,"name":"Bash","input":{"command":cmd}}]}})
@@ -832,6 +906,88 @@ mod tests {
             ist2.inserted, 0,
             "markdown re-import of the same records is all duplicates: {}",
             ist2.duplicates
+        );
+    }
+
+    /// End to end: a replacement that shares no content word with what it replaces is retired
+    /// anyway, because the assistant's own reply in that turn named both values.
+    ///
+    /// `[Z5]` is why this exists — 23 of 30 held-out replacements share no content word, and on
+    /// the plain head-to-head 14 of Muninn's 15 failing cells were a stale value served as
+    /// current. Its reach is small and measured: of 990 replies recorded by earlier grids,
+    /// written before this mechanism existed, 21% state the pair.
+    #[test]
+    fn a_reply_that_names_both_values_retires_the_one_it_replaced() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let t1 = transcript(
+            tmp.path(),
+            "a.jsonl",
+            &[
+                user("We are using openssl for the TLS backend"),
+                assistant("Noted, openssl for TLS."),
+            ],
+        );
+        ingest_transcript_with(&db, &t1, "s1", Some(&paths)).unwrap();
+        let active = |needle: &str| -> i64 {
+            db.count(&format!(
+                "SELECT count(*) FROM record WHERE invalid=0 AND kind='decision' AND object LIKE '%{needle}%'"
+            ))
+            .unwrap()
+        };
+        assert!(active("openssl") > 0, "the first decision is on record");
+
+        // "Let's use rustls instead" shares no content word with "TLS backend: openssl"
+        let t2 = transcript(
+            tmp.path(),
+            "b.jsonl",
+            &[
+                user("Let's use rustls instead"),
+                assistant("Got it, switching the TLS backend from openssl to rustls."),
+            ],
+        );
+        ingest_transcript_with(&db, &t2, "s2", Some(&paths)).unwrap();
+        assert_eq!(active("openssl"), 0, "the reply named it, so it is retired");
+        assert!(active("rustls") > 0, "and the replacement is active");
+    }
+
+    /// The same messages with a reply that names only the new value retire nothing: the
+    /// mechanism reads what was said, never what it could guess.
+    #[test]
+    fn a_reply_that_names_only_the_new_value_retires_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let t1 = transcript(
+            tmp.path(),
+            "a.jsonl",
+            &[
+                user("We are using openssl for the TLS backend"),
+                assistant("Noted."),
+            ],
+        );
+        ingest_transcript_with(&db, &t1, "s1", Some(&paths)).unwrap();
+        let t2 = transcript(
+            tmp.path(),
+            "b.jsonl",
+            &[
+                user("Let's use rustls instead"),
+                assistant("Got it, switching to rustls."),
+            ],
+        );
+        ingest_transcript_with(&db, &t2, "s2", Some(&paths)).unwrap();
+        assert!(
+            db.count("SELECT count(*) FROM record WHERE invalid=0 AND kind='decision' AND object LIKE '%openssl%'")
+                .unwrap()
+                > 0,
+            "nothing said which value went, so nothing is retired by this path"
         );
     }
 }
