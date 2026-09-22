@@ -300,11 +300,32 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     let rows = stmt.query_map(rusqlite::params![q, (limit + exclude.len()) as i64], |r| {
         Hit::from_served_row(r, r.get("score")?)
     })?;
-    Ok(rows
+    let mut hits: Vec<Hit> = rows
         .filter_map(|r| r.ok())
         .filter(|h| !exclude.contains(&h.id))
         .take(limit)
-        .collect())
+        .collect();
+    // Half as good as the best match, or it is not served. Until now the block filled to its
+    // limit whatever the scores were, so a store holding one good answer and a dozen weak ones
+    // delivered the answer and then padded it with the weak ones. Measured on the v4 `--code`
+    // store: a question about the compression codec matched its answer at -6.39 and then four
+    // records about *other* decisions at -3.09 to -2.68, which took four of six slots — they
+    // share only what every record Muninn writes about a commit shares
+    // (`config/decisions/<id>.json now reads "value": ...`). bm25 here is negative and better
+    // is more negative, so the test is against half the first hit's magnitude.
+    //
+    // It belongs here rather than in `deliver`, which is the CLI's path: the hooks fuse this
+    // list with the cues in `hook::deliver_fused` and never call `deliver` at all. A floor in
+    // `deliver` measured well on a `muninn recall` probe and changed nothing a cell was given.
+    //
+    // A trust-3 record — the user said it — is never cut: measured on the plain condition of
+    // the same replica, the bare floor drops a correct record that ranks below a
+    // better-matching one.
+    if let Some(best) = hits.first().map(|h| h.score) {
+        let floor = best * RELEVANCE_FLOOR;
+        hits.retain(|h| h.score <= floor || h.trust >= 3);
+    }
+    Ok(hits)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -459,18 +480,6 @@ pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
 pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery> {
     let terms = select_terms(db, prompt, 8)?;
     let mut hits = recall(db, &terms, 8, exclude)?;
-    // Half as good as the best match, or it is not served. Until now the block filled to its
-    // limit whatever the scores were, so a store that holds one good answer and a dozen weak
-    // ones delivered the answer and then padded it with the weak ones. Measured on the v4
-    // `--code` store: a question about the compression codec matched its answer at -6.39 and
-    // then four records about *other* decisions at -3.09 to -2.68, which took four of six
-    // slots — they share only what every record Muninn writes about a commit shares
-    // (`config/decisions/<id>.json now reads "value": ...`). bm25 here is negative and better
-    // is more negative, so the test is against half the first hit's magnitude.
-    if let Some(best) = hits.first().map(|h| h.score) {
-        let floor = best * RELEVANCE_FLOOR;
-        hits.retain(|h| h.score <= floor || h.trust >= 3);
-    }
     // F1: an unresolved conflict is served as two marked records, never ranked away.
     // The render-matched control arm of the experiment [X1] keeps the layout and
     // switches this marking off together with invalidation.
