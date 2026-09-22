@@ -584,6 +584,8 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
 /// names what it wants instead of hoping a query reaches it. `served_record` only, so a
 /// retired id returns nothing rather than its text.
 pub fn show(db: &Db, ids: &[i64], budget: usize) -> Result<Delivery> {
+    // a pull of more than this is a dump, not a pull, and the budget would cut it anyway
+    let ids = &ids[..ids.len().min(64)];
     if ids.is_empty() {
         return Ok(Delivery {
             text: String::new(),
