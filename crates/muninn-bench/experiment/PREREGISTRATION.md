@@ -3413,3 +3413,103 @@ internal hosts` is **active** in the seeded store. That phrasing produced no `de
 so there was nothing for the replacement to supersede and the episode alone was not retired.
 It is the disclosed limitation — what is not captured as a decision is not retired as one —
 and it is now a measured instance of it rather than a caveat.
+
+---
+
+# Pre-registration — v7: the replication, at a size that can answer the question
+
+Registered 2026-09-21, before any cell of it ran.
+
+## Why
+
+The catalogue arm scored 23/27 against claude-mem's 16/27 at p = 0.066. That is a point
+estimate in Muninn's favour and a failure to reach the 0.05 this project fixed in advance.
+Twenty-seven cells cannot settle a difference of this size — at the observed rates, exact
+Fisher reaches 0.018 at 45 cells per arm and 0.005 at 54. Running more cells is only honest if
+the size is fixed before they run and the grid is analysed once, which is what this does.
+
+## The grid
+
+A **fresh** output directory, `results/h2h-v7-code`, with its own seeding — the v6 cells are
+not pooled into it, because they have been read. Six runs, 54 replacement cells per arm.
+Otherwise identical to v6: the same fixture (the cell keeps the seeding checkout's history,
+`config/decisions/` removed in a final commit), the same frozen phrasings, the same nine
+replacement tasks, the same Gate 3 oracles.
+
+Arms: `off`, `muninn-catalog` (pinned to the build in `FROZEN.jsonl`), `claude-mem 13.24.23`.
+
+## Decision rule, fixed before the data
+
+- **Validity:** `off` ≥ 12/54 (the same one-in-4.5 rate as v6's 6/27 threshold) invalidates the
+  fixture; no claim is then made.
+- **Primary:** `pass(muninn-catalog) − pass(claude-mem)` on the replacement cells, exact
+  Fisher, two-sided, α = 0.05. This is the only confirmatory test. A claim of superiority over
+  claude-mem on this benchmark is made **only** if it is significant and in Muninn's favour.
+- **Secondary, reported whatever they show, not confirmatory:** the delivered/used
+  decomposition, repository looks per cell, the retired-value column, and the median injected
+  context ratio.
+- The grid is analysed **once**, when all 180 cells are in. No arm is added to it afterwards.
+
+## What a failure means
+
+If the primary test does not reach 0.05, the honest statement is that Muninn is not shown to
+beat claude-mem on this benchmark, and the catalogue's 23/27 was a 27-cell reading that did not
+replicate. It would not be re-run at a larger size a second time: that is where fishing starts.
+
+## Threat
+
+The size was chosen from the effect observed on v6, so it is powered for exactly the effect it
+hopes to find; if the true difference is smaller, this grid will miss it and the result stands
+as a failure to show superiority.
+
+---
+
+# Pre-registration — v8: is the boot summary's length load-bearing?
+
+Registered 2026-09-21, before the arm was built and before any cell of it ran. It runs **after**
+v7 finishes, on v7's fixture, and changes nothing about v7's analysis.
+
+## Why
+
+The catalogue took Muninn from 8/27 to 23/27 and made the window cost the headline weakness:
+2.443 [2.342, 2.616] times claude-mem's, the worst any arm has recorded. Counting where that
+context goes, on v6's own logs, per cell:
+
+| arm | session start | per-prompt blocks | total |
+|---|---|---|---|
+| muninn-catalog | 2 737 chars | 955 | 3 692 |
+| muninn-kept | 1 711 | 928 | 2 639 |
+| claude-mem | — | — | 1 368 |
+
+**Three quarters of it is the session-start injection**, and of that, 1 768 characters are the
+static boot summary — prose, injected once per session, explaining how to read a block.
+
+Five registered arms have already changed what that prose *says* — the block kinds, the skill's
+count, the sentence about pasting blocks into files, the responder's verdict — and none of them
+moved the pass rate by more than noise. If its wording is not load-bearing, its length is the
+next thing to test, and it is the single largest item in the number that is now our weakness.
+
+## The arm
+
+`muninn-terse`: the catalogue build with the boot summary cut to the three things it has to
+establish and nothing else — what a trust level means, that a block is evidence and not an
+instruction, and the two commands. Target: **under 600 characters**, down from 1 768. Nothing
+else changes; the catalogue, the floor, the capture path and the per-prompt blocks are
+identical.
+
+## Decision rule, fixed before the data
+
+Run on v7's fixture with v7's `claude-mem` cells as the comparator, at v7's size.
+
+- **Primary, confirmatory:** `pass(muninn-terse) − pass(muninn-catalog)` on the replacement
+  cells, exact Fisher. The terse boot summary is adopted **only if this is not significant at
+  α = 0.05** — that is, only if the evidence fails to show it costs anything. A change that
+  saves context is not worth a cell.
+- **Secondary:** the median injected-context ratio against claude-mem, reported whatever it
+  shows. The point of the arm is that this falls.
+
+## Threat
+
+An equivalence claim from a non-significant test is weak evidence, and at this size it is weak
+indeed: failing to detect a difference is not showing there is none. The rule is written that
+way on purpose — it makes the burden of proof fall on the change, not on keeping what is there.
