@@ -3136,3 +3136,32 @@ The fixture is being changed after six arms failed on the old one, by the author
 protects it is the `off` control with its threshold written above, and the fact that the reason
 for the change is a quotation from nineteen of twenty-one failing cells rather than a judgement
 about them.
+
+## Addendum to v5, registered mid-run: context size as a named secondary outcome
+
+Registered 2026-09-21 while v5's cells were running. What had been read from v5 at that
+moment: the launcher log's pass/fail lines for the first four cells. What had **not**: any
+attachment, any transcript, any `results.jsonl` row. The outcome below is read from
+attachments only, so nothing about it had been seen when this was written.
+
+`h2h/context_cost.py` says of its own figures that "a claim would need a grid with context
+size as its registered outcome — which is cheap to run". This registers it on v5, which is
+already running the two arms it needs.
+
+**Outcome:** median characters of `hook_additional_context` per cell, paired by (run, task),
+`muninn-floor2 / claude-mem`, with a bootstrap interval over the pairs — the script's existing
+definition, unchanged.
+
+**Why it is worth a registered outcome now.** Muninn's published weaknesses include occupying
+more of the window than the competitor, at 1.6–2.1× across three grids. Post-hoc on v4 the
+relevance floor moves that from 2.14 (`muninn-loop8`) and 2.34 (`muninn-quiet`) to **1.84
+[1.70, 2.00]** — the first interval reaching under 2. That is the floor's case: it did not
+move the pass rate by one cell and it halves the block, so either it earns its place on the
+window cost or it should come out.
+
+**Decision rule, fixed before the data:** the floor stays only if v5's registered ratio is
+below the 2.136 that `muninn-loop8` scored on v4, with the interval excluding it. Otherwise it
+is reverted, and the revert is published with this paragraph.
+
+**Threat:** registered after seeing the post-hoc v4 figure, which is what suggested it. It is a
+replication of that figure on a different fixture, not an independent test of it.
