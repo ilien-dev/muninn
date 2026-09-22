@@ -230,20 +230,50 @@ against 5 of 25, which is not a clear difference. Two features did not help and 
 turned off by default.
 
 The comparison was run again with the decisions also implemented in the repository, the way a
-real project works, and **Muninn lost it: 6 of 27 against claude-mem's 22 of 27.** That is a
-clear result and it is published as one. What the same cells also show is where the loss is:
-Muninn put the current decision in front of the assistant in 27 cells out of 27, and the
-assistant used it in 6. claude-mem delivered in 24 and the assistant used it in 19. The
-assistant with Muninn also searched the repository three times as often — which is what you do
-when you do not believe what you were told.
+real project works. **Muninn lost it, six times.** Six builds scored 6, 4, 7, 9, 5 and 6 out of
+27 against claude-mem's 22, and the same cells said where the loss was: Muninn put the current
+decision in front of the assistant in 27 cells out of 27, and the assistant used it in 4 to 9.
+Five of those builds changed what Muninn *tells* the assistant. None of them moved it.
 
-Three reasons turned up in those transcripts, and all three are ours. Muninn's own startup
-note told the assistant "do not paste blocks into files" while the task was to write a decision
-into a file. A hyphen kept `async-std` from matching the commit that replaced it, so both the
-old and the new value were served and the assistant concluded the decision had been revoked.
-And the line that gives a block its topic printed the retired value back when that value was an
-ordinary lowercase word. All three are fixed, and the same cells are being re-run with the
-fixes; until that finishes, the number above is the number.
+Two fixtures were withdrawn along the way, and one of those withdrawals did not save the
+result. The first was withdrawn because nineteen of twenty-one failing cells reasoned from
+commits Muninn cited that did not exist in the checkout they were standing in — the grid seeded
+in one repository and ran the cells in another, which penalises exactly the checkable
+provenance Muninn is built on. The fixture was fixed so every cited commit resolves, and
+**Muninn still lost, 4 of 27 against 13 of 27.** That run was then voided too, for a defect it
+found: the commit that removed a config directory made Muninn retire six current decisions and
+the conversations behind them. Renaming a file wiped the memory of them.
+
+What finally moved it was not better retrieval. Reading the competitor's own cells showed that
+claude-mem does not deliver the decision at all — it delivers an index of every decision on
+record, once per session, and the assistant then asks for the two it wants by id. An assistant
+handed a filtered selection cannot tell a memory that holds nothing about a subject from a
+query that missed it, and it acts on the first reading. Muninn now delivers the same thing
+without a model: `[muninn:catalog]`, one line per record on the books, with `replaces #n` read
+from the ledger and `conflict` where two active records disagree, plus `muninn show <id>` to
+pull any of them in full.
+
+On the shipped build, with the fixture validated by a no-memory control that scores 0 of 54:
+
+| | replacement cells passed |
+|---|---|
+| **Muninn** | **51 of 54** |
+| claude-mem 13.24.23 | 25 of 54 |
+| agentmemory 0.9.29 | 1 of 49 |
+| no memory at all | 0 of 54 |
+
+Exact Fisher p = 3.3 × 10⁻⁸ against claude-mem and 1.6 × 10⁻²⁴ against agentmemory. Six runs,
+54 cells an arm, the size and the threshold fixed before any cell ran, and the whole grid re-run
+on the binary that ships rather than the one that first scored well.
+
+It cost context: Muninn now occupies about 2.6 times claude-mem's share of the window, the worst
+figure it publishes, and that is measured the way least favourable to us. Turning the per-prompt
+block off takes it to 1.8 and costs about four answers in fifty, which is why it is not the
+default.
+
+Where the decisions exist only in the conversation and never reach the code, the same grid is
+**not a win and is not claimed as one**: 39 of 54 against 33 of 54, which chance produces often
+enough that it means nothing.
 
 The earlier comparison (claude-mem and agentmemory) gives every tool the same
 decisions from the same real sessions, and nobody tells it which decisions were replaced.
@@ -278,8 +308,10 @@ seen those rules caught 17 of 27 replacements against claude-mem's 14, which is 
 Inside the words, that gap is closed as far as it goes. Of 30 held-out cases, 23 have no word
 in common between the old decision and the message replacing it — "HashiCorp Vault for
 production secrets" and "moving to AWS Secrets Manager" share nothing a program can match on.
-Comparing meaning instead of words does not work either: measured on the product names alone it
-picked the right pair 1 time in 26, worse than the sentence-level attempt already abandoned.
+Comparing meaning instead of words does not work either. Measured on the product names alone
+over 42 development pairs it picked the right pair **3 times**, where chance on a 42-way
+choice is one; an earlier six-pair reading said 5 of 6 and did not survive the larger one.
+Both halves of that route — whole sentences and names — are now measured and both are shut.
 The way past it was to stop reading sentences and read the commits, which is the table above —
 and that only helps for decisions that reach the code. For a decision that never does, the
 marking is still a set of rules over the words you typed, and they still miss.
@@ -299,11 +331,15 @@ Retired records stay on disk in plain sight. Muninn mirrors every record to `.mu
 Markdown, retired ones included and labelled as retired. Nothing hands them to the assistant, but
 an assistant that greps the folder will find them. `MUNINN_NO_PROJECT` turns the mirror off.
 
-Muninn takes more of your context window than the tool it was measured against. On the part
-that is certainly the assistant's context, three comparisons agree: 1.6 to 2.1 times
-claude-mem's room. Per turn it is about 1 400 characters when a session starts and 860 more on
-each prompt, against claude-mem's 1 380 once and nothing after. That is the design — memory
-arrives when you ask something, not only at the start — and it is a cost, not a saving. The
+Muninn takes more of your context window than the tools it was measured against, and the
+catalogue made that worse. On the part that is certainly the assistant's context it is now
+**2.6 times claude-mem's room**, the worst figure this project publishes, against 1.6 to 2.1
+before the catalogue existed. Two things follow from the design: memory arrives when you ask
+something and not only at the start, and the session now opens with a list of everything on
+record. Turning the per-prompt half off — `muninn config prompt-delivery off` — takes it to
+1.8 and costs about four answers in fifty, both measured, which is why it is a switch and not
+the default. Cutting the startup text instead was measured too and cost six answers in
+fifty-four, so that door is shut. The
 first version of this measurement said the opposite, and it was wrong: it counted our own
 injection twice, because Muninn returns its context on standard output and the hook record
 repeats it.
