@@ -545,9 +545,14 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             // nothing: at most one record per retirement.
             {
                 if let Some((_, sw)) = &swap {
+                    // every word the swap took out, not only the one that matched first:
+                    // `code_tokens` emits a hyphenated value both joined and split, so
+                    // `async-std` contributes `async` and `std`, and filtering on the single
+                    // `gone` word left keys like `said:change:runtime std` — half the retired
+                    // value, as the topic of the record that replaced it.
                     let topic: Vec<&str> = words
                         .iter()
-                        .filter(|w| *w != gone)
+                        .filter(|w| *w != gone && !(sw.out.contains(w) && !sw.inn.contains(w)))
                         .map(String::as_str)
                         .collect();
                     let object = muninn_core::sanitize::truncate_chars(&sw.line, 160).to_string();
