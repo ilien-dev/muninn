@@ -494,15 +494,20 @@ type CatalogRow = (i64, String, String, Option<String>);
 /// Deterministic and model-free: the line is the record's own `object`, and `replaces #n` is
 /// read from `invalidated_by`. Retired rows contribute their id and nothing else — no text of
 /// theirs is rendered, which is the same rule `why`'s lineage line already follows.
+/// How many catalogue rows are read. One more than this is read to learn whether the list
+/// is complete, which is the only thing about the remainder that changes an agent's reading.
+const PAGE: usize = 120;
+
 pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn.prepare(&format!(
         "SELECT r.id, r.kind, r.object, \
                 CASE WHEN r.origin = 'commit_linked' THEN r.anchor_path END AS anchored \
          FROM served_record r \
          WHERE r.kind IN ('decision', 'invariant', 'correction') \
            AND r.subject NOT LIKE 'commit:%' \
-         ORDER BY r.created_at DESC, r.id DESC LIMIT 120",
-    )?;
+         ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
+        PAGE + 1
+    ))?;
     let rows: Vec<CatalogRow> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .filter_map(|r| r.ok())
@@ -523,23 +528,11 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             heirs.insert(heir, retired);
         }
     }
-    // The true size of the catalogue, not the size of the page read above: `LIMIT 120` keeps
-    // the query off a sort of the whole active set, and counting the rows it returned said
-    // "and 107 older, not listed" on a store holding twelve thousand of them. A number a
-    // reader cannot trust is worse than no number.
-    let total = db
-        .count(
-            "SELECT count(*) FROM served_record r \
-             WHERE r.kind IN ('decision', 'invariant', 'correction') \
-               AND r.subject NOT LIKE 'commit:%'",
-        )
-        .unwrap_or(rows.len() as i64)
-        .max(rows.len() as i64) as usize;
     let mut text = String::new();
     let mut ids = Vec::new();
     let cap = budget * 3;
     let mut cut = 0usize;
-    for (id, kind, object, anchored) in &rows {
+    for (id, kind, object, anchored) in rows.iter().take(PAGE) {
         let flat = object.trim().replace('\n', " ");
         let short = crate::sanitize::truncate_chars(&flat, 72);
         let one = if short.len() < flat.len() {
@@ -579,14 +572,19 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             tokens: 0,
         });
     }
-    let unlisted = total.saturating_sub(ids.len()).max(cut);
     // Whether this is the whole catalogue decides what an absence from it means, so the block
     // says which it is rather than leaving the reader to assume.
-    let more = if unlisted > 0 {
-        format!(
-            "\u{2026} and {unlisted} older, not listed \u{2014} a subject missing from this list \
-             may still be on record; ask `muninn why \"<question>\"`. "
-        )
+    //
+    // It says *whether*, not *how many*. The exact number costs a scan of every active record
+    // — 6 ms of a 10 ms hook on a store at the schema's cap — and counting only the page that
+    // was read gives a number that is wrong, which is worse than none: a store holding twelve
+    // thousand records reported "and 107 older". One row past the page answers the question
+    // an agent actually has.
+    let truncated = cut > 0 || rows.len() > PAGE;
+    let more = if truncated {
+        "\u{2026} and more, not listed \u{2014} a subject missing from this list may still be on \
+         record; ask `muninn why \"<question>\"`. "
+            .to_string()
     } else {
         "That is all of it: a subject missing from this list has nothing on record. ".to_string()
     };
@@ -864,12 +862,13 @@ mod tests {
         );
     }
 
-    /// The catalogue's last line decides what an absence from it means, so the count has to be
-    /// the store's, not the page's. It was the page's: a `LIMIT 120` kept the query off a sort
-    /// of the whole active set, and a store holding twelve thousand records reported "and 107
-    /// older, not listed".
+    /// The catalogue's last line decides what an absence from it means, so it has to be right
+    /// about completeness on a store of any size. It said "and 107 older, not listed" on a
+    /// store holding twelve thousand of them, because it counted the page it had read; and the
+    /// exact number costs a scan of every active record, 6 ms of a 10 ms hook at the schema's
+    /// cap. One row past the page answers the question an agent actually has.
     #[test]
-    fn the_catalogue_counts_what_it_did_not_list_not_what_it_read() {
+    fn the_catalogue_says_whether_it_is_the_whole_list() {
         let tmp = tempfile::tempdir().unwrap();
         let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
         {
@@ -885,16 +884,16 @@ mod tests {
             tx.commit().unwrap();
         }
         let c = catalog(&db, 300).unwrap();
-        let listed = c.ids.len();
-        assert!(listed < 400, "the budget cut some: {listed}");
+        assert!(c.ids.len() < 400, "the budget cut some: {}", c.ids.len());
         assert!(
-            c.text.contains(&format!("and {} older", 400 - listed)),
-            "the count is the store's, not the page's ({listed} listed):\n{}",
+            c.text.contains("and more, not listed"),
+            "a truncated catalogue says so:\n{}",
             c.text
         );
         assert!(
             !c.text.contains("That is all of it"),
-            "and a truncated catalogue never says it is complete"
+            "and never claims to be complete:\n{}",
+            c.text
         );
 
         let tmp2 = tempfile::tempdir().unwrap();
@@ -910,6 +909,11 @@ mod tests {
         assert!(
             c2.text.contains("That is all of it"),
             "a complete catalogue says so, which is what makes an absence mean something:\n{}",
+            c2.text
+        );
+        assert!(
+            c2.text.contains("the only decision"),
+            "and the probe row past the page is never rendered as an entry:\n{}",
             c2.text
         );
     }
