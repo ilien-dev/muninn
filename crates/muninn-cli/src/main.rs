@@ -98,6 +98,13 @@ enum Cmd {
         #[arg(long, default_value_t = 1500)]
         budget: usize,
     },
+    /// Print the records with these ids: the pull half of the session catalogue
+    Show {
+        ids: Vec<i64>,
+        /// Output budget in tokens (estimate)
+        #[arg(long, default_value_t = 700)]
+        budget: usize,
+    },
     /// Evaluate the trigger conditions for a context and print the delivery (F3, invoked form)
     Cues {
         #[arg(long)]
@@ -322,6 +329,32 @@ fn main() {
                 1
             }
         },
+        Cmd::Show { ids, budget } => {
+            match Db::open(&paths.db_path(), Mode::ReadOnly) {
+                Ok(db) => {
+                    let d = muninn_core::recall::show(&db, &ids, budget).unwrap_or(
+                        muninn_core::recall::Delivery {
+                            text: String::new(),
+                            ids: vec![],
+                            tokens: 0,
+                        },
+                    );
+                    if cli.json {
+                        output::json(
+                            &serde_json::json!({ "ids": d.ids, "tokens": d.tokens, "text": d.text }),
+                        );
+                    } else if d.text.is_empty() {
+                        // an id that is not served is a retired or absent record, and saying
+                        // so is the point: silence here would read as "nothing is recorded"
+                        println!("no served record with that id (it may have been retired — `muninn why --all` shows those)");
+                    } else {
+                        print!("{}", d.text);
+                    }
+                }
+                Err(e) => output::err(&format!("muninn: show: {e}")),
+            }
+            0
+        }
         Cmd::Recall { prompt } => {
             let p = prompt.join(" ");
             match Db::open(&paths.db_path(), Mode::ReadOnly) {

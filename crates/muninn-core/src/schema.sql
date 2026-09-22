@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS record (
 CREATE INDEX IF NOT EXISTS record_active_key ON record(subject, relation) WHERE invalid = 0;
 CREATE INDEX IF NOT EXISTS record_anchor     ON record(anchor_path) WHERE anchor_path IS NOT NULL;
 CREATE INDEX IF NOT EXISTS record_kind       ON record(kind) WHERE invalid = 0;
+-- who retired whom, for the session catalogue's `replaces #n`
+CREATE INDEX IF NOT EXISTS record_heir       ON record(invalidated_by) WHERE invalidated_by IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS record_dedup ON record(dedup_hash);
 
 -- F1's gate, in the schema rather than in every query (ENGINE.md §5). This view is the
