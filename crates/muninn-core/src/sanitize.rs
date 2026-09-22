@@ -16,6 +16,54 @@ pub fn clean_text(s: &str) -> String {
         .collect()
 }
 
+/// The harness's own blocks, which arrive inside a `type: user` line and are not the user.
+///
+/// Claude Code injects task notifications, system reminders and slash-command scaffolding as
+/// ordinary user content with no `isMeta` flag. Counted on this project's own transcripts: 134
+/// `<task-notification>` blocks and 56 `<command-name>` blocks, every one of them a plain user
+/// message. Captured, they become records at **trust 3 — "stated by the user"** — which is the
+/// one thing that level is supposed to mean, and one of them tripped a change marker.
+const HARNESS_TAGS: [&str; 8] = [
+    "system-reminder",
+    "task-notification",
+    "local-command-stdout",
+    "local-command-caveat",
+    "command-name",
+    "command-message",
+    "command-args",
+    "command-contents",
+];
+
+/// Lines the harness writes on the user's behalf. Not blocks, so they need their own list:
+/// found in this project's own store as episodes whose whole content is one of them.
+const HARNESS_LINES: [&str; 5] = [
+    "[Request interrupted by user]",
+    "[Request interrupted by user for tool use]",
+    "User approved the plan.",
+    "User rejected the plan.",
+    "API Error: Request was aborted.",
+];
+
+/// Drop those blocks from text about to be attributed to the user.
+pub fn strip_harness_blocks(s: &str) -> String {
+    let mut out = s.to_string();
+    for line in HARNESS_LINES {
+        out = out.replace(line, "");
+    }
+    for tag in HARNESS_TAGS {
+        let (open, close) = (format!("<{tag}>"), format!("</{tag}>"));
+        while let Some(i) = out.find(&open) {
+            let end = match out[i..].find(&close) {
+                Some(j) => i + j + close.len(),
+                // an unterminated block runs to the end of the message
+                None => out.len(),
+            };
+            out.replace_range(i..end, "");
+        }
+    }
+    out
+}
+
 /// Bytes to text, never failing: invalid sequences become U+FFFD.
 pub fn from_bytes_lossy(b: &[u8]) -> String {
     clean_text(&String::from_utf8_lossy(b))
@@ -144,5 +192,44 @@ mod tests {
     #[test]
     fn truncate_on_boundary() {
         assert_eq!(truncate_chars("héllo", 2), "hé");
+    }
+}
+
+#[cfg(test)]
+mod harness_tests {
+    use super::strip_harness_blocks;
+
+    /// Claude Code injects its own blocks inside `type: user` lines with no `isMeta` flag.
+    /// Counted on this project's transcripts: 134 `<task-notification>` and 56
+    /// `<command-name>`, every one a plain user message. Captured, they become records at
+    /// trust 3 — "stated by the user" — which is the one thing that level means.
+    #[test]
+    fn the_harness_is_not_the_user() {
+        let s = "<task-notification>\n<task-id>b46</task-id>\n<summary>done</summary>\n</task-notification>";
+        assert_eq!(strip_harness_blocks(s).trim(), "");
+
+        let mixed =
+            "please switch to rustls\n<system-reminder>be careful</system-reminder>\nthanks";
+        let out = strip_harness_blocks(mixed);
+        assert!(out.contains("switch to rustls"), "{out}");
+        assert!(out.contains("thanks"), "{out}");
+        assert!(!out.contains("be careful"), "{out}");
+
+        // an unterminated block runs to the end rather than surviving
+        let open = "ok\n<system-reminder>cut here and everything after";
+        assert_eq!(strip_harness_blocks(open).trim(), "ok");
+
+        // ordinary text with angle brackets is untouched
+        let code = "use Vec<String> and keep it";
+        assert_eq!(strip_harness_blocks(code), code);
+
+        // and the lines the harness writes on the user's behalf are not the user either
+        assert_eq!(
+            strip_harness_blocks("[Request interrupted by user]").trim(),
+            ""
+        );
+        assert_eq!(strip_harness_blocks("User approved the plan.").trim(), "");
+        let keep = "the user approved the plan we discussed";
+        assert_eq!(strip_harness_blocks(keep), keep);
     }
 }
