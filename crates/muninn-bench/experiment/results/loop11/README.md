@@ -88,3 +88,25 @@ store still holds.
 
 `results-base.json`, `results-anchor.json`, `results-floor50.json` — the registered condition;
 `results-base-nocommits.json`, `results-floor50-nocommits.json` — the check above.
+
+## The variant that pays for it: the floor cannot cut what the user said
+
+Also after the registration. `trust 3` is the class Muninn already treats as strongest — the
+user stated it — and the record the floor dropped above is one. Exempting it:
+
+| build | condition | answered | retired | records / task | off-topic / task | tokens / task |
+|---|---|---|---|---|---|---|
+| base | code | 9/9 | 0/9 | 6.3 | 4.4 | 409 |
+| floor 0.5 | code | 9/9 | 0/9 | 2.2 | 0.6 | 139 |
+| floor 0.5, trust 3 exempt | code | 9/9 | 0/9 | 2.2 | 0.6 | 139 |
+| base | plain | 5/9 | 5/9 | 1.8 | 0.0 | 109 |
+| floor 0.5 | plain | 4/9 | 5/9 | 1.3 | 0.0 | 80 |
+| floor 0.5, trust 3 exempt | plain | 5/9 | 5/9 | 1.6 | 0.0 | 93 |
+
+In the condition the seventh grid arm measures the two builds are **identical** — no trust-3
+record is cut there, so that arm's number is this variant's number too. In the plain condition
+the exemption returns the answer the floor lost and still delivers a shorter block than base
+(93 tokens against 109). It is in `master`; the grid arm stays pinned to the build that was
+registered.
+
+`the_floor_never_cuts_something_the_user_said` fails without it.
