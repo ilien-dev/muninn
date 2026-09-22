@@ -3891,3 +3891,49 @@ which is what a second grid is for.
 Delivered in 54 cells of 54 and acted on in 39; claude-mem delivered in 44 and its agent acted
 on 20. Median injected context 2.504 [2.353, 2.554] times claude-mem's, unchanged as the one
 number that goes against us.
+
+## The closing suite, stage 2 — both candidates met their rules
+
+| arm | replacement pass | vs `muninn-now2` | injected context / claude-mem |
+|---|---|---|---|
+| **muninn-stands** | **51/54** | p = **0.0036** | 2.593 [2.468, 2.694] |
+| **muninn-noprompt** | **45/54** | p = 0.247 | **1.754 [1.747, 1.761]** |
+| muninn-now2 (`master`) | 39/54 | — | 2.504 [2.353, 2.554] |
+| claude-mem 13.24.23 | 25/54 | — | — |
+| off | 0/54 | — | — |
+
+### `muninn-stands`: the rule is met, and the prior was against it
+
+Two sentences — *"If it is listed it is current: only a later decision or a commit replacing the
+value retires a record — a moved or missing file is not a retirement."* — take 39/54 to
+**51/54**, exact Fisher **p = 0.0036** against the same grid's `muninn-now2` cells, with the
+sentence as the only difference between the two builds. The registered rule was superiority at
+α = 0.05 in its favour. **Met, and it ships.**
+
+This is the seventh attempt in this project to move a number by changing what Muninn *tells*
+the agent, and the first that worked; the registration said the prior was against it and it
+was. What separates it from the six that failed is what it says: not how to read a block, but
+what an absence from the repository does **not** mean. Eleven of the thirteen remaining v7
+failures were an agent reading the fixture's removal commit as a revocation, and the arm is
+aimed at exactly that.
+
+The agent also stopped digging: repository looks 3.3 a cell against 4.8, memory asks 0.4
+against 0.8, delivered-and-not-used 3 against 15.
+
+**F1 checked before anything shipped.** The retired-value column reads 11/54 on an arm with
+three failures, so it was checked the way it was on the catalogue arm: **zero catalogue lines
+name a retired value** across all 54 cells. The column is the analyser's substring test over
+the whole patch — an agent writing "this supersedes the earlier bcrypt decision" trips it — and
+51 of 54 passed the oracle, which requires the retired value to be absent.
+
+### `muninn-noprompt`: all three clauses hold
+
+The registered rule was: adopted only if the context ratio falls **below 2.0**, the pass
+contrast is **not significant**, *and* its point estimate is **not lower**. It reads
+1.754 [1.747, 1.761], p = 0.247, and 45 against 39. All three.
+
+It is not adopted yet, and the reason is in the design rather than the rule: it was measured
+against `muninn-now2`, and `muninn-stands` is now the better base. Shipping both without
+measuring the pair is the "five changes at once" that this whole suite exists to avoid. Stage 3
+runs `master` **with the sentences and the prompt block off** against the same cells, and that
+decides the default.

@@ -157,6 +157,36 @@ fn split_sentences(s: &str) -> Vec<&str> {
     out
 }
 
+/// The user's own words, with the text they quoted taken out.
+///
+/// A coding session is full of pasted material: logs, documents, another tool's output, a
+/// snippet under discussion. Its sentences are not things the user decided, and capturing them
+/// as such puts them on record at trust 3. Measured on five of this project's own transcripts,
+/// 14 decisions were captured and about ten were pasted text — one of them a line of
+/// **claude-mem's own output** that had been pasted into the chat, stored as a decision of this
+/// project.
+///
+/// Two shapes carry quotation and nothing else, so both come out before extraction: a fenced
+/// block and a `>` blockquote. The episode keeps the message whole — a literal excerpt is
+/// supposed to be literal; this is only about what may become a typed record.
+fn unquoted(s: &str) -> String {
+    let mut out = String::new();
+    let mut fenced = false;
+    for line in s.lines() {
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced || t.starts_with('>') {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
 fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     let up = t.user_prompt.trim();
     if up.is_empty() || is_tagged(up) || up.starts_with("This session is being continued") {
@@ -177,8 +207,11 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
             end_offset: t.end_offset,
         });
     }
-    decision_candidates(t, up, out);
-    for sent in split_sentences(up) {
+    // typed records come from what the user wrote, not from what they pasted
+    let own = unquoted(up);
+    let own = own.trim();
+    decision_candidates(t, own, out);
+    for sent in split_sentences(own) {
         let n = sent.chars().count();
         if !(12..=220).contains(&n) || sent.contains('?') || !invariant_re().is_match(sent) {
             continue;
@@ -721,23 +754,56 @@ pub fn replaces(old: &[String], new: &[String], announces_change: bool) -> bool 
     shared >= 2 && share >= if announces_change { 0.34 } else { 0.5 }
 }
 
+/// Does this text announce a change — and is the announcement not a denial of one?
+///
+/// `No cambié nada` ("I changed nothing") matched `\bcambi…\b` and became a `said:change:`
+/// record, which is the kind that supersedes. It was found in this project's own store, along
+/// with `verificado que ya no aparece`. A marker with a negation immediately in front of it
+/// says the opposite of what the marker means.
+fn denied(s: &str, at: usize) -> bool {
+    static NEG: OnceLock<Regex> = OnceLock::new();
+    let neg = NEG.get_or_init(|| {
+        Regex::new(r"(?i)(?:\bno\b|\bnot\b|n't|\bnunca\b|\btampoco\b|\bsin\b)\s*$").unwrap()
+    });
+    // the twelve characters in front of the marker are enough for `no `, `not `, `didn't `
+    let mut lo = at.saturating_sub(12);
+    while lo < at && !s.is_char_boundary(lo) {
+        lo += 1;
+    }
+    neg.is_match(&s[lo..at])
+}
+
+fn announces_change(s: &str) -> bool {
+    change_re().find(s).is_some_and(|m| !denied(s, m.start()))
+}
+
+/// A decision stated outright, and not denied: `switch to X` counts, `I didn't switch to X`
+/// does not, and both reach here through `decision_re` rather than the change markers.
+fn states_decision(s: &str) -> bool {
+    decision_re()
+        .find(s)
+        .or_else(|| choice_re().find(s))
+        .is_some_and(|m| !denied(s, m.start()))
+}
+
 fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
     let before = out.len();
     let mut sentence_change = false;
     for sent in split_sentences(up) {
         let n = sent.chars().count();
-        if !(6..=300).contains(&n) || sent.contains('?') {
+        // a sentence that ends in a colon introduces what follows and states nothing itself:
+        // `Por condición de 540 registros:` was captured from this project's own store
+        if !(6..=300).contains(&n) || sent.contains('?') || sent.trim_end().ends_with(':') {
             continue;
         }
-        let change = change_re().is_match(sent);
+        let change = announces_change(sent);
         sentence_change |= change && !name_tokens(sent).is_empty();
         // A sentence that states a measured value and nothing else ("bump to 7 attempts")
         // announces a decision in a vocabulary no verb list covers; whether it *replaces*
         // one is decided against the store, in `supersede_quantity`.
         let bare_quantity =
             !quantity_slots(sent).is_empty() && words_outside_quantities(sent).len() <= 1;
-        if !(change || bare_quantity || decision_re().is_match(sent) || choice_re().is_match(sent))
-        {
+        if !(change || bare_quantity || states_decision(sent)) {
             continue;
         }
         let words = topic_words(sent);
@@ -774,7 +840,7 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
     let n = up.chars().count();
     if !sentence_change && (8..=700).contains(&n) && !up.trim_end().ends_with('?') {
         let names = name_tokens(up);
-        let msg_change = change_re().is_match(up);
+        let msg_change = announces_change(up);
         if msg_change && (!names.is_empty() || is_withdrawal(up)) {
             let words = topic_words(up);
             let object = truncate_chars(up, 300).to_string();
@@ -1432,5 +1498,61 @@ mod ahora_tests {
             d.iter().any(|c| c.subject.starts_with("said:change:")),
             "a stated change is still captured: {d:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod paste_tests {
+    use super::{decision_candidates, unquoted, Candidate};
+    use crate::model::Turn;
+
+    fn decisions(msg: &str) -> Vec<Candidate> {
+        let t = Turn {
+            index: 0,
+            user_prompt: msg.into(),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        let own = unquoted(msg);
+        decision_candidates(&t, own.trim(), &mut out);
+        out
+    }
+
+    /// A coding session is full of pasted material, and its sentences are not things the user
+    /// decided. Five of this project's own transcripts produced fourteen decisions and about
+    /// ten were pasted text — one of them a line of **claude-mem's own output**, stored as a
+    /// decision of this project.
+    #[test]
+    fn what_the_user_pasted_is_not_what_the_user_decided() {
+        let fenced = "here is what the other tool printed:\n```\n54 6:43p ⚖ Transport compression codec changed to zstd\n```\nwhat do you make of it";
+        assert!(decisions(fenced).is_empty(), "{:?}", decisions(fenced));
+        let quoted = "> we switched from gzip to zstd last week\nis that still true";
+        assert!(decisions(quoted).is_empty(), "{:?}", decisions(quoted));
+
+        // and the user's own sentence around a paste still counts
+        let mixed = "let's switch to zstd for compression\n```\nsome log output\n```";
+        assert!(
+            !decisions(mixed).is_empty(),
+            "the user's own words survive: {:?}",
+            decisions(mixed)
+        );
+    }
+
+    /// `No cambié nada` is the denial of a change and it became a `said:change:` record — the
+    /// kind that supersedes. Found in this project's own store.
+    #[test]
+    fn a_denied_change_is_not_a_change() {
+        assert!(decisions("No cambié nada").is_empty());
+        assert!(decisions("I didn't switch to anything").is_empty());
+        assert!(
+            !decisions("Cambiamos a zstd para la compresión").is_empty(),
+            "a stated change still is one"
+        );
+    }
+
+    /// A sentence ending in a colon introduces what follows and states nothing itself.
+    #[test]
+    fn a_header_is_not_a_decision() {
+        assert!(decisions("Por condición de 540 registros:").is_empty());
     }
 }
