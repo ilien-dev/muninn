@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS record (
 CREATE INDEX IF NOT EXISTS record_active_key ON record(subject, relation) WHERE invalid = 0;
 CREATE INDEX IF NOT EXISTS record_anchor     ON record(anchor_path) WHERE anchor_path IS NOT NULL;
 CREATE INDEX IF NOT EXISTS record_kind       ON record(kind) WHERE invalid = 0;
+-- newest-first over the served rows: the catalogue and any recency query read the top of
+-- this index instead of sorting the whole active set. On a store at the schema's cap that
+-- sort was 3.5 ms of a 10 ms hook; through the index it is 0.08 ms.
+CREATE INDEX IF NOT EXISTS record_recent     ON record(created_at DESC, id DESC) WHERE invalid = 0;
 -- who retired whom, for the session catalogue's `replaces #n`
 CREATE INDEX IF NOT EXISTS record_heir       ON record(invalidated_by) WHERE invalidated_by IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS record_dedup ON record(dedup_hash);

@@ -523,6 +523,18 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             heirs.insert(heir, retired);
         }
     }
+    // The true size of the catalogue, not the size of the page read above: `LIMIT 120` keeps
+    // the query off a sort of the whole active set, and counting the rows it returned said
+    // "and 107 older, not listed" on a store holding twelve thousand of them. A number a
+    // reader cannot trust is worse than no number.
+    let total = db
+        .count(
+            "SELECT count(*) FROM served_record r \
+             WHERE r.kind IN ('decision', 'invariant', 'correction') \
+               AND r.subject NOT LIKE 'commit:%'",
+        )
+        .unwrap_or(rows.len() as i64)
+        .max(rows.len() as i64) as usize;
     let mut text = String::new();
     let mut ids = Vec::new();
     let cap = budget * 3;
@@ -567,10 +579,16 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             tokens: 0,
         });
     }
-    let more = if cut > 0 {
-        format!("\u{2026} and {cut} older, not listed. ")
+    let unlisted = total.saturating_sub(ids.len()).max(cut);
+    // Whether this is the whole catalogue decides what an absence from it means, so the block
+    // says which it is rather than leaving the reader to assume.
+    let more = if unlisted > 0 {
+        format!(
+            "\u{2026} and {unlisted} older, not listed \u{2014} a subject missing from this list \
+             may still be on record; ask `muninn why \"<question>\"`. "
+        )
     } else {
-        String::new()
+        "That is all of it: a subject missing from this list has nothing on record. ".to_string()
     };
     let text = format!(
         "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
@@ -843,6 +861,56 @@ mod tests {
             r.text.is_empty(),
             "a retired id is not servable, not even by name:\n{}",
             r.text
+        );
+    }
+
+    /// The catalogue's last line decides what an absence from it means, so the count has to be
+    /// the store's, not the page's. It was the page's: a `LIMIT 120` kept the query off a sort
+    /// of the whole active set, and a store holding twelve thousand records reported "and 107
+    /// older, not listed".
+    #[test]
+    fn the_catalogue_counts_what_it_did_not_list_not_what_it_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        {
+            let tx = db.conn.unchecked_transaction().unwrap();
+            for i in 0..400 {
+                tx.execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,?3)",
+                    rusqlite::params![format!("said:state:s{i}"), format!("decision number {i}"), i],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        let listed = c.ids.len();
+        assert!(listed < 400, "the budget cut some: {listed}");
+        assert!(
+            c.text.contains(&format!("and {} older", 400 - listed)),
+            "the count is the store's, not the page's ({listed} listed):\n{}",
+            c.text
+        );
+        assert!(
+            !c.text.contains("That is all of it"),
+            "and a truncated catalogue never says it is complete"
+        );
+
+        let tmp2 = tempfile::tempdir().unwrap();
+        let db2 = Db::open(&tmp2.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        db2.conn
+            .execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                 VALUES('decision','said:state:one','is','the only decision','the only decision','user_said',3,'s','h',1)",
+                [],
+            )
+            .unwrap();
+        let c2 = catalog(&db2, 300).unwrap();
+        assert!(
+            c2.text.contains("That is all of it"),
+            "a complete catalogue says so, which is what makes an absence mean something:\n{}",
+            c2.text
         );
     }
 

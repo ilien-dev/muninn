@@ -344,8 +344,18 @@ fn user_prompt(
             log(vec![*id], 0, r);
         }
     }
-    for id in &literal.gated {
-        log(vec![*id], 0, "gated:budget");
+    if !literal.gated.is_empty() {
+        // One line, not one per record. A store at the schema's cap gates thousands of
+        // candidates on every prompt, and a line each grew the ledger by 4 200 rows a prompt
+        // — which `delivered_ids` then re-read on the next one. The count is what the
+        // denominator needs; the ids are kept for the top of the ranking only.
+        const KEPT: usize = 32;
+        let n = literal.gated.len();
+        log(
+            literal.gated.iter().take(KEPT).copied().collect(),
+            0,
+            &format!("gated:budget:{n}"),
+        );
     }
     log(literal.ids.clone(), literal.tokens, "literal");
     Ok(Some(additional_context("UserPromptSubmit", &literal.text)))
@@ -415,8 +425,12 @@ fn event_delivery(paths: &ProjectPaths, db: &Db, session: &str, event: &str) -> 
         event: event.to_string(),
         ..Default::default()
     };
-    let hits = cue::evaluate(db, &ctx, &exclude).ok()?;
-    if hits.is_empty() {
+    // four times what a 700-token budget can render: what surfaces is unchanged, the
+    // conjunction check and the record load never run for the rest, and `dropped` keeps the
+    // disclosure line honest.
+    const EVENT_CANDIDATES: usize = 64;
+    let (hits, dropped) = cue::evaluate_capped(db, &ctx, &exclude, EVENT_CANDIDATES).ok()?;
+    if hits.is_empty() && dropped == 0 {
         return None;
     }
     let ids: Vec<i64> = hits.iter().map(|h| h.record_id).collect();
@@ -443,20 +457,23 @@ fn event_delivery(paths: &ProjectPaths, db: &Db, session: &str, event: &str) -> 
             reason: format!("cue:event:{event}"),
         },
     );
-    for id in &m.gated {
+    if !m.gated.is_empty() {
+        // one line, not one per record: see the same cap on the prompt path
+        const KEPT: usize = 32;
+        let n = m.gated.len() + dropped;
         crate::delivery::append(
             paths,
             &crate::delivery::Line {
                 at: now_ms(),
                 session: session.to_string(),
                 arm: arm(),
-                ids: vec![*id],
+                ids: m.gated.iter().take(KEPT).copied().collect(),
                 tokens: 0,
-                reason: "gated:budget".into(),
+                reason: format!("gated:budget:{n}"),
             },
         );
     }
-    if m.gated.is_empty() {
+    if m.gated.is_empty() && dropped == 0 {
         Some(m.text)
     } else {
         // the budget is hard; silence about what it cut is not. The decay probe found
@@ -465,7 +482,7 @@ fn event_delivery(paths: &ProjectPaths, db: &Db, session: &str, event: &str) -> 
         let mut text = m.text;
         text.push_str(&format!(
             "[muninn:gated] {} more invariant/correction record(s) exist but did not fit the {}-token turn budget; run `muninn why <topic>` before assuming a rule is absent\n",
-            m.gated.len(),
+            m.gated.len() + dropped,
             muninn_core::caps::BUDGET_TURN_TOKENS
         ));
         Some(text)
