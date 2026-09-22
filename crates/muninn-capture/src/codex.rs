@@ -9,7 +9,7 @@
 //! scripts. Once a rollout shows those items, they are the only source read.
 
 use crate::model::{Session, ToolCall, Turn};
-use muninn_core::sanitize::{clean_text, truncate_chars};
+use muninn_core::sanitize::{clean_text, strip_harness_blocks, truncate_chars};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, Seek, SeekFrom};
@@ -81,8 +81,9 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                 let item = p.get("item").unwrap_or(&Value::Null);
                 match item.get("type").and_then(|t| t.as_str()) {
                     Some("UserMessage") => {
-                        let prompt =
-                            clean_text(&content_text(item.get("content").unwrap_or(&Value::Null)));
+                        let prompt = clean_text(&strip_harness_blocks(&content_text(
+                            item.get("content").unwrap_or(&Value::Null),
+                        )));
                         if prompt.trim().is_empty() {
                             continue;
                         }
@@ -167,7 +168,9 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                 }
             }
             "event_msg" if p.get("type").and_then(|t| t.as_str()) == Some("user_message") => {
-                let prompt = clean_text(p.get("message").and_then(|m| m.as_str()).unwrap_or(""));
+                let prompt = clean_text(&strip_harness_blocks(
+                    p.get("message").and_then(|m| m.as_str()).unwrap_or(""),
+                ));
                 if prompt.trim().is_empty() {
                     continue;
                 }

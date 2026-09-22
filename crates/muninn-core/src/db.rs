@@ -291,6 +291,35 @@ mod tests {
         assert!(err.is_err(), "read-only handle must not write");
     }
 
+    /// An index added after a store was created has to reach that store, or the query it was
+    /// added for scans instead. `record_recent` and `record_heir` are both younger than any
+    /// store in use: the catalogue's page and its `replaces #n` read them, and without them
+    /// SessionStart measured 128 ms against a 10 ms contract. This project has shipped a
+    /// migration that did not run once already.
+    #[test]
+    fn an_index_added_later_reaches_a_store_that_predates_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("m.db");
+        {
+            let db = Db::open(&p, Mode::ReadWrite).unwrap();
+            for ix in ["record_recent", "record_heir"] {
+                db.conn
+                    .execute_batch(&format!("DROP INDEX IF EXISTS {ix};"))
+                    .unwrap();
+            }
+            let n: i64 = db
+                .count("SELECT count(*) FROM sqlite_master WHERE type='index' AND name IN ('record_recent','record_heir')")
+                .unwrap();
+            assert_eq!(n, 0, "the store now looks like one made before them");
+        }
+        // any write open applies the schema, which is where `CREATE INDEX IF NOT EXISTS` lives
+        let db = Db::open(&p, Mode::ReadWrite).unwrap();
+        let n: i64 = db
+            .count("SELECT count(*) FROM sqlite_master WHERE type='index' AND name IN ('record_recent','record_heir')")
+            .unwrap();
+        assert_eq!(n, 2, "both are back after the next write open");
+    }
+
     /// A store written by a v1 binary carries an unstemmed index. Opening it with this one
     /// must rebuild the index — with the *servable* rows only, never the retired ones — and
     /// leave every counter coherent. Existing installs take this path exactly once.
