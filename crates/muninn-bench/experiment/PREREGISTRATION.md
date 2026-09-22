@@ -3331,3 +3331,38 @@ the project's published weakness is already that it costs more context than the 
 This is a different design, not a seventh coat of paint, and it is the first change in this
 line that was not aimed at what the block says but at what the agent can know. It is still one
 27-cell grid, and it is being read by the person who built it.
+
+## v6's result
+
+Fixture valid by its own control: `off` **1/27**, against an invalidating threshold of 6/27.
+
+| arm | replacement pass | retired value written |
+|---|---|---|
+| claude-mem 13.24.23 | 16/27 | 3/27 |
+| muninn-kept | **8/27** | 2/27 |
+| off | 1/27 | 1/27 |
+
+Registered contrast: exact Fisher **p = 0.054**. Still a loss in the point estimate, and no
+longer significant at 0.05 — which is a narrower gap, not a tie, and 27 cells cannot tell the
+two apart at this distance either way.
+
+The deletion guard did what it was for. Delivery is restored: **not delivered 0 cells of 27**,
+against 11 of 27 on v5, and the pass rate doubled, 4/27 → 8/27. The rest of the shape is the
+one every grid has shown: delivered in 27 of 27, acted on in 8, and the agent still went to
+the checkout more often than claude-mem's (5.3 against 4.6 per cell).
+
+### The relevance floor's registered outcome, and its verdict
+
+Median `hook_additional_context` characters per cell, paired by (run, task):
+
+| grid | muninn / claude-mem |
+|---|---|
+| v4, post-hoc, `muninn-loop8` (no floor) | 2.136 [2.102, 2.293] |
+| v4, post-hoc, with the floor | 1.836 [1.704, 2.002] |
+| v5, registered but void (11 empty blocks) | 1.878 [1.590, 2.225] |
+| **v6, registered and clean** | **1.844 [1.627, 2.054]** |
+
+The rule fixed before the data was: *below the 2.136 that `muninn-loop8` scored, with the
+interval excluding it.* 2.054 < 2.136, so the interval excludes it and **the floor stays**. It
+is the one change in this whole line that pays: it moved no cell, and it took a published
+weakness from 2.14× the competitor's window cost to 1.84×.
