@@ -3543,3 +3543,53 @@ not: `#32 decision · "value": "tokio" · commit 8a6e622`. Deterministic, and it
 the agent can check in the cell it is standing in. It is written down here so that if it is run
 later it is on record that it was thought of now, before v7 reported; it is **not** run before
 v7, and v7's analysis does not depend on it.
+
+## v7's result — the registered confirmatory test
+
+Fixture valid by its own control: `off` **1/54**, against an invalidating threshold of 12/54.
+
+| arm | replacement pass | retired value written | errors |
+|---|---|---|---|
+| **muninn-catalog** | **41/54** | 4/54 | 0 |
+| claude-mem 13.24.23 | 21/54 | 4/54 | 0 |
+| off | 1/54 | 3/54 | 0 |
+
+**Registered primary contrast: exact Fisher p = 1.85 × 10⁻⁴.** It is the only confirmatory test
+in this line, its threshold was fixed at α = 0.05 before any cell ran, and it is met. On this
+benchmark, on this fixture, **Muninn beats claude-mem 13.24.23**, and the v6 reading of 23/27
+replicated at 41/54 on a fresh grid with its own seeding.
+
+Secondary, reported as registered:
+
+| | muninn-catalog | claude-mem |
+|---|---|---|
+| used | 41 | 19 |
+| delivered, not used | 13 | 27 |
+| passed without memory | 0 | 2 |
+| **not delivered** | **0** | 6 |
+| memory asks / cell | 0.8 | 0.8 |
+| repository looks / cell | 4.7 | 4.9 |
+
+**Muninn put the current decision in front of the agent in 54 cells of 54 and it was acted on
+in 41.** That ratio is the whole story of this project's last six grids: it used to be 27 of 27
+delivered and 4 to 9 acted on, and the only change that moved it was letting the agent see what
+is on record rather than only what a query returned.
+
+### What it costs, and it is now the one number that goes against us
+
+Median injected context, paired: **2.587 [2.489, 2.693]** times claude-mem's — the worst figure
+any arm has recorded, and worse than v6's 2.443 because the catalogue grows with the store.
+The measurement excludes `hook_system_message`, which claude-mem uses heavily (14 800
+characters a cell) and Muninn does not, so the true window comparison is kinder to us than this
+and it is reported the unkind way on purpose.
+
+**v8 is the registered answer to it** and its rule is already written: the boot summary drops
+from 1 768 characters to 594, adopted only if the evidence fails to show it costs a cell.
+
+### What this result is not
+
+One benchmark, one fixture, one competitor at one version, 54 cells an arm. It says that on
+*this* task — a decision replaced in conversation and in the code, asked about later in wording
+neither memory has seen — Muninn is better at getting the agent to act on the current answer.
+It says nothing about the other things a memory is for, and 54 cells do not estimate a
+population.
