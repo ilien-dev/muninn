@@ -127,7 +127,7 @@ enum Cmd {
         #[arg(long)]
         session: Option<String>,
     },
-    /// Read or set a project setting (`cues on|off`)
+    /// Read or set a project setting (`cues on|off`, `prompt-delivery on|off`)
     Config { key: String, value: Option<String> },
     /// Scan the project's configuration for the three published defect classes:
     /// unpinned MCP servers, over-broad Bash allow rules, skills that pre-approve a shell
@@ -583,6 +583,9 @@ fn main() {
             }
         },
         Cmd::Config { key, value } => {
+            // `prompt-delivery` and `prompt_delivery` are the same setting: the flag reads
+            // one spelling and a person types the other
+            let key = key.replace('-', "_");
             let p = paths.muninn_dir.join("config.json");
             let mut v: serde_json::Value = std::fs::read_to_string(&p)
                 .ok()

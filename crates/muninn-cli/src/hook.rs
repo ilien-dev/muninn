@@ -270,6 +270,24 @@ fn cues_enabled(paths: &ProjectPaths) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether the prompt hook delivers a block at all.
+///
+/// Muninn injects on every prompt; claude-mem injects once at session start. That difference
+/// is most of why Muninn occupies 2.6 times the window (head-to-head v7). Since the session
+/// catalogue arrived the agent is told what is on record up front and can pull any of it by
+/// id, so per-prompt delivery may no longer be carrying its cost — which is a question for a
+/// grid, not for a preference. Default on: nothing changes until a measurement says it should.
+fn prompt_delivery_enabled(paths: &ProjectPaths) -> bool {
+    if let Ok(v) = std::env::var("MUNINN_PROMPT_DELIVERY") {
+        return !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off"));
+    }
+    std::fs::read_to_string(paths.muninn_dir.join("config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("prompt_delivery").and_then(|c| c.as_bool()))
+        .unwrap_or(true)
+}
+
 fn arm() -> String {
     std::env::var("MUNINN_ARM").unwrap_or_else(|_| "literal".into())
 }
@@ -301,6 +319,10 @@ fn user_prompt(
     }
     if !recall::intent_gate(prompt) {
         log(vec![], 0, "gated:intent");
+        return Ok(None);
+    }
+    if !prompt_delivery_enabled(paths) {
+        log(vec![], 0, "gated:prompt_delivery_off");
         return Ok(None);
     }
     let db = Db::open(&paths.db_path(), Mode::ReadOnly)?;
