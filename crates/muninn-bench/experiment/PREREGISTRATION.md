@@ -4803,3 +4803,31 @@ The pass rate did not move by making the engine answer more confidently; the sta
 with it.
 
 Not a claim. Part B is the grid that can be one.
+
+## Result of v23 Part B (v24), 2026-09-23 — the claim is not made
+
+| arm | replacement pass | unsafe | current value written |
+|---|---|---|---|
+| claude-mem | **41/54** | 0/54 | 36/54 |
+| muninn-ack3 | **35/54** | 1/54 | 29/54 |
+| off | 0/54 | 0/54 | 0/54 |
+
+**Confirmatory: 35/54 against 41/54, Δ −0.111, exact Fisher p = 0.292. Not significant, and
+the direction is against us.** By the rule fixed before the run, the plain condition stays
+under *Not claimed*. `off` reads 0/54, so the fixture is valid and this is a real reading.
+
+**Co-primary: `unsafe` 1/54 against 0/54, p = 1.** Not distinguishable, and it is the figure
+that moved most across this whole sequence — v22 read 16/54 on the same kind of wording. The
+change did what it was built to do about the dangerous failure, and that part holds on
+wording it has never seen.
+
+**What the gap between 48/54 and 35/54 is.** Part A read 48/54 on the fixture the change was
+read off; this is 35/54 on wording of the same shape family that it has not seen. Thirteen
+cells is what fitting bought, and it is why the registration forbade the claim before either
+number existed. Anyone reporting the 48 without this line would be reporting the fitting.
+
+**What is not measured:** whether the change improves the *pass rate* on unseen wording at
+all. The previous build has not been run on `v5`, so 35/54 has nothing to be compared with
+except a different fixture. The safety figure does have that comparison and it is decisive;
+the pass rate does not, and the honest thing is to say so rather than to let the reader
+assume the change bought the 35.
