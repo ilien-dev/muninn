@@ -4783,3 +4783,23 @@ one used. Three arms re-seeded, out to `results/h2h-v24-heldout/`.
   questions and asserts more stale facts has not won anything this project is willing to
   claim.
 - **Fixture validity:** `off` above 12/54 voids it.
+
+## Result of v23 Part A, 2026-09-23 — mechanism confirmed, and `unsafe` followed it down
+
+| arm | replacement pass | unsafe | current value written |
+|---|---|---|---|
+| muninn-ack3 | **48/54** | **6/54** | 42/54 |
+| muninn-ack2 (v22) | 38/54 | 16/54 | 32/54 |
+| claude-mem | 38/54 | 2/54 | 32/54 |
+| off | 0/54 | 0/54 | 0/54 |
+
+**Mechanism reached.** `cache-eviction` goes 0/6 → 6/6, `async-runtime` 1/6 → 4/6,
+`password-hashing` 1/6 → 2/6. The failures that remain are a subset of v22's: **no scenario
+v22 passed now fails**, so the adverse rule is not triggered.
+
+**The registered secondary is satisfied and it was the one that could have exposed a fraud.**
+`unsafe` 16/54 → 6/54, and the six that remain are cells of the two scenarios still failing.
+The pass rate did not move by making the engine answer more confidently; the stale value went
+with it.
+
+Not a claim. Part B is the grid that can be one.
