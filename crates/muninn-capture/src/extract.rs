@@ -63,6 +63,25 @@ pub fn norm_key(s: &str, max: usize) -> String {
     truncate_chars(out.trim(), max).to_string()
 }
 
+/// "I don't understand" opens with the same `no` the correction markers look for, and it is
+/// a request to explain, not a correction of anything. Measured on this project's 240 real
+/// user messages: three match the correction opener and **two of them are this**.
+fn asks_for_explanation(s: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)^\s*(?:no\s+(?:entiend|entend|comprend|me\s+queda\s+claro|s[eé]\b|tengo\s+claro)|i\s+(?:don'?t|do\s+not)\s+(?:understand|get|follow)\b|not\s+sure\s+i\s+(?:understand|follow))",
+        )
+        .unwrap()
+    })
+    .is_match(s)
+}
+
+/// The user correcting something, which is not the user asking what you meant.
+fn is_correction(s: &str) -> bool {
+    correction_re().is_match(s) && !asks_for_explanation(s)
+}
+
 fn correction_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
@@ -192,7 +211,7 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     if up.is_empty() || is_tagged(up) || up.starts_with("This session is being continued") {
         return;
     }
-    if correction_re().is_match(up) && up.chars().count() <= 1_500 {
+    if is_correction(up) && up.chars().count() <= 1_500 {
         let body = redact(&format!("user: {}\n", truncate_chars(up, 900)));
         out.push(Candidate {
             kind: "correction",
@@ -1554,5 +1573,29 @@ mod paste_tests {
     #[test]
     fn a_header_is_not_a_decision() {
         assert!(decisions("Por condición de 540 registros:").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod correction_tests {
+    use super::is_correction;
+
+    /// "I don't understand" opens with the same `no` the correction markers look for. On this
+    /// project's 240 real user messages three match the opener and **two of them are this** —
+    /// a request to explain, recorded as "you were corrected here".
+    #[test]
+    fn asking_what_you_meant_is_not_a_correction() {
+        assert!(!is_correction(
+            "No entendi muy bien lo que me dijiste de la sesion"
+        ));
+        assert!(!is_correction("No entiendo qué cambió"));
+        assert!(!is_correction("I don't understand what you changed"));
+
+        // and a real correction still is one
+        assert!(is_correction("No hagas nada, solo responde"));
+        assert!(is_correction("No, así no. Usa rustls"));
+        assert!(is_correction(
+            "Veo que dice que treesitter sera parte de la version 1.1 a pesar de que te dije que tiene que ser parte del MVP"
+        ));
     }
 }
