@@ -681,6 +681,45 @@ pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery
 mod tests {
     use super::*;
 
+    /// The catalogue's two queries are written so that SQLite cannot use `record.kind` as an
+    /// index constraint, because when it does it abandons the index that answers the ORDER BY
+    /// and sorts the whole active set — 23 ms of a 10 ms hook at the schema's cap. Nothing in
+    /// the SQL says so; the guard is a unary `+` that reads like a typo. This asserts the plan
+    /// instead, so removing it fails here rather than in a latency contract months later.
+    #[test]
+    fn the_catalogue_reads_an_index_and_never_sorts_the_store() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let plan = |sql: &str| -> String {
+            let mut st = db
+                .conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap();
+            st.query_map([], |r| r.get::<_, String>(3))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect::<Vec<_>>()
+                .join(" | ")
+        };
+        let page = plan(
+            "SELECT r.id FROM served_record r \
+             WHERE +r.kind IN ('decision', 'invariant', 'correction') \
+               AND r.subject NOT LIKE 'commit:%' \
+             ORDER BY r.created_at DESC, r.id DESC LIMIT 121",
+        );
+        assert!(page.contains("record_recent"), "{page}");
+        assert!(!page.contains("TEMP B-TREE"), "{page}");
+
+        let clash = plan(
+            "SELECT EXISTS(SELECT 1 FROM record r JOIN record o \
+                             ON o.subject = r.subject AND o.relation = r.relation \
+                            AND +o.kind = r.kind \
+                           WHERE r.id = 1 AND o.id <> r.id AND o.invalid = 0 \
+                             AND o.object <> r.object AND r.kind <> 'episode')",
+        );
+        assert!(clash.contains("record_active_key"), "{clash}");
+    }
+
     /// A commit log entry matches a question through the file list in its body and says
     /// nothing when the subject is ordinary. Ten of them in a store of twenty-eight took a
     /// live grid's arm from 18/27 to 6/27. They stay in the store and out of the hook.
