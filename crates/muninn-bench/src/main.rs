@@ -113,8 +113,12 @@ enum Cmd {
         /// Fail on any contract violation
         #[arg(long)]
         strict: bool,
-        /// Records in the synthetic store
-        #[arg(long, default_value_t = 5000)]
+        /// Records in the synthetic store. The default is the schema's own cap
+        /// (`caps::MAX_ACTIVE_RECORDS`): a latency contract that only holds below the size
+        /// the store is allowed to reach is not a contract, and `docs/claims.md` publishes
+        /// these figures as measured at 20 000. At 5 000 the gate passed while SessionStart
+        /// was 10.5 ms at the cap, against its 10 ms limit.
+        #[arg(long, default_value_t = 20_000)]
         records: usize,
         /// Cues in the synthetic store
         #[arg(long, default_value_t = 15000)]

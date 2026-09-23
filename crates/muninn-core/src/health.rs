@@ -109,6 +109,10 @@ fn check(
 /// `quick_check` outcome and the trigger-maintained FTS counter — so the gate
 /// costs well under a millisecond at any store size. `live=true` (`muninn
 /// doctor`): the checks are executed for real.
+///
+/// That contract was written before checks 4 and 8 existed and neither honoured it:
+/// both counted the active rows on every hook, and at the schema's cap of 20 000 that
+/// was most of why `SessionStart` measured 10.5 ms against a 10 ms limit.
 pub fn run(
     paths: &ProjectPaths,
     db: Option<&Db>,
@@ -322,9 +326,6 @@ pub fn run(
     // 4. FTS coherence
     checks.push(match db {
         Some(db) => {
-            let a = db
-                .count("SELECT count(*) FROM record WHERE invalid=0")
-                .unwrap_or(-1);
             // `count(*)` on an external-content FTS5 table reads the content table, invalid
             // rows included, so it is not the index; the trigger-maintained counter is
             let f = db
@@ -333,6 +334,15 @@ pub fn run(
                 .flatten()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(-2);
+            // Comparing the counter against the truth means counting the truth, which is the
+            // scan this gate promises hooks it will not do. The counter is what the hook can
+            // know for free; `muninn doctor` is where the two are actually compared.
+            let a = if live || f < 0 {
+                db.count("SELECT count(*) FROM record WHERE invalid=0")
+                    .unwrap_or(-1)
+            } else {
+                f
+            };
             if a == f {
                 check(
                     4,
@@ -468,9 +478,18 @@ pub fn run(
             let inv = db
                 .count("SELECT count(*) FROM record WHERE invalid=0 AND kind='invariant'")
                 .unwrap_or(0);
+            // the cap is on active records, and the trigger-maintained counter holds exactly
+            // that number: a hook reads it instead of scanning the whole index for it
             let act = db
-                .count("SELECT count(*) FROM record WHERE invalid=0")
-                .unwrap_or(0);
+                .meta_get("fts_rows")
+                .ok()
+                .flatten()
+                .and_then(|s| s.parse().ok())
+                .filter(|_| !live)
+                .unwrap_or_else(|| {
+                    db.count("SELECT count(*) FROM record WHERE invalid=0")
+                        .unwrap_or(0)
+                });
             // body length is a CHECK constraint; only the live report re-verifies it.
             let big = if live {
                 db.count(&format!(
