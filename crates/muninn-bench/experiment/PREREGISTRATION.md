@@ -4595,3 +4595,33 @@ was measured on phrasings that happened to be sentences.
   decision rather than only to retire against one — is no longer about one scenario. It is
   the only route this fixture leaves, because in every failing cell the reply is the only
   sentence in the turn.
+
+### The route v20 left open is closed, and the evidence it needed is not there
+
+The registered hypothesis was: where the user's message is a bare value, use the assistant's
+reply in the same turn to say the word was a choice. It was built and then thrown away
+before it reached a grid, because reading v21's own seeding replies says it cannot work.
+
+What the assistant actually replied to those prompts:
+
+    gzip    -> Got it — "gzip" noted, though there's no task attached yet, so let me know
+               what you'd like to do with it in this gin repo.
+    zstd    -> Got it — "zstd" noted, but there's no task attached yet…
+    semver  -> Noted: semver (semantic versioning) — tell me what you'd like done with it…
+
+The reply states no decision and names no pair. The assistant, reading the same turn with
+the whole conversation in front of it, did not take the word for a decision either. There is
+no evidence in that turn for a deterministic rule to act on, and a rule that fired anyway
+would be inventing the intent rather than reading it.
+
+**So the honest reading of v21 is narrower and harder than "Muninn needs a sentence".** A
+bare word is not a decision that was missed; it is a turn with no statement in it. What a
+typed ledger can do with that is nothing, and what claude-mem does with it is keep the raw
+turn so the agent can find the later word by searching — recency over stored text, which
+needs no understanding and degrades gracefully where a ledger has nothing to record.
+
+That is a real difference in design and it is a real loss on that input. It is not a defect
+with a fix behind it, and the change that would have papered over it is reverted. What would
+change this measurement is a fixture where people type the way the generation prompt asked
+for and the first generation did not deliver — and the figure to publish until then is
+11/54.
