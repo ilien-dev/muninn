@@ -4285,3 +4285,48 @@ prompts and the floor acts on every one, so it might fall further. It did: 0.876
 With `hook_system_message` counted as well — the payload claude-mem leans on and Muninn does
 not — the same cells read muninn-day2 at 0.772 [0.756, 0.848] of claude-mem. That is what
 the window actually held, and it is the figure the published caveat says it excludes.
+
+---
+
+# Pre-registration — v18-plain: the condition this project has never won
+
+Registered 2026-09-23, before any cell ran, after v17 and with v17's result known. The
+condition is a different fixture and has never been re-run on a build later than v10.
+
+## Why
+
+`docs/claims.md` puts this under *Not claimed*: where the decisions exist only in the
+conversation and never reach the code, the grid reads 39/54 against claude-mem's 33/54,
+p = 0.31 — not a win and not claimed as one. Its failure mode is written down: 14 of the 15
+failing cells served a stale value, which is `[Z5]`, the lexical ceiling.
+
+Three of 2026-09-23's changes act on exactly that path and none of them has been measured
+here: the Spanish half of the capture stoplist, which stopped a filler phrase from retiring
+a decision about something else; the relevance floor, which no longer lowers its own bar on
+a repeated question; and the compaction-summary provenance, which changes what a block
+claims about itself. v17 measured the code condition, where a commit carries the answer and
+the conversation need not.
+
+## The arm
+
+`muninn-day2`, the same pinned binary v17 used, sha256 prefix `d9160c4880eb30dd`. Six runs,
+the same tasks and seed phrasings, `--code` **off**, against `results/h2h-v10-plain/`'s own
+`claude-mem` and `off` cells, which are not re-run. Output to `results/h2h-v18-plain/`.
+
+## Decision rule, fixed before the data
+
+- **Confirmatory:** `pass(muninn-day2) − pass(claude-mem)`, exact Fisher, α = 0.05, one
+  comparison. Significant and positive is the only thing that moves this row out of *Not
+  claimed*. Anything else and it stays there, with the new figure written next to the old.
+- **Registered secondary:** `unsafe`, the retired value written into the file. v17 read
+  0/54 on the code condition; this says whether that holds where nothing in the tree
+  corroborates the retirement.
+- Reported, not confirmatory: `pass(muninn-day2) − pass(muninn-catalog)`, the arm v10 ran.
+
+## Threat, written down before the numbers
+
+This is the second grid on the same 54-cell plain fixture and the competitor's cells are
+v10's. A win here would be one reading of those cells against a comparison drawn a week
+earlier, and the honest wording for anything short of a large effect is that it is not
+distinguishable at this size — the same `[Z7]` that applies to every 54-cell reading in this
+file.
