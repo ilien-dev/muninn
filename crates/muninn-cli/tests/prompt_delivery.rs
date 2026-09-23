@@ -83,3 +83,56 @@ fn prompt_delivery_is_on_by_default_and_can_be_switched_off() {
         "the store still serves it on request: {shown}"
     );
 }
+
+/// A record delivered earlier in a session is not delivered again in it — including after
+/// `maintain` has folded the ledger, which `SessionStart` spawns on every session start.
+///
+/// The watermark moves past the pending file when the fold runs, so `delivered_ids` saw
+/// nothing and the next prompt re-served what the catalogue had just named. Measured on the
+/// head-to-head before the fix: 167 of the 224 records the prompt blocks served were already
+/// in that session's catalogue.
+#[test]
+fn a_fold_does_not_reopen_what_the_session_already_saw() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    run(root, &["init", "--keep-native"], "");
+    let sql = "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+               VALUES('decision','said:state:cache redis','is','we use redis for the cache layer','user: we use redis for the cache layer\n','user_said',3,'s','h1',1);";
+    assert!(Command::new("sqlite3")
+        .arg(root.join(".muninn/muninn.db"))
+        .arg(sql)
+        .status()
+        .expect("sqlite3")
+        .success());
+
+    let start = format!(
+        "{{\"session_id\":\"S\",\"cwd\":\"{}\",\"source\":\"startup\",\"hook_event_name\":\"SessionStart\"}}",
+        root.display()
+    );
+    let catalogue = run(root, &["hook", "SessionStart"], &start);
+    assert!(
+        catalogue.contains("redis"),
+        "the catalogue names it: {catalogue}"
+    );
+
+    // the fold `SessionStart` spawns, run in the foreground so the test is deterministic
+    run(root, &["maintain"], "");
+
+    let prompt = |sid: &str| {
+        format!(
+            "{{\"session_id\":\"{sid}\",\"cwd\":\"{}\",\"prompt\":\"which cache layer do we use\",\"hook_event_name\":\"UserPromptSubmit\"}}",
+            root.display()
+        )
+    };
+    let same = run(root, &["hook", "UserPromptSubmit"], &prompt("S"));
+    assert!(
+        !same.contains("redis"),
+        "the same session does not get it twice: {same}"
+    );
+    let other = run(root, &["hook", "UserPromptSubmit"], &prompt("OTHER"));
+    assert!(
+        other.contains("redis"),
+        "and another session still does: {other}"
+    );
+}

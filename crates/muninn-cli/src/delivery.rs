@@ -42,6 +42,31 @@ pub fn delivered_ids(
     session: &str,
 ) -> std::collections::HashSet<i64> {
     let mut out = std::collections::HashSet::new();
+    // What has already been folded into `fire_ledger`, which the pending file no longer holds.
+    //
+    // `SessionStart` spawns `maintain` detached, `maintain` folds the ledger and advances its
+    // watermark, and from that moment `pending` is empty — so a record delivered earlier in the
+    // *same* session was delivered again. Measured on the head-to-head: 167 of the 224 records
+    // the prompt blocks served had already been named by the catalogue in that session.
+    // `fire_session` indexes exactly this lookup.
+    {
+        let epoch: i64 = db
+            .meta_get("compaction_epoch")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        if let Ok(mut st) = db.conn.prepare(
+            "SELECT record_id FROM fire_ledger \
+             WHERE session_id = ?1 AND compaction_epoch = ?2 AND record_id IS NOT NULL",
+        ) {
+            if let Ok(rows) =
+                st.query_map(rusqlite::params![session, epoch], |r| r.get::<_, i64>(0))
+            {
+                out.extend(rows.flatten().filter(|id| *id > 0));
+            }
+        }
+    }
     for l in muninn_core::logfold::pending(&db.conn, &log_path(paths)) {
         if let Ok(v) = serde_json::from_str::<Line>(&l) {
             if v.session == session {
