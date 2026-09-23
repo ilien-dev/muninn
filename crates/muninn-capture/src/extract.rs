@@ -206,6 +206,39 @@ fn unquoted(s: &str) -> String {
     out
 }
 
+/// Is this message a specification for text it is asking to be produced?
+///
+/// The sentences inside such a message constrain what is being written, not the project.
+/// This store held "The replacement must not contain the original as a substring" and "In
+/// each pair the two messages are about DIFFERENT things that share TWO OR MORE ordinary
+/// content words" as project invariants — true of a fixture, false of the repository, and
+/// delivered at every session start. They came from the prompts that generated loops 8, 9
+/// and 10, which opened "Invent 10 technical decisions…" and "Write pairs of short
+/// messages… Make 15 pairs".
+///
+/// Three conditions, all structural rather than topical, because any one of them alone is
+/// ordinary: the message opens with an imperative to produce; it asks for a count of the
+/// things produced; and it is long enough to be a specification. "Write 3 tests for the
+/// parser" is none of those together, and keeps whatever rule it states.
+fn asks_for_generated_text(s: &str) -> bool {
+    static OPEN: OnceLock<Regex> = OnceLock::new();
+    static COUNT: OnceLock<Regex> = OnceLock::new();
+    if s.chars().count() < 400 {
+        return false;
+    }
+    let open = OPEN.get_or_init(|| {
+        Regex::new(
+            r"(?i)^\s*(?:please\s+)?(?:write|make|generate|invent|produce|compose|draft|list|escribe|escribí|genera|inventa|redacta|crea|haz)\b",
+        )
+        .unwrap()
+    });
+    // a number, then a plural noun within two words of it: "15 pairs", "10 technical
+    // decisions", "30 escenarios distintos"
+    let count = COUNT
+        .get_or_init(|| Regex::new(r"(?i)\b\d{1,4}\s+(?:\p{L}+\s+){0,2}\p{L}{3,}s\b").unwrap());
+    open.is_match(s) && count.is_match(s)
+}
+
 fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     let up = t.user_prompt.trim();
     if up.is_empty() || is_tagged(up) || up.starts_with("This session is being continued") {
@@ -230,6 +263,9 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     let own = unquoted(up);
     let own = own.trim();
     decision_candidates(t, own, out);
+    if asks_for_generated_text(own) {
+        return;
+    }
     for sent in split_sentences(own) {
         let n = sent.chars().count();
         if !(12..=220).contains(&n) || sent.contains('?') || !invariant_re().is_match(sent) {
@@ -1416,6 +1452,47 @@ mod tests {
     /// happen to end on. Before the Spanish half of `STOP` was completed, `tiene` and
     /// `rendimiento` were the two content words `replaces` asks for, and the later decision
     /// retired the earlier one — taking with it the only record that held `Supavisor`.
+    /// A prompt that specifies data to be generated states rules about that data. This
+    /// store held five of them as project invariants, delivered at every session start:
+    /// "The replacement must not contain the original as a substring", "In each pair the
+    /// two messages are about DIFFERENT things…". Re-capturing all 1 919 transcripts of
+    /// this project goes from 29 invariants to 24, and the five that go are exactly those.
+    #[test]
+    fn a_prompt_that_specifies_generated_data_states_no_project_rule() {
+        let spec = "Invent 10 technical decisions a software team might record, each one later \
+             replaced by a different choice. Each must be a value that would literally appear \
+             inside a file in the repository (a dependency name, a tool name, a format, a \
+             service, a number with its unit), not an abstract policy. Two hard rules: the \
+             replacement must not contain the original as a substring, and neither may be a \
+             word this project already uses anywhere in its own tracked files.";
+        assert!(asks_for_generated_text(spec));
+        let t = turn(0, spec);
+        let s = Session {
+            turns: vec![t],
+            ..Default::default()
+        };
+        assert!(!extract(&s, "abcdef12")
+            .iter()
+            .any(|c| c.kind == "invariant"));
+
+        // each condition alone is ordinary and takes nothing away
+        assert!(!asks_for_generated_text(
+            "Write 3 tests for the parser. They must never touch the network."
+        ));
+        let long_rule = format!(
+            "We keep hitting this so I am writing it down once. {} The build must never \
+             depend on the network.",
+            "Context that makes this message long enough to be a specification. ".repeat(6)
+        );
+        assert!(!asks_for_generated_text(&long_rule));
+        let long_count = format!(
+            "{} We run 30 cells per arm and the seed must always be fixed before the first \
+             cell runs.",
+            "Some background on the grid we are about to run. ".repeat(8)
+        );
+        assert!(!asks_for_generated_text(&long_count));
+    }
+
     #[test]
     fn a_shared_spanish_filler_phrase_is_not_a_topic() {
         let pool = "mejor usamos Supavisor, tiene mejor rendimiento";
