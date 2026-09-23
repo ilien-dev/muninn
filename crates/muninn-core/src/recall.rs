@@ -227,10 +227,16 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     // `STOP` exists so a prompt's scaffolding does not drag the whole store in, and the
     // df test drops a word no record holds. Between them they can take *every* word of a
     // question and leave silence, which is worse than a common word: a store that holds the
-    // answer then returns nothing at all. Both are preferences, not vetoes — they apply
-    // while something else survives them.
+    // answer then returns nothing at all. The df test is a preference and is lifted here;
+    // `STOP` is not, and that is the correction.
+    //
+    // It used to iterate every word of the prompt, `STOP` included. On a store whose records
+    // are one word each — `gzip`, `zstd` — no content word of "the transport compression
+    // codec" exists, so the fallback matched on `the` and delivered four episodes about
+    // bcrypt, TTLs and HTTPS. Silence is worse than a common word; four confident answers to
+    // a question nobody asked are worse than silence, and they cost budget to say nothing.
     if scored.is_empty() {
-        for t in &all {
+        for t in all.iter().filter(|t| !STOP.contains(&t.as_str())) {
             // the rarity guard still applies: a word in a third of the store buys a long
             // posting list and no signal, and without this the full hook went past its
             // latency contract (11.9 ms against a limit of 10)
@@ -842,6 +848,39 @@ mod tests {
             "everything left is weaker than half the best match: {:?}",
             second.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>()
         );
+    }
+
+    /// A word the store has never seen is not a reason to match on `the`. The fallback
+    /// lifts the document-frequency test when it has taken every candidate; it used to lift
+    /// `STOP` with it, and on a store whose records are one word each — `gzip`, `zstd` — a
+    /// question about the compression codec came back with four episodes about bcrypt, TTLs
+    /// and HTTPS, because `the` was the only word of it the store held.
+    #[test]
+    fn a_word_the_store_never_saw_is_not_a_reason_to_match_on_the() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (i, body) in ["gzip", "zstd", "the bcrypt note", "the ttl note"]
+            .iter()
+            .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('episode',?1,'happened',?2,?2,'tool_observed',1,'s',?1,1)",
+                    rusqlite::params![format!("k{i}"), body],
+                )
+                .unwrap();
+        }
+        assert!(
+            select_terms(&db, "the transport compression codec", 8)
+                .unwrap()
+                .is_empty(),
+            "no content word of that question is in this store"
+        );
+        // and a question the store can actually answer is unaffected
+        assert!(!select_terms(&db, "is the bcrypt note still current", 8)
+            .unwrap()
+            .is_empty());
     }
 
     /// The floor is measured against the best match, and the best match repeats the
