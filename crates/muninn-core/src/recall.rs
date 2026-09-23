@@ -334,10 +334,15 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     // ask. Holding the reference fixed makes the block empty instead: the good answer has
     // already been given.
     let mut best: Option<f64> = None;
+    // the newest of everything this query reached, excluded or not — see the floor below
+    let mut newest: Option<(i64, i64)> = None;
     let mut hits: Vec<Hit> = Vec::new();
     for h in rows.filter_map(|r| r.ok()) {
         if best.is_none() {
             best = Some(h.score);
+        }
+        if newest.is_none_or(|(at, id)| (h.created_at, h.id) > (at, id)) {
+            newest = Some((h.created_at, h.id));
         }
         if exclude.contains(&h.id) {
             continue;
@@ -365,7 +370,27 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     // better-matching one.
     if let Some(best) = best {
         let floor = best * RELEVANCE_FLOOR;
-        hits.retain(|h| h.score <= floor || h.trust >= 3);
+        // The newest record the query reached is never padding. The floor is measured against
+        // the best match, and the best match is the one that repeats the question's words —
+        // which is the record that *stated* the thing, not the one that later changed it. On
+        // the plain head-to-head "the project license" reaches "Project license is GPL-3.0"
+        // at full score and "Apache-2.0 is better for enterprise adoption" far below it, and
+        // the floor then delivered the retired value alone. One block, the newest of what the
+        // query found, so padding cannot come back with it.
+        // `newest` is taken over everything the query reached, including what this session
+        // has already been given. A record already delivered is not re-admitted by this — on
+        // a repeat question the newest is excluded, the exemption finds nothing, and the
+        // block is empty, which is what `a_repeat_question_does_not_lower_the_bar_to_fill_the
+        // _block` asks for.
+        // Strictly later than the best match, not merely last in the tie: a store where
+        // everything arrived at once has no later statement in it, only weaker ones.
+        let keep = newest
+            .filter(|(at, id)| {
+                hits.first()
+                    .is_some_and(|top| top.id != *id && *at > top.created_at)
+            })
+            .map(|(_, id)| id);
+        hits.retain(|h| h.score <= floor || h.trust >= 3 || Some(h.id) == keep);
     }
     Ok(hits)
 }
@@ -817,6 +842,56 @@ mod tests {
             "everything left is weaker than half the best match: {:?}",
             second.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>()
         );
+    }
+
+    /// The floor is measured against the best match, and the best match repeats the
+    /// question's words — which is the record that *stated* the thing, not the one that
+    /// later changed it. On the plain head-to-head "the project license" reached "Project
+    /// license is GPL-3.0" at full score and "Apache-2.0 is better for enterprise adoption"
+    /// far below it, and the block delivered the retired value alone.
+    #[test]
+    fn the_newest_record_the_query_reached_is_never_cut_as_padding() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |id: i64, at: i64, body: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,'episode',?2,'happened',?3,?3,'tool_observed',1,'s',?2,?4)",
+                    rusqlite::params![id, format!("k{id}"), body, at],
+                )
+                .unwrap();
+        };
+        // 1 repeats the question's words, the way the record that *stated* the thing does
+        ins(
+            1,
+            100,
+            "project license: the project license is gpl-3.0, project license policy",
+        );
+        ins(
+            2,
+            200,
+            "apache-2.0 is better for enterprise adoption, license-wise",
+        );
+        for i in 3..8 {
+            ins(i, 150, "an unrelated note that mentions the project once");
+        }
+        let terms = vec!["license".to_string(), "project".to_string()];
+        let hits = recall(&db, &terms, 8, &HashSet::new()).unwrap();
+        let ids: Vec<i64> = hits.iter().map(|h| h.id).collect();
+        assert_eq!(ids.first(), Some(&1), "{ids:?}");
+        assert!(
+            ids.contains(&2),
+            "the later statement survives the floor: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&3),
+            "padding does not come back with it: {ids:?}"
+        );
+
+        // and it is not re-admitted once it has been delivered
+        let served: HashSet<i64> = hits.iter().map(|h| h.id).collect();
+        assert!(recall(&db, &terms, 8, &served).unwrap().is_empty());
     }
 
     /// The boot summary tells the agent to pull entries by id. If it asks for five and is
