@@ -325,11 +325,28 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     let rows = stmt.query_map(rusqlite::params![q, (limit + exclude.len()) as i64], |r| {
         Hit::from_served_row(r, r.get("score")?)
     })?;
-    let mut hits: Vec<Hit> = rows
-        .filter_map(|r| r.ok())
-        .filter(|h| !exclude.contains(&h.id))
-        .take(limit)
-        .collect();
+    // `best` is the best match this query has, not the best one left after exclusion. The
+    // difference shows on a repeat: ask the same question twice and everything the first
+    // answer used is excluded, so the second call's best remaining hit becomes the reference
+    // the floor is measured against — and a set of weak records, all weak together, all pass
+    // it. On this project's store, asking one question three times delivered three full
+    // blocks, the third of them 588 tokens of records the floor would have cut on a fresh
+    // ask. Holding the reference fixed makes the block empty instead: the good answer has
+    // already been given.
+    let mut best: Option<f64> = None;
+    let mut hits: Vec<Hit> = Vec::new();
+    for h in rows.filter_map(|r| r.ok()) {
+        if best.is_none() {
+            best = Some(h.score);
+        }
+        if exclude.contains(&h.id) {
+            continue;
+        }
+        if hits.len() == limit {
+            break;
+        }
+        hits.push(h);
+    }
     // Half as good as the best match, or it is not served. Until now the block filled to its
     // limit whatever the scores were, so a store holding one good answer and a dozen weak ones
     // delivered the answer and then padded it with the weak ones. Measured on the v4 `--code`
@@ -346,7 +363,7 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     // A trust-3 record — the user said it — is never cut: measured on the plain condition of
     // the same replica, the bare floor drops a correct record that ranks below a
     // better-matching one.
-    if let Some(best) = hits.first().map(|h| h.score) {
+    if let Some(best) = best {
         let floor = best * RELEVANCE_FLOOR;
         hits.retain(|h| h.score <= floor || h.trust >= 3);
     }
@@ -760,6 +777,48 @@ mod tests {
     /// and sorts the whole active set — 23 ms of a 10 ms hook at the schema's cap. Nothing in
     /// the SQL says so; the guard is a unary `+` that reads like a typo. This asserts the plan
     /// instead, so removing it fails here rather than in a latency contract months later.
+    /// The floor asks "half as good as the best match", and the best match is the query's,
+    /// not whatever survived exclusion. Ask the same question twice and the first answer is
+    /// excluded from the second; if the reference moves with it, a set of records that are
+    /// all weak together all pass, and the block fills up again.
+    #[test]
+    fn a_repeat_question_does_not_lower_the_bar_to_fill_the_block() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let mut ins = |id: i64, object: &str, body: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,'decision',?2,'is',?3,?4,'tool_observed',1,'s',?2,1)",
+                    rusqlite::params![id, format!("k{id}"), object, body],
+                )
+                .unwrap();
+        };
+        // one record answers the question; the rest share a single word with it
+        ins(
+            1,
+            "pgbouncer",
+            "the connection pooler is pgbouncer, pooler of connections",
+        );
+        for i in 2..8 {
+            ins(
+                i,
+                "other",
+                "an unrelated decision that happens to mention connection once",
+            );
+        }
+        let terms = vec!["pooler".to_string(), "connection".to_string()];
+        let first = recall(&db, &terms, 6, &HashSet::new()).unwrap();
+        assert_eq!(first.first().map(|h| h.id), Some(1));
+        let served: HashSet<i64> = first.iter().map(|h| h.id).collect();
+        let second = recall(&db, &terms, 6, &served).unwrap();
+        assert!(
+            second.is_empty(),
+            "everything left is weaker than half the best match: {:?}",
+            second.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>()
+        );
+    }
+
     /// The boot summary tells the agent to pull entries by id. If it asks for five and is
     /// handed three, the two it did not get mean opposite things — one was replaced, one
     /// never existed — and silence made them look the same.
