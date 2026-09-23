@@ -514,6 +514,109 @@ const STOP: &[&str] = &[
     "algo",
     "tambien",
     "también",
+    // The Spanish half was missing the counterparts of function words the English half
+    // already drops. `tiene` is the one that showed: "mejor usamos Supavisor, tiene mejor
+    // rendimiento" and "mejor Redpanda, tiene mejor rendimiento" are decisions about a
+    // connection pooler and a message broker, and they shared exactly the two content words
+    // `replaces` asks for — both of them filler. The pooler decision was retired by the
+    // broker one, and with it the only record that held its value.
+    // have / has / had
+    "tiene",
+    "tienen",
+    "tener",
+    "tenemos",
+    "tengo",
+    "tenía",
+    "tenia",
+    // be, in the forms a decision sentence uses
+    "está",
+    "esta",
+    "están",
+    "estan",
+    "estar",
+    "estamos",
+    "estoy",
+    "ser",
+    "sea",
+    "sean",
+    "sería",
+    "seria",
+    "será",
+    "sera",
+    "serán",
+    "seran",
+    "era",
+    "eran",
+    "fue",
+    "fueron",
+    "siendo",
+    // can / could / must / should / need
+    "puede",
+    "pueden",
+    "podemos",
+    "puedo",
+    "poder",
+    "podría",
+    "podria",
+    "podríamos",
+    "podriamos",
+    "debe",
+    "deben",
+    "debemos",
+    "debería",
+    "deberia",
+    "necesita",
+    "necesitan",
+    "necesitamos",
+    "necesito",
+    // do / make
+    "hacer",
+    "hace",
+    "hacen",
+    "hacemos",
+    "haremos",
+    // what / which / when / where / why, and the adverbs the English half drops as
+    // "really", "probably", "maybe", "just"
+    "qué",
+    "cual",
+    "cuál",
+    "cuales",
+    "cuáles",
+    "cuando",
+    "cuándo",
+    "donde",
+    "dónde",
+    "porque",
+    "porqué",
+    "muy",
+    "solo",
+    "sólo",
+    "solamente",
+    "quizá",
+    "quizás",
+    "tal",
+    "bien",
+    "entonces",
+    "luego",
+    // over / after / out / between, and the determiners left out of the first pass
+    "sobre",
+    "después",
+    "despues",
+    "antes",
+    "entre",
+    "desde",
+    "hasta",
+    "cada",
+    "otro",
+    "otra",
+    "otros",
+    "otras",
+    "mismo",
+    "misma",
+    "mismos",
+    "mismas",
+    "cosa",
+    "cosas",
 ];
 
 /// Content words of a decision sentence: the topic and the value, without the
@@ -1307,6 +1410,24 @@ mod tests {
         assert!(dec("mejor Postmark, es más confiable")
             .iter()
             .any(|c| c.subject.starts_with("said:change:")));
+    }
+
+    /// Two Spanish decisions about different things, sharing only the filler both sentences
+    /// happen to end on. Before the Spanish half of `STOP` was completed, `tiene` and
+    /// `rendimiento` were the two content words `replaces` asks for, and the later decision
+    /// retired the earlier one — taking with it the only record that held `Supavisor`.
+    #[test]
+    fn a_shared_spanish_filler_phrase_is_not_a_topic() {
+        let pool = "mejor usamos Supavisor, tiene mejor rendimiento";
+        let broker = "mejor Redpanda, tiene mejor rendimiento";
+        assert!(!topic_words(pool).contains(&"tiene".to_string()));
+        assert!(!replaces_text(pool, broker, true));
+        // the same two decisions when they really are about the same thing still pair
+        assert!(replaces_text(
+            "usamos PgBouncer para el pool de conexiones",
+            "mejor Supavisor para el pool de conexiones",
+            true
+        ));
     }
 
     #[test]
