@@ -27,6 +27,8 @@ pub struct IngestStats {
     pub invariants: usize,
     pub superseded: usize,
     pub projected: usize,
+    /// The last turn had no answer yet, so it was left for the next ingest.
+    pub held_back: bool,
     /// Ids inserted by this call, for projection and the sidecar.
     #[serde(skip)]
     pub new_ids: Vec<i64>,
@@ -495,13 +497,38 @@ pub fn ingest_transcript_with(
 ) -> Result<IngestStats> {
     let key = watermark_key(transcript);
     let from: u64 = db.meta_get(&key)?.and_then(|s| s.parse().ok()).unwrap_or(0);
-    let session = parse_any(transcript, from).map_err(|e| muninn_core::Error::io(transcript, e))?;
+    let mut session =
+        parse_any(transcript, from).map_err(|e| muninn_core::Error::io(transcript, e))?;
+    // A turn whose assistant has not answered yet is not over. Consuming it and moving the
+    // watermark past the prompt loses the whole exchange: the answer then arrives after the
+    // watermark, the parser has no turn to attach it to, and drops it. The read that lands
+    // there is not hypothetical — `maintain` resumes ingest detached, while the session is
+    // still being written — though how often it happens in practice is not measured, and
+    // comparing this project's live store against a whole re-read of the same transcripts
+    // shows no shortfall today.
+    //
+    // So the last turn is held back when nothing has answered it, and the watermark stops
+    // where that turn began. The next ingest reads the turn from its first byte, complete.
+    // `a_turn_read_before_its_answer_is_left_for_the_next_ingest` fails without this.
+    let held = match session.turns.last() {
+        Some(t) if t.assistant_text.trim().is_empty() && t.tools.is_empty() => {
+            session.end_offset = match session.turns.len() {
+                1 => from,
+                n => session.turns[n - 2].end_offset,
+            };
+            session.turns.pop();
+            true
+        }
+        _ => false,
+    };
+    let session = session;
     let sid = if session.session_id.is_empty() {
         fallback_session.to_string()
     } else {
         session.session_id.clone()
     };
     let mut stats = IngestStats {
+        held_back: held,
         turns: session.turns.len(),
         from_offset: from,
         to_offset: session.end_offset,
@@ -733,6 +760,51 @@ mod tests {
         serde_json::json!({"type":"user","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":id,"content":out,"is_error":code!=0}]},"toolUseResult":{"exitCode":code}})
     }
 
+    /// A hook can read the transcript between a prompt and its answer — `maintain` resumes
+    /// ingest detached while the session is still being written. If that read consumes the
+    /// prompt and moves the watermark past it, the answer arrives after the watermark, the
+    /// parser has no turn to attach it to, and the whole exchange is gone: the module's own
+    /// first line promises a hook that expires loses time, never data.
+    ///
+    /// Ingesting the prompt alone must therefore capture nothing and keep the watermark, so
+    /// the next ingest reads the turn from its first byte.
+    #[test]
+    fn a_turn_read_before_its_answer_is_left_for_the_next_ingest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), Mode::ReadWrite).unwrap();
+        let half = transcript(tmp.path(), "t.jsonl", &[user("we are switching to rustls")]);
+        let st = ingest_transcript(&db, &half, "s1").unwrap();
+        assert!(st.held_back);
+        assert_eq!(st.inserted, 0);
+        assert_eq!(
+            st.to_offset, 0,
+            "the watermark may not pass an unanswered prompt"
+        );
+
+        // the answer arrives; the same file, read again, now holds the whole turn
+        transcript(
+            tmp.path(),
+            "t.jsonl",
+            &[
+                user("we are switching to rustls"),
+                assistant("Noted — the TLS backend is rustls from here."),
+            ],
+        );
+        let st2 = ingest_transcript(&db, &half, "s1").unwrap();
+        assert!(!st2.held_back);
+        assert!(st2.inserted > 0, "{st2:?}");
+        let body: String = db
+            .conn
+            .query_row(
+                "SELECT body FROM record WHERE kind='episode' ORDER BY id LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(body.contains("switching to rustls"), "{body}");
+        assert!(body.contains("the TLS backend is rustls"), "{body}");
+    }
+
     /// Two stores given the same conversation must hold the same subjects. They did not: an
     /// episode's session id was sorted in among the inherited topic words, so its own first
     /// character decided the order.
@@ -876,7 +948,13 @@ mod tests {
         );
         assert!(paths.index_md().exists());
         // the same invariant key with a different object supersedes the first
-        let t2 = transcript(tmp.path(), "b.jsonl", &[user("Nunca uses pkill en Bash!")]);
+        // the assistant's reply is what ends the turn; a prompt alone is held for the next
+        // ingest (`a_turn_read_before_its_answer_is_left_for_the_next_ingest`)
+        let t2 = transcript(
+            tmp.path(),
+            "b.jsonl",
+            &[user("Nunca uses pkill en Bash!"), assistant("Entendido.")],
+        );
         let st2 = ingest_transcript_with(&db, &t2, "s2", Some(&paths)).unwrap();
         assert_eq!(st2.invariants, 1);
         assert_eq!(st2.superseded, 1);
