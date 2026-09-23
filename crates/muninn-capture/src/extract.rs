@@ -839,11 +839,18 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
     static TWO: OnceLock<Vec<Regex>> = OnceLock::new();
     static ONE: OnceLock<Vec<Regex>> = OnceLock::new();
     // two-sided: the replaced value first, the replacement second
+    // `(?:\([^)]{0,60}\)\s*)?` — one short parenthetical between the value and the preposition.
+    // The assistant writes "switching from gzip (the earlier decision, #3) to zstd" and
+    // "switching versioning from calver (decision #23) to semver"; without this the pattern
+    // needs whitespace there and sees neither. Those two scenarios are 12 of the 12 cells the
+    // plain head-to-head fails, the same two in all six runs, and their replacement messages
+    // — "Benchmarks show zstd is faster - let's switch", "semver is cleaner" — share no
+    // content word with what they replace, so the ack is the only thing that names the pair.
     let two = TWO.get_or_init(|| {
         [
-            r"(?i)\bfrom\s+([\w./@+-]{2,40})\s+(?:to|over to|across to)\s+([\w./@+-]{2,40})",
-            r"(?i)\breplac(?:e|ed|ing)\s+([\w./@+-]{2,40})\s+with\s+([\w./@+-]{2,40})",
-            r"(?i)\bde\s+([\w./@+-]{2,40})\s+a\s+([\w./@+-]{2,40})",
+            r"(?i)\bfrom\s+([\w./@+-]{2,40})\s*(?:\([^)]{0,60}\)\s*)?\s*(?:to|over to|across to)\s+([\w./@+-]{2,40})",
+            r"(?i)\breplac(?:e|ed|ing)\s+([\w./@+-]{2,40})\s*(?:\([^)]{0,60}\)\s*)?\s*with\s+([\w./@+-]{2,40})",
+            r"(?i)\bde\s+([\w./@+-]{2,40})\s*(?:\([^)]{0,60}\)\s*)?\s*a\s+([\w./@+-]{2,40})",
         ]
         .iter()
         .map(|p| Regex::new(p).unwrap())
@@ -1471,6 +1478,49 @@ mod tests {
     /// happen to end on. Before the Spanish half of `STOP` was completed, `tiene` and
     /// `rendimiento` were the two content words `replaces` asks for, and the later decision
     /// retired the earlier one — taking with it the only record that held `Supavisor`.
+    /// The assistant names the pair and puts an aside between the two halves of it:
+    /// "switching from gzip (the earlier decision, #3) to zstd". The pattern wanted
+    /// whitespace there and saw nothing, and those cells' own messages — "Benchmarks show
+    /// zstd is faster - let's switch" — share no content word with what they replace, so the
+    /// ack was the only thing that could pair them.
+    #[test]
+    fn an_ack_names_the_pair_across_a_parenthetical() {
+        for (ack, new_obj, gone) in [
+            (
+                "Noted, switching from gzip (the earlier decision, #3) to zstd based on the benchmarks.",
+                "Benchmarks show zstd is faster - let's switch",
+                "gzip",
+            ),
+            (
+                "Noted: switching versioning from calver (decision #23) to semver.",
+                "semver is cleaner",
+                "calver",
+            ),
+            (
+                "Understood: we're switching from gzip (the earlier decision on record) to zstd.",
+                "Benchmarks show zstd is faster",
+                "gzip",
+            ),
+            // the shape without an aside still reads
+            (
+                "Got it — switching the TLS backend from openssl to rustls.",
+                "rustls for TLS",
+                "openssl",
+            ),
+        ] {
+            assert_eq!(ack_replacement(ack, new_obj).as_deref(), Some(gone), "{ack}");
+        }
+        // an aside is not a licence to pair anything: the `to` side must still be the
+        // decision's own value
+        assert_eq!(
+            ack_replacement(
+                "switching from gzip (the earlier decision) to zstd",
+                "we should document the release process"
+            ),
+            None
+        );
+    }
+
     /// A prompt that specifies data to be generated states rules about that data. This
     /// store held five of them as project invariants, delivered at every session start:
     /// "The replacement must not contain the original as a substring", "In each pair the
