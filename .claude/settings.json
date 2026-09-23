@@ -3,7 +3,8 @@
   "permissions": {
     "allow": [
       "Bash(muninn why:*)",
-      "Bash(muninn status:*)"
+      "Bash(muninn status:*)",
+      "Bash(muninn show:*)"
     ]
   }
 }
