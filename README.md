@@ -275,23 +275,27 @@ build, on the same cells and one instrument, it is 0.876 [0.826, 0.891] — less
 still more than the competitor's. Turning the per-prompt block off takes it to 1.8 and costs
 about four answers in fifty, which is why it is not the default.
 
-Where the decisions exist only in the conversation and never reach the code, **this engine has
-never beaten claude-mem on any wording anyone generated**, and that is now four held-out sets,
-each registered before it ran:
+Where the decisions exist only in the conversation and never reach the code, the build that
+ships reads **218 of 270 against claude-mem's 206 of 269** across five held-out wordings, each
+generated after the fact and each registered before it ran. `p = 0.25`: twelve cells in 270 is
+not a win and **is not claimed as one**.
 
 | how the change was worded | Muninn | claude-mem | Muninn wrote the retired value | claude-mem did |
 |---|---|---|---|---|
-| bare values (`zstd`) | 11 of 54 | 31 of 53 | 0 | 0 |
-| sentences | 38 of 54 | 38 of 54 | 16 | 2 |
-| sentences, comparative | 35 of 54 | 41 of 54 | 1 | 0 |
-| sentences with change verbs | 50 of 54 | 50 of 54 | 4 | 0 |
-| **all four** | **134 of 216** | **160 of 215** | **21** | **2** |
+| bare values (`zstd`) | **18 of 54** | **31 of 53** | 0 | 0 |
+| sentences | 53 of 54 | 38 of 54 | 1 | 2 |
+| sentences, comparative | 45 of 54 | 41 of 54 | 0 | 0 |
+| sentences with change verbs | 53 of 54 | 50 of 54 | 0 | 0 |
+| sentences, mixed | 49 of 54 | 46 of 54 | 0 | 2 |
+| **all five** | **218 of 270** | **206 of 269** | **1** | **4** |
 
-Two ties and two losses, and the ties are the wordings that happen to suit a list of decision
-verbs. Across all four it also asserts the stale value about ten times as often. The reason is
-structural: typed capture fires on a vocabulary, conversation's grammar is unbounded, and
-every widening tried reached the cells it was read off and did not survive the next set
-generated afterwards. A store-everything memory has no vocabulary to miss.
+The condition splits, and the split is what to read. Where a person writes a sentence — with or
+without a word like "switching" in it — this engine is ahead on all four such sets, 200 of 216
+against 175 of 215. Where a person types the value alone and nothing else, it loses, 18 of 54
+against 31 of 53, and that is the row to look at before installing anything: a turn that is one
+word contains no statement, a typed ledger has nothing to record, and a memory that keeps the
+raw turn does not need one. That is the cost of building this without a language model, and it
+is not going away.
 
 Where the decision also reaches the code, none of that applies: the value comes from the diff,
 and that is the condition the 54 of 54 above was measured in.
