@@ -5140,3 +5140,35 @@ here.
 
 Recorded for whoever reads the `unsafe` gap next: **it is not about which block comes first.**
 Four cells of `v6` write the retired value with the current one served above it.
+
+---
+
+# Pre-registration — v29: the four cells that are left
+
+Registered 2026-09-23, before any cell ran. `muninn-filler`, sha256 prefix `6b6926a2ff12b011`.
+
+## Why, and what it can and cannot settle
+
+v28 established that the `unsafe` residue is not about reading order. Reading those four
+cells says what it is: the reply names both values and the pattern captured the filler noun
+between them — `replaces the earlier **decision** to stick with openssl` — so
+`ack_replacement` returned nothing.
+
+A bug fix rather than a widening: the pattern's whole purpose is to capture the replaced
+value and it was capturing a stop word. It is still read off this fixture's cells, so a grid
+on `v6` is fitted.
+
+## The grid
+
+One arm, six runs, `--code` off, `v6`'s phrasings, against v27's own `claude-mem` and
+`off` cells. Output `results/h2h-v29-v6/`.
+
+- **Primary:** `unsafe` on `v6`, which reads 4/54 on the build before this and 0/54 for
+  claude-mem. **If it does not reach 0 or 1, the diagnosis is wrong** — those four cells were
+  read individually and the fix was driven end to end on both of their wordings, so anything
+  else means something other than the pattern is keeping them alive.
+- **Adverse rule:** `pass` below 50/54 reverts it.
+- **Not a claim**, and no held-out grid is registered for it: a pattern that captured a stop
+  word where a value goes is a defect whether or not a fixture rewards fixing it, and the
+  honest reason to keep it does not depend on a number. The grid is here to check the
+  diagnosis, not to earn the change.
