@@ -255,21 +255,25 @@ pull any of them in full.
 
 On the shipped build, with the fixture validated by a no-memory control that scores 0 of 54:
 
-| | replacement cells passed |
-|---|---|
-| **Muninn** | **48 of 54** |
-| claude-mem 13.24.23 | 25 of 54 |
-| agentmemory 0.9.29 | 1 of 49 |
-| no memory at all | 0 of 54 |
+| | replacement cells passed | retired value written |
+|---|---|---|
+| **Muninn** | **54 of 54** | **0 of 54** |
+| claude-mem 13.24.23 | 25 of 54 | 10 of 54 |
+| agentmemory 0.9.29 | 1 of 54 | 1 of 54 |
+| no memory at all | 0 of 54 | 3 of 54 |
 
-Exact Fisher p = 3.4 × 10⁻⁶ against claude-mem and 2.4 × 10⁻²¹ against agentmemory. Six runs,
-54 cells an arm, the size and the threshold fixed before any cell ran, and the whole grid re-run
-on the binary that ships rather than the one that first scored well.
+Exact Fisher p = 2.0 × 10⁻¹¹ against claude-mem and 4.4 × 10⁻³⁰ against agentmemory. Six runs,
+54 cells an arm, the size and the threshold fixed before any cell ran, and the arm pinned to the
+binary that ships before a cell of it ran. The competitor arms are not re-run: they are the same
+fixture's own cells, each pinned to the version it was measured at. The build before the day of
+defect fixes that produced this reads 48 of 54 on the same cells, and wrote the retired value
+into 7 of them.
 
-It cost context: Muninn now occupies about 2.6 times claude-mem's share of the window, the worst
-figure it publishes, and that is measured the way least favourable to us. Turning the per-prompt
-block off takes it to 1.8 and costs about four answers in fifty, which is why it is not the
-default.
+It cost context: Muninn occupies about 2.4 times claude-mem's share of the window, the worst
+figure it publishes, and that is measured the way least favourable to us. Against the previous
+build, on the same cells and one instrument, it is 0.876 [0.826, 0.891] — less than it was, and
+still more than the competitor's. Turning the per-prompt block off takes it to 1.8 and costs
+about four answers in fifty, which is why it is not the default.
 
 Where the decisions exist only in the conversation and never reach the code, the same grid is
 **not a win and is not claimed as one**: 39 of 54 against 33 of 54, which chance produces often
