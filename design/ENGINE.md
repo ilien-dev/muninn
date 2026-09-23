@@ -133,6 +133,12 @@ disparar aparece como ausencia `[G3]`.
 - `record(created_at DESC, id DESC) WHERE invalid=0`: el catálogo y cualquier consulta por
   recencia leen la cabeza de este índice en vez de ordenar el conjunto activo entero. En una
   tienda al tope del esquema ese orden costaba 3,5 ms de un hook de 10; por el índice, 0,08 ms.
+  **El índice no basta**: la consulta del catálogo filtra por `kind`, y con una igualdad normal
+  SQLite prefiere `record_kind`, pierde el orden y vuelve al ordenamiento completo — 23 ms de
+  un hook de 10 en una tienda al tope. Por eso ese término lleva un `+` unario, que lo deja
+  inutilizable como restricción de índice sin cambiar lo que selecciona. Lo mismo en la prueba
+  de conflicto por línea, que si no camina todas las decisiones activas buscando un `subject`
+  compartido. `the_catalogue_reads_an_index_and_never_sorts_the_store` fija los dos planes.
 - `record(invalidated_by) WHERE invalidated_by IS NOT NULL`: el `replaces #n` del catálogo.
 - `heartbeat(session_id, started_at)`.
 
