@@ -503,7 +503,7 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         "SELECT r.id, r.kind, r.object, \
                 CASE WHEN r.origin = 'commit_linked' THEN r.anchor_path END AS anchored \
          FROM served_record r \
-         WHERE r.kind IN ('decision', 'invariant', 'correction') \
+         WHERE +r.kind IN ('decision', 'invariant', 'correction') \
            AND r.subject NOT LIKE 'commit:%' \
          ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
         PAGE + 1
@@ -512,6 +512,13 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .filter_map(|r| r.ok())
         .collect();
+    // The `+` on `kind` is not decoration. Without it SQLite takes the equality on
+    // `record_kind`, cannot then satisfy the ORDER BY from an index, and sorts every active
+    // decision in a temp B-tree before the LIMIT throws almost all of it away: 23 ms of a
+    // 10 ms hook on a store at the schema's cap, against 0.3 ms through `record_recent`.
+    // The unary plus makes the term unusable as an index constraint while leaving what it
+    // selects exactly as written, so the planner is left with the one index that answers the
+    // ORDER BY and stops at the page.
     // Which record retired which, in one grouped pass. As a correlated subquery this ran once
     // per row against a column with no index and took SessionStart's p95 to 439 ms against a
     // limit of 10; `record_heir` indexes it, and one pass needs no index at all.
@@ -534,10 +541,15 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     // of them disagree. Asked once per line that is actually emitted — about thirteen of the
     // hundred and twenty read — and as an existence test, not a count: over the whole page,
     // counting them cost 43 ms of a 10 ms hook on a store whose subjects repeat.
+    //
+    // `+o.kind` for the same reason as the page query above: with a bare equality the planner
+    // takes `record_kind` and walks every active decision in the store to find one that shares
+    // a subject, once per emitted line — 15.7 ms of a 10 ms hook at the schema's cap, against
+    // 0.02 ms through `record_active_key`.
     let mut clash_q = db.conn.prepare(
         "SELECT EXISTS(SELECT 1 FROM record r JOIN record o \
                          ON o.subject = r.subject AND o.relation = r.relation \
-                        AND o.kind = r.kind \
+                        AND +o.kind = r.kind \
                        WHERE r.id = ?1 AND o.id <> r.id AND o.invalid = 0 \
                          AND o.object <> r.object AND r.kind <> 'episode')",
     )?;
