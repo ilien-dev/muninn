@@ -604,6 +604,62 @@ pub fn run(
         }
         None => check(10, "embed", Status::Cold, "no database", None),
     });
+
+    // 11. the allow rules Muninn's own commands need
+    //
+    // The boot summary tells the agent to run `muninn show <id>`, and an install made before
+    // that command existed does not permit it — the agent meets a permission prompt on the one
+    // command the memory named. The read hooks cannot fix it: they are `query_only` by
+    // contract and `.claude/settings.json` is the user's file. Saying so is what is left.
+    {
+        const NEEDED: [&str; 3] = [
+            "Bash(muninn why:*)",
+            "Bash(muninn status:*)",
+            "Bash(muninn show:*)",
+        ];
+        let allow: Vec<String> = std::fs::read_to_string(paths.root.join(".claude/settings.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| {
+                v.get("permissions")
+                    .and_then(|p| p.get("allow"))
+                    .and_then(|a| a.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+            })
+            .unwrap_or_default();
+        // only for an install that wrote some of them: a project that never ran `init` has no
+        // opinion about these and is not missing anything
+        let ours = NEEDED
+            .iter()
+            .filter(|n| allow.iter().any(|a| a == *n))
+            .count();
+        let missing: Vec<&str> = NEEDED
+            .iter()
+            .copied()
+            .filter(|n| !allow.iter().any(|a| a == n))
+            .collect();
+        checks.push(if ours == 0 || missing.is_empty() {
+            check(
+                11,
+                "permissions",
+                Status::Green,
+                "allow rules in place",
+                None,
+            )
+        } else {
+            check(
+                11,
+                "permissions",
+                Status::Cold,
+                format!("{} not allowed", missing.join(", ")),
+                Some("run `muninn init` to add it"),
+            )
+        });
+    }
     Report { checks }
 }
 
