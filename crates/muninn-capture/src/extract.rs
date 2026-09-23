@@ -881,6 +881,10 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
             // it has just been told about. Every failing scenario of v22 has it in every
             // run. The `earlier|previous|…` is not decoration: it is what makes the phrase
             // refer back to something on record rather than forward to anything.
+            // The value can sit behind a filler noun and whatever verb the assistant chose —
+            // "replaces the earlier decision to stick with openssl" — and this goes first
+            // because the general shape below would capture `decision` or `choice` instead.
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one)\b(?:\s+to\s+[\w-]+)?(?:\s+(?:with|to|on|of|for))?\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:reemplaza|sustituye|revierte|anula)\s+(?:la|el)?\s*(?:decisi[oó]n\s+)?(?:anterior|previa|previo)\s+(?:de\s+)?([\w./@+-]{2,40})",
         ]
@@ -1652,6 +1656,20 @@ mod tests {
             (
                 "Got it — switching the TLS backend from openssl to rustls.",
                 "rustls for TLS",
+                "openssl",
+            ),
+            // the value behind a filler noun: `decision` is a stop word and `usable`
+            // rejects it, so capturing it loses the pair entirely
+            (
+                "Noted, we'll go with rustls for TLS, which replaces the earlier decision \
+                 to stick with openssl.",
+                "Rustls makes sense for our Rust codebase, fewer CVEs and simpler",
+                "openssl",
+            ),
+            (
+                "Noted, we'll go with rustls for TLS, which supersedes the earlier choice \
+                 of OpenSSL.",
+                "Rustls makes sense for our Rust codebase",
                 "openssl",
             ),
         ] {
