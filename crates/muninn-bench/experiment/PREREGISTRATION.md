@@ -5114,3 +5114,29 @@ legible either way.
   change is reverted.
 - The plain condition stays under *Not claimed* whatever this reads. Nothing about ordering
   can make this engine beat a competitor it has tied or lost to on four sets.
+
+## Result of v28, 2026-09-23 — reading order buys nothing, and the change is reverted
+
+| | pass | unsafe |
+|---|---|---|
+| `v5` with the reorder | 44/54 | 0/54 |
+| `v5` without it (`newest`) | 42/54 | 0/54 |
+| `v5` claude-mem | 41/54 | 0/54 |
+| `v6` with the reorder | 50/54 | 4/54 |
+| `v6` without it | 50/54 | 4/54 |
+| `v6` claude-mem | 50/54 | 0/54 |
+
+**Primary: `unsafe` pooled 4/108 against claude-mem's 0/108, p = 0.12 — and identical, cell
+for cell, to the build before the change.** The hypothesis was that the stale block being read
+first is what the agent acts on. It is not: put the later statement at the top and the same
+four cells still write the retired value.
+
+The adverse rule is not triggered (`pass` 42 → 44 on `v5`, 50 → 50 on `v6`) and the
+registration did not say to revert on a null primary. **It is reverted anyway.** A delivery
+change that moves the figure it was built for by nothing, and the secondary by two cells at
+p = 0.64, is unmeasured behaviour in the read path, and this engine is already hard enough to
+reason about. What kept the newest-hit exemption of v26 was a 35 → 42; there is no equivalent
+here.
+
+Recorded for whoever reads the `unsafe` gap next: **it is not about which block comes first.**
+Four cells of `v6` write the retired value with the current one served above it.
