@@ -11,6 +11,23 @@ pub mod redact;
 
 pub use model::{Session, ToolCall, Turn};
 
+/// The file a record is about, from the files its evidence names — and nothing when the
+/// evidence names more than one.
+///
+/// An anchor is a claim, not a label: `filter::validate_anchors` retires an anchored record
+/// when that file's content changes, and `cue::derive` fires the record whenever the session
+/// touches the file's directory. A commit or a turn that touched several files supports no
+/// such claim about any one of them. Taking the first made the anchor a property of the
+/// ordering rather than of the change — `git log --name-only` lists a commit's files
+/// alphabetically, and on this project's own store that put 84 of 256 commit records on
+/// whichever file sorted first, and 78 of its 187 directory cues on one directory.
+pub fn sole_anchor<T: AsRef<str>>(files: &[T]) -> Option<String> {
+    match files {
+        [one] => Some(one.as_ref().to_string()),
+        _ => None,
+    }
+}
+
 /// Detect the harness from the file and parse from `start_offset`.
 pub fn parse_any(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -18,6 +35,16 @@ pub fn parse_any(path: &std::path::Path, start_offset: u64) -> std::io::Result<S
         codex::parse(path, start_offset)
     } else {
         claude::parse(path, start_offset)
+    }
+}
+
+#[cfg(test)]
+mod anchor {
+    #[test]
+    fn an_anchor_needs_one_file() {
+        assert_eq!(super::sole_anchor(&["src/a.rs"]), Some("src/a.rs".into()));
+        assert_eq!(super::sole_anchor(&["src/a.rs", "src/b.rs"]), None);
+        assert_eq!(super::sole_anchor::<&str>(&[]), None);
     }
 }
 
