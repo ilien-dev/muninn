@@ -116,7 +116,14 @@ pub fn from_turn_all(session_id: &str, t: &Turn) -> Vec<Episode> {
     let head = head_chars(up, 600);
     if up.chars().count() > head && !(up.starts_with('<') && up.contains("</")) {
         let rest: String = up.chars().skip(head).collect();
-        push("user", &rest);
+        push(
+            if crate::is_compaction_summary(up) {
+                "summary"
+            } else {
+                "user"
+            },
+            &rest,
+        );
     }
     let a = t.assistant_text.trim();
     if a.chars().count() > 700 {
@@ -146,7 +153,11 @@ pub fn from_turn(session_id: &str, t: &Turn) -> Option<Episode> {
         return None;
     }
     let mut body = String::new();
-    body.push_str("user: ");
+    body.push_str(if crate::is_compaction_summary(up) {
+        "summary: "
+    } else {
+        "user: "
+    });
     body.push_str(truncate_chars(up, head_chars(up, 600)));
     body.push('\n');
     if !t.assistant_text.trim().is_empty() {

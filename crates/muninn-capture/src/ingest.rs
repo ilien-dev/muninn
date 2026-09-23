@@ -551,15 +551,25 @@ pub fn ingest_transcript_with(
                 .as_deref()
                 .and_then(parse_rfc3339_ms)
                 .unwrap_or(now);
-            let anchor = ep.files.first().cloned();
+            let anchor = crate::sole_anchor(&ep.files);
+            // The compaction summary is the assistant's own earlier words, condensed by the
+            // harness and replayed in the user's role. `tool_observed` is for what the
+            // transcript shows happening; a paraphrase is not that, and at trust 0 the
+            // renderer frames it as a hint rather than a fact — which is the vocabulary the
+            // boot summary already uses for a summary's claims.
+            let (origin, trust) = if crate::is_compaction_summary(&t.user_prompt) {
+                ("agent_inferred", 0i64)
+            } else {
+                ("tool_observed", 1i64)
+            };
             let n = ins.execute(rusqlite::params![
                 "episode",
                 ep.subject,
                 "happened",
                 ep.object,
                 ep.body,
-                "tool_observed",
-                1i64,
+                origin,
+                trust,
                 anchor,
                 sid,
                 format!("{}:{}", transcript.display(), t.end_offset),
@@ -758,6 +768,53 @@ mod tests {
     }
     fn tool_result(id: &str, out: &str, code: i64) -> serde_json::Value {
         serde_json::json!({"type":"user","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":id,"content":out,"is_error":code!=0}]},"toolUseResult":{"exitCode":code}})
+    }
+
+    /// The harness replays its compaction summary in the user's role. It is the assistant's
+    /// own earlier words condensed, so it is neither what a person typed nor what the
+    /// transcript observed: 33 of the 118 episodes one of this project's transcripts yields
+    /// come from those turns, and all of them read `user:` at trust 1.
+    #[test]
+    fn a_compaction_summary_is_not_the_user_speaking() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), Mode::ReadWrite).unwrap();
+        let long: String = "Details that make the summary long enough to chunk. ".repeat(40);
+        let t = transcript(
+            tmp.path(),
+            "t.jsonl",
+            &[
+                user(&format!(
+                    "This session is being continued from a previous conversation that ran \
+                     out of context. {long}"
+                )),
+                assistant("Continuing."),
+                user("we are switching to rustls"),
+                assistant("Noted."),
+            ],
+        );
+        ingest_transcript(&db, &t, "s1").unwrap();
+        let rows: Vec<(String, String, i64)> = db
+            .conn
+            .prepare("SELECT body, origin, trust FROM record WHERE kind='episode' ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        let (summary, spoken): (Vec<_>, Vec<_>) =
+            rows.iter().partition(|(b, _, _)| b.starts_with("summary"));
+        assert!(
+            summary.len() >= 2,
+            "head and at least one continuation: {rows:?}"
+        );
+        for (_, origin, trust) in &summary {
+            assert_eq!((origin.as_str(), *trust), ("agent_inferred", 0));
+        }
+        assert!(!spoken.is_empty());
+        for (b, origin, trust) in &spoken {
+            assert!(b.starts_with("user"), "{b}");
+            assert_eq!((origin.as_str(), *trust), ("tool_observed", 1));
+        }
     }
 
     /// A hook can read the transcript between a prompt and its answer — `maintain` resumes

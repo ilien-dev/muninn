@@ -11,6 +11,19 @@ pub mod redact;
 
 pub use model::{Session, ToolCall, Turn};
 
+/// Is this "user" message the harness's own compaction summary?
+///
+/// It arrives in the user's role, and it is the assistant's earlier words condensed — not
+/// something anyone typed. A third of this project's served episodes come from these turns,
+/// and every one of them read `user:` at trust 1, which is the level for something seen in
+/// the transcript rather than for a paraphrase that can be wrong in ways a literal excerpt
+/// cannot. `extract` already refused to make typed records from it; episodes did not know.
+pub fn is_compaction_summary(prompt: &str) -> bool {
+    prompt
+        .trim_start()
+        .starts_with("This session is being continued")
+}
+
 /// The file a record is about, from the files its evidence names — and nothing when the
 /// evidence names more than one.
 ///
