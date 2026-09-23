@@ -1,8 +1,9 @@
-# Where this left off — 2026-09-22
+# Where this left off — 2026-09-23
 
-Everything below is committed. Nothing is in flight that matters: the only
-background process at the end was a CI gate, which is re-runnable with the four
-commands in `CLAUDE.md`.
+Everything below is committed and the gate is green (`cargo test --workspace
+--features exact-tokens`, `cargo fmt`, `cargo clippy … -D warnings`, `cargo run
+--release -p muninn-bench -- perf --strict`, and the fault suite at 200
+repetitions). Nothing is running in the background.
 
 ## What is claimed now
 
@@ -14,55 +15,80 @@ commands in `CLAUDE.md`.
 | no memory at all (`off`) | 0/54 |
 
 Exact Fisher p = 3.4 × 10⁻⁶ against claude-mem, 2.4 × 10⁻²¹ against agentmemory.
-Six runs, 54 cells an arm, size and threshold fixed before any cell ran, fixture
-validated by its own `off` control. `results/h2h-v13-final/`.
+`results/h2h-v13-final/`. Against us: median injected context **2.591 [2.420,
+2.739]** times claude-mem's — measured on a build that re-served records, and
+**still not re-measured**.
 
-Not claimed: the plain condition, where decisions never reach the code — 39/54
-against 33/54, p = 0.31. Gate 5b on either model family.
+## What changed on 2026-09-23
 
-Against us: median injected context **2.591 [2.420, 2.739]** times claude-mem's.
-Two ways to cut it were measured and both cost answers (a 594-character boot
-summary: −6 cells; the per-prompt block off: −4 cells but 1.84× context, shipped
-as `muninn config prompt-delivery off`, default on).
+Nothing here came from a benchmark. Every one came from reading the live store,
+the real transcripts, or a claim in the docs and checking whether the code agreed.
 
-## What changed today, in one line each
+**The latency contract was measured at a quarter of the size it publishes.**
+`docs/claims.md` says "at 20 000 records", the schema's cap; the fixture used
+5 000. At the cap SessionStart was **10.5 ms against a 10 ms limit** and CI could
+not see it. Two query plans caused it: the catalogue's page query and its
+per-line conflict test both let SQLite take the index on `kind`, which abandons
+the index that answers the ORDER BY. A unary `+` on each `kind` term leaves what
+they select unchanged and takes the term out of the planner's reach. End to end
+on a 20 000-record store: **23.9 ms → 0.77 ms**. The fixture's default is now the
+cap, and `the_catalogue_reads_an_index_and_never_sorts_the_store` pins both plans
+so the `+` cannot be tidied away.
 
-- `[muninn:catalog]` + `muninn show <id>` — the change that won the grid.
-- Two sentences saying a moved file is not a retirement: 39/54 → 51/54.
-- A deleted file retires nothing (it used to erase six decisions and their episodes).
-- Four scale defects: the hooks were 7–16× over contract at 20 000 records.
-- The perf fixture now runs at the schema's cap and contains event cues and retired rows.
-- Eight capture guards, all found by reading this project's own store: the harness
-  is not the user, what you paste is not what you decided, a denied change is not a
-  change, a header is not a statement, `ahora` alone is not a marker, an
-  abbreviation does not end a sentence, asking what you meant is not a correction,
-  and a long message is not cut through a word.
-- `muninn init` now allows `muninn show`; health says when an install is missing it.
+**Three experiment oracles were reading the instrument.** `muninn recall` printed
+`terms: … · 0.53 ms` on stdout ahead of the blocks, and loop 1, loop 8 and
+`eval_code.py` searched that whole stream for the value they were looking for.
+The retry-budget cell goes from `3` to `7`: `0.53 ms` contains the old value and
+`session s017` the new one. Three runs of the same command gave 9, 8, 8 on a
+fixture documented as deterministic. The header moved to stderr and the oracles
+now read block text on token boundaries. The corrected instrument reads **lower**
+in five of eighteen conditions, and `docs/claims.md` says so on that row.
 
-## What is measured and closed
+**Nine invariants belonged to another conversation.** Four came from the prompts
+that generated loops 8, 9 and 10 ("The replacement must not contain the original
+as a substring"); four were lines of a scaffold's JSON contract inside a PM-Bench
+payload whose blocks start with `USER:`. Re-capturing all 1 919 transcripts: 29
+invariants before, 20 after, and the nine that go are exactly those. The four
+that were live were retired with `muninn revoke`.
 
-- Pairing a replacement with what it replaces by vector: 3 of 42 rank first
-  (`loop12/`). Both halves of that route — sentences and names — are shut.
-- `semantic_duplicate` removed: never called, and its threshold fires zero times
-  on a real store.
+**A compaction summary was being served as something the user said.** A third of
+the episodes one transcript yields come from those turns, and all of them read
+`user:` at trust 1. They are the assistant's own words condensed. They now carry
+a `summary:` label and trust 0, which is the level the renderer frames as
+"unverified: treat as a hint, not a fact".
 
-## If you pick this up again
+**A repeated question lowered the relevance floor until the block filled again.**
+The floor cuts a hit worse than half the best match, and "the best match" was
+taken after exclusion — which removes everything already delivered. Ask the same
+question three times and it delivered three full blocks. The reference is now the
+query's best, before exclusion. This is the one place the published context cost
+came down without withholding anything a fresh question would have been given.
 
-The next honest steps, in the order their evidence supports:
+**An anchor named whichever file sorted first.** `git log --name-only` is
+alphabetical, so 118 of this repository's 247 directory cues pointed at
+`crates/muninn-bench/experiment`. A commit that touched several files now anchors
+to none: 86 anchors instead of 302, 67 cues instead of 247.
 
-1. **The window cost is the open number.** Both obvious doors are measured and
-   shut. Anything new has to come from somewhere that is not the instructions and
-   not the per-prompt block, and it needs a grid.
+**A shared Spanish filler phrase retired a decision about something else.** "tiene
+mejor rendimiento" was two of the two content words `replaces` asks for. The
+Spanish half of the capture stoplist was a sketch where the English half is
+thorough; it has the counterparts now. `kept_b` on the Spanish cells goes 9/10 →
+10/10 in four conditions and nothing moves down anywhere.
 
-   **167 of the 224 records the per-prompt blocks served were already named in
-   that session's catalogue** (60 cells, `muninn-ship`). That was a bug, not a
-   design: `delivered_ids` read only the pending part of the ledger, and the
-   `maintain` every session start spawns folds it and moves the watermark past it.
-   Fixed — it reads the folded rows too — so the window cost measured on v14
-   (2.591×) is from a build that was re-serving records. **Re-measuring it is the
-   first thing to do**, and the number should come down on its own.
+Smaller, same day: the red heartbeat names the error instead of pointing back at
+`doctor`; `init` stops re-adding four `.gitignore` lines the repository already
+covers and stops rewriting a settled `settings.json`; health checks 4 and 8 read
+the trigger-maintained counter instead of counting the store on every hook;
+`select_terms` asks the index for each distinct word once instead of up to four
+times; `muninn show` says which ids it could not serve and why; the boot summary
+says `why` *opens* with its sufficiency marker, which is where the marker is.
 
-   That arm is registered and pinned already (`v15`, `muninn-nodup`). One command:
+## The next honest steps
+
+1. **Re-measure the window cost.** 2.591× was measured on a build that re-served
+   records, and two changes since then cut delivery further (the ledger fold fix,
+   and today's relevance floor). The arm is registered and pinned as `v15`
+   (`muninn-nodup`):
 
    ```sh
    cd crates/muninn-bench/experiment/h2h && python3 run_h2h.py \
@@ -72,14 +98,11 @@ The next honest steps, in the order their evidence supports:
 
    Still untested after that: a *shorter* block for a record the catalogue already
    named. That is a real hypothesis and needs its own arm.
-2. **Gate 5b needs size, not another arm.** On haiku it reads 2/24 against 0/24,
-   +0.083 [+0.000, +0.167]. A grid four times that size would exclude 0 at the
-   same rate. It is deliberately not run: a gate whose size is chosen after seeing
-   the effect is what `PREREGISTRATION.md` exists to prevent, so it needs its own
-   registration first.
-3. **The plain condition is a tie and its failure mode is known**: 14 of 15 failing
-   cells served a stale value, which is `[Z5]`. The ack bridge is the only opening
-   found and its reach is 27 % of replies when Muninn is the memory in the loop.
+2. **Gate 5b needs size, not another arm**, and its own registration first.
+3. **The plain condition is a tie** and 14 of its 15 failing cells served a stale
+   value, which is `[Z5]`.
 
-`PREREGISTRATION.md` is the file that matters — every arm, its rule written before
-its data, and every result including the ones that went against the tool.
+Known and not acted on: the compaction marker is Claude Code's, and no Codex
+rollout of this project was available to learn its equivalent from. Records
+captured before today keep the trust and the anchors they were given; nothing is
+rewritten.
