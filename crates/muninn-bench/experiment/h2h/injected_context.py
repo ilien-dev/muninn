@@ -50,6 +50,8 @@ def main():
     ap.add_argument("new")
     ap.add_argument("old")
     ap.add_argument("--new-arm", default="muninn-day2")
+    ap.add_argument("--base-arm", default="muninn-ship",
+                    help="the arm in the old grid to read as the baseline")
     ap.add_argument("--with-system", action="store_true")
     a = ap.parse_args()
     keys = BOTH if a.with_system else BOTH[:1]
@@ -62,16 +64,16 @@ def main():
         for t in rep:
             row = (chars(new / "logs" / f"r{r}-{t}-{a.new_arm}.transcript.jsonl", keys),
                    chars(old / "logs" / f"r{r}-{t}-claude-mem.transcript.jsonl", keys),
-                   chars(old / "logs" / f"r{r}-{t}-muninn-ship.transcript.jsonl", keys))
+                   chars(old / "logs" / f"r{r}-{t}-{a.base_arm}.transcript.jsonl", keys))
             if all(row):
                 pairs.append(row)
     print(f"{len(pairs)} replacement cells · {'additionalContext + systemMessage' if a.with_system else 'additionalContext only'}")
     for name, f in ((f"{a.new_arm} / claude-mem", lambda x: x[0] / x[1]),
-                    ("muninn-ship / claude-mem", lambda x: x[2] / x[1]),
-                    (f"{a.new_arm} / muninn-ship", lambda x: x[0] / x[2])):
+                    (f"{a.base_arm} / claude-mem", lambda x: x[2] / x[1]),
+                    (f"{a.new_arm} / {a.base_arm}", lambda x: x[0] / x[2])):
         lo, hi = ci(pairs, f)
         print(f"  {name:28s} {st.median(f(x) for x in pairs):.3f} [{lo:.3f}, {hi:.3f}]")
-    for i, name in ((0, a.new_arm), (2, "muninn-ship"), (1, "claude-mem")):
+    for i, name in ((0, a.new_arm), (2, a.base_arm), (1, "claude-mem")):
         print(f"  median chars {name:22s} {st.median(x[i] for x in pairs):.0f}")
 
 
