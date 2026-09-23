@@ -23,6 +23,25 @@ model in any cell, every run deterministic.
 (`v5_<arm>_<order>.json`. `v2_*` through `v4_*` are the same grid at earlier points in the
 loop and are kept so the effect of each change can be read off.)
 
+**Re-measured 2026-09-23 with the oracle fixed.** Until that day `eval_all.py` searched the
+whole of `muninn recall`'s stdout — a block's date and session id, and a wall-clock timing —
+for the value it was looking for, and matched substrings rather than tokens. Every
+`retired_a` figure in the table above reproduces exactly, and so does every `served_ok` of
+loop 9. Loop 8's `served_ok` reads **higher**, not lower, because the old oracle could find
+the *old* value inside a session id or a date and score the cell as serving it:
+
+| set / order | served_ok talk | code | both |
+|---|---|---|---|
+| loop 8 adjacent | 11 → **12** | 21 → **24** | 19 → **22** |
+| loop 8 blocks | 0 → **0** | 21 → **24** | 17 → **19** |
+| loop 9 adjacent | 8 → **8** | 29 → **29** | 21 → **21** |
+| loop 9 blocks | 1 → **1** | 29 → **29** | 25 → **25** |
+
+The direction is not the same on both sets, so "the corrected instrument reads lower" — which
+this project wrote on 2026-09-23 from five conditions of the loop 7 fixture — is not true in
+general and is corrected here. What is uniform is that the retirement figures, which never
+read that stream, did not move at all.
+
 `code` gives the same numbers in every row: the commit does not care whether the revision
 followed the decision or came ten decisions later, and the conversation alone falls from
 17/30 to 5-6/30 between those two orders.
