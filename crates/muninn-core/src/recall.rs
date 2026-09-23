@@ -166,7 +166,18 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     if terms.is_empty() {
         return Ok(vec![]);
     }
-    let n: f64 = db.count("SELECT count(*) FROM record WHERE invalid=0")? as f64;
+    // The active-record count is what the FTS triggers already keep in `meta`; counting it
+    // here walked the whole index on every prompt for a number that is used as an IDF
+    // denominator and a threshold.
+    let n: f64 = match db
+        .meta_get("fts_rows")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse::<f64>().ok())
+    {
+        Some(v) if v >= 0.0 => v,
+        _ => db.count("SELECT count(*) FROM record WHERE invalid=0")? as f64,
+    };
     let mut stmt = db
         .conn
         .prepare("SELECT sum(doc) FROM record_vocab WHERE term = ?1")?;
@@ -178,25 +189,40 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     let mut matched = db
         .conn
         .prepare("SELECT count(*) FROM record_fts WHERE record_fts MATCH ?1")?;
-    let mut scored: Vec<(f64, String)> = Vec::new();
-    for t in terms {
-        let mut df: f64 = stmt
-            .query_row([&t], |r| r.get::<_, Option<f64>>(0))?
+    // One lookup per distinct word, not per appearance and not once more in the fallback.
+    // Reading a term's document frequency means decoding its whole posting list, so a word
+    // the store uses everywhere costs about 0.6 ms on a store at the schema's cap — and the
+    // words a question repeats are exactly those. The second pass below used to ask again
+    // for every word of the prompt, `STOP` words included.
+    let mut df_of: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let df = |t: &str,
+                  stmt: &mut rusqlite::Statement,
+                  matched: &mut rusqlite::Statement,
+                  cache: &mut std::collections::HashMap<String, f64>|
+     -> Result<f64> {
+        if let Some(v) = cache.get(t) {
+            return Ok(*v);
+        }
+        let mut d: f64 = stmt
+            .query_row([t], |r| r.get::<_, Option<f64>>(0))?
             .unwrap_or(0.0);
-        if df <= 0.0 {
-            df = matched
+        if d <= 0.0 {
+            d = matched
                 .query_row([format!("\"{t}\"")], |r| r.get::<_, i64>(0))
                 .unwrap_or(0) as f64;
         }
-        if df <= 0.0 {
+        cache.insert(t.to_string(), d);
+        Ok(d)
+    };
+    // a term in more than a third of the store carries no signal and costs a long posting list
+    let too_common = |d: f64| n >= 50.0 && d > n / 3.0;
+    let mut scored: Vec<(f64, String)> = Vec::new();
+    for t in &terms {
+        let d = df(t, &mut stmt, &mut matched, &mut df_of)?;
+        if d <= 0.0 || too_common(d) {
             continue;
         }
-        // a term in more than a third of the store carries no signal and costs a long posting list
-        if n >= 50.0 && df > n / 3.0 {
-            continue;
-        }
-        let idf = ((n + 1.0) / (df + 1.0)).ln();
-        scored.push((idf, t));
+        scored.push((((n + 1.0) / (d + 1.0)).ln(), t.clone()));
     }
     // `STOP` exists so a prompt's scaffolding does not drag the whole store in, and the
     // df test drops a word no record holds. Between them they can take *every* word of a
@@ -204,15 +230,13 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     // answer then returns nothing at all. Both are preferences, not vetoes — they apply
     // while something else survives them.
     if scored.is_empty() {
-        for t in all {
-            let df: f64 = stmt
-                .query_row([&t], |r| r.get::<_, Option<f64>>(0))?
-                .unwrap_or(0.0);
+        for t in &all {
             // the rarity guard still applies: a word in a third of the store buys a long
             // posting list and no signal, and without this the full hook went past its
             // latency contract (11.9 ms against a limit of 10)
-            if df > 0.0 && !(n >= 50.0 && df > n / 3.0) {
-                scored.push((((n + 1.0) / (df + 1.0)).ln(), t));
+            let d = df(t, &mut stmt, &mut matched, &mut df_of)?;
+            if d > 0.0 && !too_common(d) {
+                scored.push((((n + 1.0) / (d + 1.0)).ln(), t.clone()));
             }
         }
     }
@@ -221,6 +245,7 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
             .unwrap()
             .then_with(|| b.1.len().cmp(&a.1.len()))
     });
+    scored.dedup_by(|a, b| a.1 == b.1);
     Ok(scored.into_iter().take(k).map(|(_, t)| t).collect())
 }
 
