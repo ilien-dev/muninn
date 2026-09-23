@@ -391,18 +391,6 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
             })
             .map(|(_, id)| id);
         hits.retain(|h| h.score <= floor || h.trust >= 3 || Some(h.id) == keep);
-        // and it goes first. It is the later statement about what the question asked; the
-        // hit above it is the one that repeats the question's words, which is the record
-        // that stated the thing before it changed. Reading order is what the agent acts on:
-        // over four held-out grids this engine wrote the retired value 21 times against
-        // claude-mem's 2, and in every one of those cells the stale block was the one at the
-        // top of the block.
-        if let Some(id) = keep {
-            if let Some(i) = hits.iter().position(|h| h.id == id) {
-                let h = hits.remove(i);
-                hits.insert(0, h);
-            }
-        }
     }
     Ok(hits)
 }
@@ -891,11 +879,10 @@ mod tests {
         let terms = vec!["license".to_string(), "project".to_string()];
         let hits = recall(&db, &terms, 8, &HashSet::new()).unwrap();
         let ids: Vec<i64> = hits.iter().map(|h| h.id).collect();
-        // the later statement survives the floor, and is read first
-        assert_eq!(ids.first(), Some(&2), "{ids:?}");
+        assert_eq!(ids.first(), Some(&1), "{ids:?}");
         assert!(
-            ids.contains(&1),
-            "the record that stated it is still there: {ids:?}"
+            ids.contains(&2),
+            "the later statement survives the floor: {ids:?}"
         );
         assert!(
             !ids.contains(&3),
