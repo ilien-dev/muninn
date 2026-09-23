@@ -838,6 +838,20 @@ pub fn names_new_value(old: &str, new: &str) -> bool {
 pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
     static TWO: OnceLock<Vec<Regex>> = OnceLock::new();
     static ONE: OnceLock<Vec<Regex>> = OnceLock::new();
+    // Every pattern below needs one of these words, and most replies have none of them. The
+    // regex sets are the expensive part of the write path now that `decision_candidates`
+    // asks this of a message that matched nothing else — which is most messages. Without
+    // this, `s14_maintain_and_stop_concurrent` went from well under its two seconds to 2.51.
+    // One entry per pattern below, and ` de ` with both spaces because the Spanish two-sided
+    // shape is `de X a Y` and a bare `de` sits inside `code`, `made` and `decide`.
+    const TRIGGERS: [&str; 13] = [
+        "replac", "instead", "supersed", "revers", "overrid", "from ", " de ", "en vez",
+        "en lugar", "sustitu", "reemplaz", "revierte", "anula",
+    ];
+    let low = ack.to_ascii_lowercase();
+    if !TRIGGERS.iter().any(|t| low.contains(t)) {
+        return None;
+    }
     // two-sided: the replaced value first, the replacement second
     // `(?:\([^)]{0,60}\)\s*)?` — one short parenthetical between the value and the preposition.
     // The assistant writes "switching from gzip (the earlier decision, #3) to zstd" and
@@ -862,6 +876,13 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
         [
             r"(?i)\binstead of\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:en vez de|en lugar de)\s+([\w./@+-]{2,40})",
+            // `<arrived> replaces the earlier <gone>` — the reverse of `replace X with Y`,
+            // and the form an assistant actually writes when it is acknowledging a change
+            // it has just been told about. Every failing scenario of v22 has it in every
+            // run. The `earlier|previous|…` is not decoration: it is what makes the phrase
+            // refer back to something on record rather than forward to anything.
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+([\w./@+-]{2,40})",
+            r"(?i)\b(?:reemplaza|sustituye|revierte|anula)\s+(?:la|el)?\s*(?:decisi[oó]n\s+)?(?:anterior|previa|previo)\s+(?:de\s+)?([\w./@+-]{2,40})",
         ]
         .iter()
         .map(|p| Regex::new(p).unwrap())
@@ -1035,6 +1056,45 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
             let words = topic_words(up);
             let object = truncate_chars(up, 300).to_string();
             out.truncate(before);
+            out.push(Candidate {
+                kind: "decision",
+                ack: t.assistant_text.clone(),
+                subject: format!("said:change:{}", words.join(" ")),
+                relation: "user_decision".into(),
+                object: redact(&object),
+                body: redact(&format!("user: {}\n", object)),
+                origin: "user_said",
+                anchor_path: None,
+                turn_index: t.index,
+                end_offset: t.end_offset,
+            });
+        }
+    }
+    // v22: the shape that is left. The user states the new value with a reason and no verb
+    // this file recognises — "argon2id is better, protects against both GPU and side-channel
+    // attacks", "Tokio is the de facto standard and ecosystem support is huge" — and shares
+    // no content word with what it replaces. Nothing was captured, so nothing was retired,
+    // so the earlier decision stayed active and was served: three scenarios failed almost
+    // completely and every one of those failures wrote the retired value into the file.
+    //
+    // The evidence is in the same turn and it is explicit. The assistant answers "which
+    // replaces the earlier LFU eviction decision", "argon2id replaces the earlier bcrypt
+    // decision (#9)". `ack_replacement` is the function that reads those, and it already
+    // carries the guard this needs: it only returns a pair whose *arrival* side is part of
+    // the text passed as the decision, which is what ties the reply to this message rather
+    // than to something else the assistant mentioned. So the test is the function itself.
+    //
+    // This is the narrowest form of "the reply says it was a decision" that has evidence
+    // behind it. The broader form — a bare value, with the reply saying nothing — was built
+    // and thrown away after v21, because there the assistant read no decision either.
+    if out.len() == before
+        && (8..=700).contains(&n)
+        && !up.trim_end().ends_with('?')
+        && ack_replacement(&t.assistant_text, up).is_some()
+    {
+        let words = topic_words(up);
+        if !words.is_empty() {
+            let object = truncate_chars(up, 300).to_string();
             out.push(Candidate {
                 kind: "decision",
                 ack: t.assistant_text.clone(),
@@ -1484,6 +1544,62 @@ mod tests {
     /// happen to end on. Before the Spanish half of `STOP` was completed, `tiene` and
     /// `rendimiento` were the two content words `replaces` asks for, and the later decision
     /// retired the earlier one — taking with it the only record that held `Supavisor`.
+    /// The user states the new value with a reason and no verb this file recognises, and the
+    /// assistant answers by naming the pair outright. Three scenarios of v22 are that shape
+    /// and all three failed almost completely, every failure writing the retired value into
+    /// the file — which is the one thing this engine exists not to do.
+    #[test]
+    fn a_reply_that_names_the_pair_makes_the_message_a_decision() {
+        let cases = [
+            (
+                "Tokio is the de facto standard and ecosystem support is huge",
+                "Understood, we'll use Tokio as the async runtime, which replaces the earlier \
+                 async-std decision (#20) given its ecosystem support.",
+                "async-std",
+            ),
+            (
+                "argon2id is better, protects against both GPU and side-channel attacks",
+                "Understood: argon2id replaces the earlier bcrypt decision (#9) for password \
+                 hashing.",
+                "bcrypt",
+            ),
+            (
+                "LRU with a 300-second TTL is cleaner and way easier to reason about",
+                "Noted — LRU with a 300-second TTL, which replaces the earlier LFU eviction \
+                 decision.",
+                "lfu",
+            ),
+        ];
+        for (up, reply, gone) in cases {
+            assert_eq!(ack_replacement(reply, up).as_deref(), Some(gone), "{up}");
+            let mut t = turn(0, up);
+            t.assistant_text = reply.to_string();
+            let s = Session {
+                turns: vec![t],
+                ..Default::default()
+            };
+            let c = extract(&s, "abcdef12");
+            let d = c
+                .iter()
+                .find(|x| x.kind == "decision" && x.relation == "user_decision")
+                .unwrap_or_else(|| panic!("no decision for {up}"));
+            assert!(d.subject.starts_with("said:change:"), "{}", d.subject);
+        }
+        // a reply that names no pair leaves the message where it was
+        let mut t = turn(
+            0,
+            "LRU with a 300-second TTL is cleaner and way easier to reason about",
+        );
+        t.assistant_text = "Interesting, that is a common choice for hot sets.".into();
+        let s = Session {
+            turns: vec![t],
+            ..Default::default()
+        };
+        assert!(!extract(&s, "abcdef12")
+            .iter()
+            .any(|x| x.kind == "decision" && x.relation == "user_decision"));
+    }
+
     /// `switch` with nothing after it was not a change marker, because a bare one is as often
     /// a noun. A first person proposing one is not: "Benchmarks show zstd is faster - let's
     /// switch" ends on it, and until this it announced nothing, so no decision was captured
