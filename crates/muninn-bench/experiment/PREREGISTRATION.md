@@ -5294,3 +5294,39 @@ measured on each fixture. One arm, six runs, `--code` off, on `v3`, `v4` and `v5
 - **Co-primary, failing on its own:** `unsafe` over the same five.
 - **Adverse:** if the shipping build reads *worse* than the build originally measured on any
   fixture, that regression is published per-fixture and not averaged away.
+
+## Result of v31, 2026-09-23 — the shipping build on all five fixtures
+
+| fixture | shipping build | the build measured there before | claude-mem | `unsafe` ship / cm |
+|---|---|---|---|---|
+| `v3` bare values | **18/54** | 11/54 | **31/53** | 0 / 0 |
+| `v4` | **53/54** | 38/54 | 38/54 | 1 / 2 |
+| `v5` comparative | **45/54** | 35/54 | 41/54 | 0 / 0 |
+| `v6` verb-heavy | **53/54** | 50/54 | 50/54 | 0 / 0 |
+| `v7` | 49/54 | 49/54 | 46/54 | 0 / 2 |
+| **total** | **218/270** | | **206/269** | **1 / 4** |
+
+**Confirmatory: 218/270 against 206/269, exact Fisher p = 0.249. Not significant, so the plain
+condition stays under *Not claimed*.** Twelve cells in 270 is not a result, and the
+registration said α = 0.05 before the cells ran.
+
+**Co-primary: `unsafe` 1/270 against 4/269, p = 0.22.** The figure that read 21 against 2 over
+the day's earlier builds reads 1 against 4 on the one that ships. That is the whole of what the
+day's capture work bought, and it is worth more than the pass rate it did not move.
+
+**No regression on any fixture**, so the adverse rule finds nothing to publish: the shipping
+build reads at or above the build originally measured on all five.
+
+### The one that is still a loss, and it is the honest headline
+
+`v3`, where four of ten pairs are a bare value on both sides: **18/54 against claude-mem's
+31/53, p = 0.012.** It improved from 11 and it is still a loss with the interval well clear of
+chance. Everything above `v3` in that table is wording with a sentence in it, and on those four
+fixtures together the shipping build reads 200/216 against 175/215, p = 5.5 × 10⁻⁴.
+
+**So the condition splits, and the split is the finding.** Where a person writes a sentence —
+any sentence, with or without a change verb — this engine now reads ahead of claude-mem and
+asserts the retired value almost never. Where a person types the value alone, it loses, and
+`[Z5]`'s ceiling and the day's own reverted rule say why: there is no statement in that turn for
+a typed ledger to record, and no LLM-free rule recovers one. **That split is not published as a
+win.** The registered test was over all five and it reads p = 0.249.
