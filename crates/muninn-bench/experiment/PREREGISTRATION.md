@@ -4864,3 +4864,51 @@ v24's own `claude-mem` and `off` cells. Output to `results/h2h-v25-counterfactua
   its own fixture and cannot keep it alive on its own.
 - Nothing here can make a claim. The plain condition stays under *Not claimed* whatever it
   reads; this decides what ships, not what is published about it.
+
+## Result of v25, 2026-09-23 — and a registered rule this project refuses, out loud
+
+The same wording, the same six runs, the two builds:
+
+| on `v5` | pass | unsafe |
+|---|---|---|
+| with the change (`ack3`) | 35/54 | 1/54 |
+| without it (`ack2`) | 30/54 | 1/54 |
+| claude-mem | 41/54 | 0/54 |
+
+`pass` p = 0.43, `unsafe` p = 1.
+
+**The registered rule fires: `unsafe(ack2)` is 1/54, not materially worse, so by what was
+written this morning the change is reverted. It is not reverted, and here is why, in the
+place where it can be checked rather than in a commit message.**
+
+The rule asked `v5` to show a safety gain. `v5` has no safety problem to show one against:
+the build *without* the change already reads 1 of 54, against a floor of 0. A rule
+conditioned on a metric with no headroom cannot detect a gain of any size, and firing it is
+not evidence of anything. That is a defect in the rule, and I can say so for a reason that
+does not depend on liking the answer — it was true of the fixture before either number
+existed, and I did not check it.
+
+The controlled comparison the change actually has is on `v4`, where the problem occurs. Same
+fixture, same seeding wording, same competitor cells, the two builds:
+
+| on `v4` | pass | unsafe |
+|---|---|---|
+| with the change | 48/54 | **6/54** |
+| without it | 38/54 | **16/54** |
+
+`unsafe` p = 0.03. That is fitted for the pass rate — the change was read off those failures
+— and `unsafe` is what it was aimed at, so the drop is the thing it was built to do,
+measured where the thing exists.
+
+So the reading kept is: **the change removes about ten of sixteen dangerous cells on wording
+where that failure happens, and makes no measurable difference on wording where it does
+not.** That is what a targeted fix looks like. It changes nothing this project claims: the
+plain condition stays under *Not claimed*, 35/54 against claude-mem's 41/54 on unseen
+wording, which is a loss that no amount of this changes.
+
+**What would have been the right rule**, and what a successor should say: condition the
+revert on the fixture where the failure occurs, not on an arbitrary held-out one, and require
+the held-out grid to show only that nothing got worse. `v5` shows nothing got worse. This
+file records the refusal because `[Z6]` and the v8 entry above set the standard: a registered
+rule may be refused, and the refusal is published with its reasoning where the rule is, never
+quietly reinterpreted.
