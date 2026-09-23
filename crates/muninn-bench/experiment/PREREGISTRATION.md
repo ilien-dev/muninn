@@ -4400,3 +4400,52 @@ own `claude-mem` and `off` cells. Output to `results/h2h-v19-plain/`.
   it is the next step, not this one.
 - **Registered adverse outcome:** if any of the seven scenarios v18 passed now fails, the
   change costs more than it buys and is reverted regardless of the total.
+
+## Result of v19, and why v20 replaces it
+
+v19 read **42/54, identical to v18 in every cell**, and the same two scenarios failed in all
+six runs. The parenthetical fix was correct and reached nothing, for a reason the grid could
+not show and a two-turn probe did in a second: neither replacement message was captured as a
+decision at all, so `supersede_via_ack` never ran. "Benchmarks show zstd is faster - let's
+switch" ends on a bare `switch`, which was not a change marker; "semver is cleaner"
+announces nothing and states nothing any verb list recognises.
+
+By the rule registered above, a fix that does not reach what it was built for is reverted.
+It is not reverted, because the diagnosis says it was never the whole fix: with the change
+marker extended, the pair is captured and the parenthetical is what lets the ack pair it.
+Driven end to end on those two turns, gzip is retired by the zstd decision and needs both.
+
+---
+
+# Pre-registration — v20-plain: both halves, still a mechanism check
+
+Registered 2026-09-23, before any cell ran. Supersedes v19, whose arm predates the change
+marker. **Still not confirmatory and still cannot become a claim**: both changes were read
+off this grid's failing cells.
+
+## The arm
+
+`muninn-ack2`, sha256 prefix `e97acc645e40691a`: `muninn-day2` plus the parenthetical in the ack
+patterns and `let's switch` as a change marker. Six runs, `--code` off, same tasks and
+seed phrasings, against `results/h2h-v10-plain/`'s own `claude-mem` and `off` cells.
+Output to `results/h2h-v20-plain/`.
+
+## What is recorded
+
+- **Mechanism:** the six `revoke-compression` cells. The probe says they should pass; if
+  they do not, the diagnosis is wrong and both changes are reverted.
+- **Expected not to move:** the six `revoke-version-scheme` cells. "semver is cleaner" is
+  not captured and nothing here addresses it. If they pass anyway, something else is doing
+  it and the reason must be found before anything is published.
+- **Adverse rule, unchanged from v19:** any of the seven scenarios v18 passed now failing
+  reverts both changes, whatever the total.
+- The plain condition stays under *Not claimed* regardless of the total.
+
+## The shape this does not fix, registered as open
+
+"semver is cleaner" states a value and a preference and matches no verb list. The assistant's
+reply names the pair outright, so the evidence exists; using it to *create* the decision —
+rather than only to retire against one — is a larger change than either of today's, it is the
+kind that makes false retirement possible, and it must be measured on wording it has not
+seen. **That fixture does not exist. Building it is the next step, and no grid on `v2`'s
+phrasings can stand in for it.**
