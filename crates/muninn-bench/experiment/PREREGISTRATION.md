@@ -4449,3 +4449,35 @@ rather than only to retire against one — is a larger change than either of tod
 kind that makes false retirement possible, and it must be measured on wording it has not
 seen. **That fixture does not exist. Building it is the next step, and no grid on `v2`'s
 phrasings can stand in for it.**
+
+## Result of v20, 2026-09-23
+
+| arm | replacement pass | unsafe | current value written |
+|---|---|---|---|
+| muninn-ack2 | **48/54** | **6/54** | 42/54 |
+| muninn-day2 (v18) | 42/54 | 12/54 | 36/54 |
+| muninn-catalog (v10) | 39/54 | 15/54 | 33/54 |
+| claude-mem | 33/54 | 13/54 | 30/54 |
+| off | 0/54 | 2/54 | 0/54 |
+
+**Mechanism: the six `revoke-compression` cells pass, all of them.** That is what the
+two-turn probe predicted and it is what the change was built to reach.
+
+**Expected not to move, and did not:** the six `revoke-version-scheme` cells fail in all six
+runs, as registered. They are now the only failures on this fixture.
+
+**Adverse rule not triggered:** every scenario v18 passed still passes.
+
+Against claude-mem the arm reads 48/54 against 33/54, p = 0.0016. **This is not a claim and
+`docs/claims.md` does not move.** Both changes were read off this grid's own failing cells;
+the number is what a fix does on the cells it was fitted to, and the registration said so
+before the run. What would make it a claim is a grid on wording this engine has not seen,
+and building that fixture is the next step.
+
+`unsafe` halves, 12/54 → 6/54, and the six that remain are the six version-scheme cells: the
+retired value reaching the file is now exactly the failure mode that is left, with nothing
+else scattered around it.
+
+Injected context goes up again, 1.067 [1.001, 1.126] of muninn-catalog's — smaller than
+v18's 1.090 and still excluding 1. Exploratory, and against us, for the same reason: this
+condition has no commit records for the relevance floor to cut.
