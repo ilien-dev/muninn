@@ -28,7 +28,7 @@ Pull any entry in full with `muninn show <id> [<id> …]`. A retired id returns 
 design — retired records are never served.
 
 ## Asking
-`muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and ends with `sufficient` or `insufficient`. Quote records, do not paraphrase them into certainty.
+`muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and opens with `sufficient` or `insufficient`. Quote records, do not paraphrase them into certainty.
 
 ## Diagnosing
 `muninn status` → `MUNINN 11/11 GREEN` or one RED with its fix. `muninn doctor` lists all eleven checks with their detail.
