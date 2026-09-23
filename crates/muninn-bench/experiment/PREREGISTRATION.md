@@ -4689,3 +4689,54 @@ until one looks right, and the difference matters enough to say out loud: no att
 generated after the check was fixed, all three are committed, and the criteria in the
 registration above are untouched. The check is now `h2h/v4/check.py`, a script rather than a
 line in a shell loop, so it can be read and re-run.
+
+## Result of v22, 2026-09-23 — a tie on the answer, and a loss on the danger
+
+| arm | replacement pass | unsafe | current value written |
+|---|---|---|---|
+| muninn-ack2 | 38/54 | **16/54** | 32/54 |
+| claude-mem | 38/54 | **2/54** | 32/54 |
+| off | 0/54 | 0/54 | 0/54 |
+
+**Confirmatory: 38/54 against 38/54, Δ 0.000, p = 1.** An exact tie. By the registered rule
+the plain condition stays under *Not claimed*, and on wording this engine was not fitted to
+it is not better than claude-mem at getting the current answer in front of the agent.
+`off` reads 0/54, so the fixture is valid.
+
+**Registered secondary, and it is the result that matters: 16/54 against 2/54, exact Fisher
+p = 4.7 × 10⁻⁴.** Muninn writes the retired value into the file eight times as often as
+claude-mem does. The two failure modes are not the same shape at all:
+
+- Muninn fails three scenarios and fails them almost completely — `async-runtime` 5/6,
+  `cache-eviction` 6/6, `password-hashing` 5/6 — and **every one of those failures writes the
+  retired value**. When it misses, it does not fall silent; it serves the stale decision as
+  current.
+- claude-mem fails six scenarios, one or two cells each, and almost never asserts the old
+  value. Its misses look like not knowing; ours look like being confidently wrong.
+
+For a memory whose first claim is that retired facts are never served, that is the worse of
+the two figures to lose, and it is the one this file leads with.
+
+### The shape, and it is the one v20 left open
+
+All three failing scenarios have the same second message: the new value with a reason and no
+change verb.
+
+    Tokio is the de facto standard and ecosystem support is huge
+    LRU with a 300-second TTL is cleaner and way easier to reason about
+    argon2id is better, protects against both GPU and side-channel attacks
+
+No change marker, and no content word shared with what they replace. Nothing is captured, so
+nothing is retired, so the earlier decision stays active and is served.
+
+Unlike v21, **the evidence is there this time.** The assistant's reply names the pair in
+every run:
+
+    Noted — LRU with a 300-second TTL, which replaces the earlier LFU eviction decision.
+    Understood: argon2id replaces the earlier bcrypt decision (#9) for password hashing.
+    Understood, we'll use Tokio as the async runtime, which replaces the earlier async-std
+    decision (#20).
+
+v21 closed this route because a bare word's reply said nothing. A sentence's reply says
+everything, and in a shape `ack_replacement` does not read: `<arrived> replaces the earlier
+<gone>` is the reverse of the `replace X with Y` it knows.
