@@ -5330,3 +5330,43 @@ asserts the retired value almost never. Where a person types the value alone, it
 `[Z5]`'s ceiling and the day's own reverted rule say why: there is no statement in that turn for
 a typed ledger to record, and no LLM-free rule recovers one. **That split is not published as a
 win.** The registered test was over all five and it reads p = 0.249.
+
+---
+
+# Pre-registration — v32: the sparse catalogue, on all five fixtures
+
+Registered 2026-09-23, before any cell ran. `muninn-sparse`, sha256 prefix `881b43a915514a08`.
+
+## The change and what it is aimed at
+
+Two things since v31, both read off `v3`'s cells: the term fallback no longer lifts `STOP`
+along with the document-frequency test, and a catalogue with fewer than five typed records
+spends the rest of its budget on the short things that were said.
+
+`v3` is the one fixture this engine loses, 18/54 against 31/53. On a store where four of ten
+pairs are one word, nothing becomes a decision, the catalogue has two lines, and the lexical
+query reaches records whose whole text is one word it does not contain. The competitor wins
+there by keeping the raw turn and letting its agent read it; this gives the agent the same
+thing through the channel that already exists.
+
+## Why all five and not just `v3`
+
+v31 published the shipping build's five-fixture total, 218/270. Changing the engine makes that
+figure stale, and a number that is stale is worse than one that is missing. **The published
+figure is re-measured on all five or the change does not ship.**
+
+## The grids
+
+One arm, six runs, `--code` off, on `v3`, `v4`, `v5`, `v6`, `v7`, against the
+`claude-mem` and `off` cells already measured on each. Output `results/h2h-v32-v3/`
+through `-v7/`.
+
+## Decision rule, fixed before the data
+
+- **Confirmatory:** the five-fixture total against claude-mem's 206/269, exact Fisher,
+  α = 0.05. Only a significant positive moves the plain condition out of *Not claimed*.
+- **Co-primary:** `unsafe`, which reads 1/270 on the build before this.
+- **Adverse, and it is the one that matters here:** the catalogue is the change that won the
+  code condition, and this is the first thing that has ever been added to it. **If any fixture
+  reads worse than v31's build, the change is reverted**, and the per-fixture number is
+  published rather than averaged into the total.
