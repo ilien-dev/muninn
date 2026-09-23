@@ -4670,3 +4670,22 @@ phrasings, output to `results/h2h-v22-heldout/`.
   not superseded: it is the figure for people who type a word, and this one is the figure for
   people who type a sentence. Reporting only the kinder of the two would make this file a
   brochure.
+
+## The v22 fixture, and a checker that was wrong
+
+Three attempts, all committed. Attempts 1 and 3 fail the registered checks for the same
+reason: they paraphrase a value instead of naming it ("cert verification" for `certificate
+verification disabled in dev builds`, "calendar versioning" for `calver`). Attempt 2 passes
+and is the one used, as the rule says.
+
+It did not pass the first time it was checked. The check used `in` where it meant a token,
+and rejected attempt 2 because "https everywhere, no plaintext exception" contains `plain`,
+the first word of that scenario's old value. **That is the same substring-for-token mistake
+the loop 8 oracle carried until it was fixed this morning**, and it was found the same way:
+by a rejection that made no sense on reading it.
+
+Re-running a fixed check over attempts that already exist is not the same as regenerating
+until one looks right, and the difference matters enough to say out loud: no attempt was
+generated after the check was fixed, all three are committed, and the criteria in the
+registration above are untouched. The check is now `h2h/v4/check.py`, a script rather than a
+line in a shell loop, so it can be read and re-run.
