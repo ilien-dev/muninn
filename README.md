@@ -287,8 +287,14 @@ passes 11 of 54 where claude-mem passes 31 of 53. The reason is worth knowing be
 install this: **a message that is just a value — `zstd`, on its own, the way people type —
 produces an episode and no decision at all.** Nothing is retired, nothing reaches the
 catalogue, and the filter has nothing to filter. Muninn's typed memory needs you to write a
-sentence. Where the decision also reaches the code, it does not: the value comes from the
-diff, and that is the condition the 54 of 54 above was measured in.
+sentence. The obvious repair — treat the assistant's reply as saying the word was a choice —
+was built and thrown away without running it, because in that fixture the assistant replied
+"noted, though there's no task attached yet": it read no decision there either. A bare word
+is a turn with no statement in it, and a typed ledger has nothing to record; a store-
+everything memory keeps the raw turn and its agent finds the later word by searching. That is
+a difference in design, and on that input theirs is better. Where the decision also reaches
+the code, it does not: the value comes from the diff, and that is the condition the 54 of 54
+above was measured in.
 
 The earlier comparison (claude-mem and agentmemory) gives every tool the same
 decisions from the same real sessions, and nobody tells it which decisions were replaced.
