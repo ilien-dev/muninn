@@ -369,7 +369,14 @@ fn main() {
                                     &serde_json::json!({ "terms": terms, "ids": d.ids, "tokens": d.tokens, "text": d.text, "ms": t0.elapsed().as_secs_f64() * 1000.0 }),
                                 )
                             } else {
-                                output::out(&format!(
+                                // The header is about the run, not the delivery, and it goes
+                                // to stderr so that stdout is exactly what the agent would be
+                                // given. It carries a wall-clock figure, and three experiment
+                                // harnesses match the value they are looking for against this
+                                // whole stream: loop 8's retry-budget cell read the `3` out of
+                                // `0.53 ms` as the old value being served and flipped between
+                                // runs of a fixture documented as deterministic.
+                                output::err(&format!(
                                     "terms: {}  · {} tokens · {:.2} ms",
                                     terms.join(" "),
                                     d.tokens,
