@@ -64,6 +64,28 @@ impl Report {
     }
 }
 
+/// The remedy for a repeated hook failure, read off the error the hook itself recorded.
+/// Only one cause is named specifically, because only one is produced by the shape of the
+/// install: the plugin copies the binary once, the repository keeps migrating the store,
+/// and the writing hooks are then the first to refuse it.
+fn heartbeat_fix(err: &str) -> &'static str {
+    if err.contains("newer than this binary supports") {
+        "the binary the hooks run is older than the store: replace it with the newer build \
+         (`scripts/install.sh`, or copy `target/release/muninn` over the one in the plugin's `bin/`)"
+    } else {
+        "the failing hook's error is above; its full history is in `.muninn/log/heartbeat.jsonl`"
+    }
+}
+
+/// First `max` characters, on a character boundary, so one long error cannot push the
+/// SessionStart summary past what the agent will read.
+fn head(s: &str, max: usize) -> String {
+    match s.char_indices().nth(max) {
+        None => s.to_string(),
+        Some((i, _)) => format!("{}…", &s[..i]),
+    }
+}
+
 fn check(
     id: u8,
     name: &'static str,
@@ -153,7 +175,9 @@ pub fn run(
                 None,
             ));
         } else {
-            let mut fails: HashMap<String, u32> = HashMap::new();
+            // the count alone is not actionable: the last error is what names the cause,
+            // so it travels with the count and lands in the RED line itself.
+            let mut fails: HashMap<String, (u32, Option<String>)> = HashMap::new();
             let mut open: HashMap<(String, String, i64), i64> = HashMap::new();
             for l in &tail {
                 match l {
@@ -167,28 +191,33 @@ pub fn run(
                         session,
                         at,
                         ok,
+                        err,
                         ..
                     } => {
                         open.remove(&(hook.clone(), session.clone(), *at));
-                        let e = fails.entry(hook.clone()).or_insert(0);
+                        let e = fails.entry(hook.clone()).or_default();
                         if *ok {
-                            *e = 0
+                            *e = (0, None)
                         } else {
-                            *e += 1
+                            e.0 += 1;
+                            e.1 = err.clone();
                         }
                     }
                 }
             }
             let stuck = open.values().filter(|at| now - **at > 120_000).count();
-            let worst = fails.iter().max_by_key(|(_, n)| **n);
+            let worst = fails.iter().max_by_key(|(_, (n, _))| *n);
             match worst {
-                Some((hook, n)) if *n >= 3 => checks.push(check(
-                    2,
-                    "heartbeat",
-                    Status::Red,
-                    format!("{hook} failed {n} times in a row"),
-                    Some("run `muninn doctor --json` and read the error field"),
-                )),
+                Some((hook, (n, err))) if *n >= 3 => {
+                    let err = err.as_deref().unwrap_or("no error recorded");
+                    checks.push(check(
+                        2,
+                        "heartbeat",
+                        Status::Red,
+                        format!("{hook} failed {n} times in a row: {}", head(err, 160)),
+                        Some(heartbeat_fix(err)),
+                    ))
+                }
                 _ if stuck > 0 => checks.push(check(
                     2,
                     "heartbeat",
@@ -679,6 +708,51 @@ mod tests {
         let r = run(&paths, Some(&db), None, false);
         assert!(r.is_green(), "{:?}", r.checks);
         assert!(r.summary().starts_with("MUNINN "));
+    }
+
+    /// A repeated hook failure used to report only its count, and point at the command
+    /// that produced the report: the reader was sent back to where they already were.
+    /// The error the hook recorded is what names the cause, so it is in the RED line.
+    #[test]
+    fn repeated_failure_carries_the_error_and_a_remedy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        std::fs::create_dir_all(paths.muninn_dir.clone()).unwrap();
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let log = paths.heartbeat_log();
+        std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+        let err = "schema version 2 is newer than this binary supports (1)";
+        let mut lines = String::new();
+        for i in 0..4 {
+            lines.push_str(&format!(
+                r#"{{"ev":"start","hook":"Stop","session":"s","at":{i},"pid":1}}
+{{"ev":"finish","hook":"Stop","session":"s","at":{i},"pid":1,"ok":false,"ms":1.0,"err":"{err}"}}
+"#
+            ));
+        }
+        std::fs::write(&log, lines).unwrap();
+
+        let r = run(&paths, Some(&db), None, false);
+        let c = r.checks.iter().find(|c| c.id == 2).unwrap();
+        assert_eq!(c.status, Status::Red);
+        assert!(c.detail.contains(err), "{}", c.detail);
+        let fix = c.fix.as_deref().unwrap();
+        assert!(fix.contains("older than the store"), "{fix}");
+        assert!(
+            !fix.contains("muninn doctor"),
+            "the fix must not name the report itself"
+        );
+    }
+
+    /// A failure with no recognised cause still says where its history is, and a long
+    /// error cannot push the one line the agent reads past what it will read.
+    #[test]
+    fn unknown_failure_is_still_actionable_and_bounded() {
+        assert!(heartbeat_fix("disk full").contains("heartbeat.jsonl"));
+        let long = "x".repeat(400);
+        assert_eq!(head(&long, 160).chars().count(), 161);
+        assert_eq!(head("short", 160), "short");
+        assert_eq!(head("áéíóú", 2), "áé…");
     }
 
     #[test]
