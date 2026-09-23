@@ -4059,3 +4059,28 @@ runs, 54 replacement cells, v13's fixture, against v13's own `claude-mem` and `o
 The guards were designed by reading this project's own store, and the grid's seeding sessions
 are conversations with the same harness. They are not independent samples of "real
 conversation"; they are two draws from the same tool.
+
+## v14's result
+
+| arm | replacement pass | injected context / claude-mem |
+|---|---|---|
+| **muninn-ship** (`master`, the eight guards) | **48/54** | 2.591 [2.420, 2.739] |
+| muninn-stands (the build before them) | 51/54 | 2.593 [2.468, 2.694] |
+| claude-mem 13.24.23 | 25/54 | — |
+| off | 0/54 | — |
+
+**Confirmatory: exact Fisher p = 3.4 × 10⁻⁶.** Met, and this is the figure that ships, because
+it is the one measured on the binary that ships.
+
+Reported and not confirmatory: 48/54 against `muninn-stands`' 51/54, p = 0.49. Not significant,
+and three cells lower in point estimate. Two readings are available and only one is honest to
+lead with: the guards cost nothing detectable, *and* the number went down. The published figure
+is 48/54 rather than 51/54 for the same reason the grid was re-run at all — a claim about a
+build is a claim about that build, and picking the better of two runs of the same engine is
+how a benchmark stops meaning anything.
+
+What the guards were for is not in this table and is still worth having: on five of this
+project's real transcripts they take 40 % of captured turns out (harness scaffolding recorded
+as things the user said, at trust 3), fourteen captured decisions down to nine, three
+corrections down to the one that is real, and no episode begins mid-word. None of it moves a
+synthetic held-out set, because a synthetic transcript has none of that noise in it.

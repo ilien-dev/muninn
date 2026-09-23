@@ -257,12 +257,12 @@ On the shipped build, with the fixture validated by a no-memory control that sco
 
 | | replacement cells passed |
 |---|---|
-| **Muninn** | **51 of 54** |
+| **Muninn** | **48 of 54** |
 | claude-mem 13.24.23 | 25 of 54 |
 | agentmemory 0.9.29 | 1 of 49 |
 | no memory at all | 0 of 54 |
 
-Exact Fisher p = 3.3 × 10⁻⁸ against claude-mem and 1.6 × 10⁻²⁴ against agentmemory. Six runs,
+Exact Fisher p = 3.4 × 10⁻⁶ against claude-mem and 2.4 × 10⁻²¹ against agentmemory. Six runs,
 54 cells an arm, the size and the threshold fixed before any cell ran, and the whole grid re-run
 on the binary that ships rather than the one that first scored well.
 
