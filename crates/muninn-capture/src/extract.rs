@@ -206,6 +206,25 @@ fn unquoted(s: &str) -> String {
     out
 }
 
+/// Is this message a conversation pasted into it?
+///
+/// A person does not label their own lines `USER:`. Two or more such labels mean the
+/// message carries a transcript — a benchmark payload replayed inside this repository, a
+/// log pasted for inspection — and every rule inside belongs to that conversation, not to
+/// this project. This store held "When action=choose, channel must be NONE" and three more
+/// like it as project invariants; they are lines of a scaffold's JSON contract, inside a
+/// PM-Bench payload whose every block starts with `USER:`.
+///
+/// `unquoted` already drops fenced blocks and `>` quotes for the same reason. This is the
+/// third form the same thing takes, and the one a paste from a chat window arrives in.
+fn is_pasted_conversation(s: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    let r = R.get_or_init(|| {
+        Regex::new(r"(?im)^[ \t]*(?:user|assistant|system|human|usuario|asistente)[ \t]*:").unwrap()
+    });
+    r.find_iter(s).count() >= 2
+}
+
 /// Is this message a specification for text it is asking to be produced?
 ///
 /// The sentences inside such a message constrain what is being written, not the project.
@@ -263,7 +282,7 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     let own = unquoted(up);
     let own = own.trim();
     decision_candidates(t, own, out);
-    if asks_for_generated_text(own) {
+    if asks_for_generated_text(own) || is_pasted_conversation(own) {
         return;
     }
     for sent in split_sentences(own) {
@@ -1491,6 +1510,29 @@ mod tests {
             "Some background on the grid we are about to run. ".repeat(8)
         );
         assert!(!asks_for_generated_text(&long_count));
+    }
+
+    /// A transcript pasted into a message carries that conversation's rules, not this
+    /// project's. Four of this store's invariants were lines of a scaffold's JSON contract
+    /// inside a PM-Bench payload whose blocks all start with `USER:`.
+    #[test]
+    fn a_pasted_conversation_states_no_project_rule() {
+        let pasted = "USER:\nRegular tasks for every day:\n- Take the medication at 11:00.\n\n\
+             USER:\nTODO Ledger (compact JSON array; edit in-place):\n\
+             When action=choose, channel must be NONE and task_ids must be [].\n";
+        assert!(is_pasted_conversation(pasted));
+        let t = turn(0, pasted);
+        let s = Session {
+            turns: vec![t],
+            ..Default::default()
+        };
+        assert!(!extract(&s, "abcdef12")
+            .iter()
+            .any(|c| c.kind == "invariant"));
+        // one label is a person writing about a role, not a paste
+        assert!(!is_pasted_conversation(
+            "the user: whoever opens the page. The rule must always hold."
+        ));
     }
 
     #[test]
