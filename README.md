@@ -292,9 +292,12 @@ was built and thrown away without running it, because in that fixture the assist
 "noted, though there's no task attached yet": it read no decision there either. A bare word
 is a turn with no statement in it, and a typed ledger has nothing to record; a store-
 everything memory keeps the raw turn and its agent finds the later word by searching. That is
-a difference in design, and on that input theirs is better. Where the decision also reaches
-the code, it does not: the value comes from the diff, and that is the condition the 54 of 54
-above was measured in.
+a difference in design, and on that input theirs is better. On a second held-out set where every message is a
+sentence, it ties: 38 of 54 against claude-mem's 38 of 54. But it writes the retired value into
+16 of those 54 cells where claude-mem writes it into 2. When this engine misses on that
+condition it does not go quiet — it serves the old decision as the current one, which is the
+opposite of what it exists to do. Where the decision also reaches the code, it does not: the
+value comes from the diff, and that is the condition the 54 of 54 above was measured in.
 
 The earlier comparison (claude-mem and agentmemory) gives every tool the same
 decisions from the same real sessions, and nobody tells it which decisions were replaced.
