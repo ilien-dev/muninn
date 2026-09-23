@@ -4740,3 +4740,46 @@ every run:
 v21 closed this route because a bare word's reply said nothing. A sentence's reply says
 everything, and in a shape `ack_replacement` does not read: `<arrived> replaces the earlier
 <gone>` is the reverse of the `replace X with Y` it knows.
+
+---
+
+# Pre-registration — v23: the ack-driven decision, measured twice
+
+Registered 2026-09-23, before any cell ran and before the second fixture was generated.
+
+## The change
+
+`muninn-ack3`, sha256 prefix `8db21cc5c9dca3c0`. `ack_replacement` reads `<arrived> replaces the
+earlier <gone>`, and a message that matched no other rule becomes a decision when that
+function returns a pair. Built from v22's three failing scenarios, so a grid on v22's own
+fixture is fitted and a grid on new wording is not. Both are run, and both are reported.
+
+## Part A — mechanism, on v22's fixture (`v4`), fitted by construction
+
+One arm, six runs, `--code` off, against v22's own `claude-mem` and `off` cells, out to
+`results/h2h-v23-mech/`.
+
+- **Mechanism:** the three scenarios v22 failed — `async-runtime`, `cache-eviction`,
+  `password-hashing`. If they do not pass, the change does not reach what it was built for
+  and is reverted.
+- **Registered secondary:** `unsafe`. v22 read 16/54 against claude-mem's 2/54 and every
+  one of the sixteen was one of those three scenarios; if the pass rate moves and `unsafe`
+  does not follow it down, the change is papering over the symptom.
+- **Adverse rule:** any scenario v22 passed now failing reverts the change, whatever the
+  total says.
+- **Not a claim, whatever it reads.**
+
+## Part B — the claim grid, on wording this change has never seen (`v5`)
+
+Generated after Part A is registered, by the same committed prompt as `v4` and the same
+mechanical check (`h2h/v4/check.py`), three attempts at most, all committed, first passing
+one used. Three arms re-seeded, out to `results/h2h-v24-heldout/`.
+
+- **Confirmatory:** `pass(muninn-ack3) − pass(claude-mem)`, exact Fisher, α = 0.05. This is
+  the only test that can move the plain condition out of *Not claimed*.
+- **Registered co-primary, and it can fail on its own:** `unsafe(muninn-ack3) −
+  unsafe(claude-mem)`. **If Muninn still writes the retired value significantly more often,
+  the row does not move even if the pass rate is better.** A memory that answers more
+  questions and asserts more stale facts has not won anything this project is willing to
+  claim.
+- **Fixture validity:** `off` above 12/54 voids it.
