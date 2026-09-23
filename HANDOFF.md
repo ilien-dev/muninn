@@ -53,6 +53,14 @@ The next honest steps, in the order their evidence supports:
 1. **The window cost is the open number.** Both obvious doors are measured and
    shut. Anything new has to come from somewhere that is not the instructions and
    not the per-prompt block, and it needs a grid.
+
+   One thing measured and *not* a defect, so nobody spends the day on it again:
+   **167 of the 224 records the per-prompt blocks serve were already named in the
+   catalogue** (60 cells, `muninn-ship`). That looks like free savings and is not.
+   The catalogue gives a line; the block gives the record with its provenance, and
+   turning the blocks off was measured at four answers in fifty. What is untested
+   is a *shorter* block for a record the catalogue already named — that is a real
+   hypothesis and it needs its own arm.
 2. **Gate 5b needs size, not another arm.** On haiku it reads 2/24 against 0/24,
    +0.083 [+0.000, +0.167]. A grid four times that size would exclude 0 at the
    same rate. It is deliberately not run: a gate whose size is chosen after seeing
