@@ -281,7 +281,14 @@ Where the decisions exist only in the conversation and never reach the code, the
 nothing. On those cells the retired value still reaches the file 12 times in 54, where with a
 commit in the tree it reaches it none; and the context Muninn occupies goes up rather than
 down. The one condition this engine has never won is still the one where nothing but the
-conversation says a decision changed.
+conversation says a decision changed — and a held-out set built after the fact, by another
+model family, says it is worse than that. On wording this engine was never fitted to, Muninn
+passes 11 of 54 where claude-mem passes 31 of 53. The reason is worth knowing before you
+install this: **a message that is just a value — `zstd`, on its own, the way people type —
+produces an episode and no decision at all.** Nothing is retired, nothing reaches the
+catalogue, and the filter has nothing to filter. Muninn's typed memory needs you to write a
+sentence. Where the decision also reaches the code, it does not: the value comes from the
+diff, and that is the condition the 54 of 54 above was measured in.
 
 The earlier comparison (claude-mem and agentmemory) gives every tool the same
 decisions from the same real sessions, and nobody tells it which decisions were replaced.
