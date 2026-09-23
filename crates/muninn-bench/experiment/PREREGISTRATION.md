@@ -4193,3 +4193,49 @@ The eleven cells above 1 are the ones the day's additions reach and the floor do
 the changes that add text (`muninn show` naming ids it could not serve, the `summary:`
 label, `why`'s corrected wording) cost a constant, and where the floor removed nothing
 that constant is all there is.
+
+---
+
+# Pre-registration — v17: the build after a day of defect fixes
+
+Registered 2026-09-23, before any cell ran. Supersedes v15, which was pinned to a build that
+`master` has since moved past; v15 was never launched and no cell of it exists.
+
+## Why
+
+Nineteen changes landed on 2026-09-23, none of them found by a benchmark: a latency contract
+that was failing at the schema's cap, three experiment oracles that were reading the
+instrument, nine invariants that belonged to another conversation, a compaction summary
+served as something the user said, an anchor chosen by alphabetical accident, a Spanish
+filler phrase that retired a decision about something else, and a relevance floor that a
+repeated question could lower until the block filled again. Every one is covered by a test
+and by loop 8 and loop 10, which did not move. None of that is evidence about what an agent
+does with the result.
+
+v16-offline measured our own half of the window cost with no model: 0.961 [0.958, 0.962] of
+what the published figure's build injects, on the first prompt of each cell.
+
+## The arm
+
+`muninn-day2`, pinned to `master` at this registration, binary sha256 prefix
+`d9160c4880eb30dd`. Six runs, the v13 fixture, its tasks and its seed phrasings, against
+v13's own `claude-mem` and `off` cells. Output to `results/h2h-v17/`, a directory of its own,
+so an interrupted run leaves nothing in a published one.
+
+## Decision rule, fixed before the data
+
+- **Confirmatory:** `pass(muninn-day2) − pass(claude-mem)`, exact Fisher, α = 0.05,
+  one comparison. Whatever it reads replaces 48/54 in the public documents, in either
+  direction.
+- **Registered secondary:** the median injected-context ratio against claude-mem, the figure
+  `docs/claims.md` publishes at 2.591 [2.420, 2.739]. v16-offline says our half fell about
+  4 % on a first prompt; a real cell has more prompts and the floor acts on every one of
+  them, so this may fall further — or not at all, and that is a result.
+- Reported, not confirmatory: `pass(muninn-day2) − pass(muninn-ship)`, the day's changes
+  against the build they started from.
+
+## Threat, written down before the numbers
+
+This is the fourth grid drawn from the same 54-cell fixture. Each individual figure is one
+reading of those cells and the direction across the four is worth more than any single p. A
+day of changes is not one change: nothing here attributes a movement to any of them.
