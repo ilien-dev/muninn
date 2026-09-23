@@ -4362,3 +4362,41 @@ it found above 1: where the relevance floor has little to cut — and with no co
 in the store there is less — what remains is the text the day *added*, the `summary:` label
 and the line `muninn show` prints for an id it could not serve. It is exploratory because
 cost was not this grid's registered secondary; it is written here because it went against us.
+
+---
+
+# Pre-registration — v19-plain: a mechanism check, and not a claim
+
+Registered 2026-09-23, before any cell ran. **This is not confirmatory and cannot become a
+claim**, for a reason written here before the data: the change it tests was derived from
+this grid's own failing cells.
+
+## Why, and why it is not evidence of anything general
+
+v18-plain failed 12 of 54, and they were two scenarios in all six runs, every time. Reading
+those cells showed the cause: the assistant's reply named both values in the shape the ack
+bridge is built to read — "switching from gzip (the earlier decision, #3) to zstd" — and the
+pattern wanted whitespace where a parenthetical was. The fix lets one short bracketed aside
+sit there.
+
+That fix was read off these cells. Running them again says whether it reaches the cells it
+was built for. It says nothing about wording it has not seen, and the same caveat this file
+already carries for Gate 5b's confirmation run applies here in the same words: a run whose
+fix came from its own leaking cells is not independent.
+
+## The arm
+
+`muninn-ack`, sha256 prefix `16a0b8713578a490`: `muninn-day2` plus that one pattern change.
+Six runs, `--code` off, the same tasks and seed phrasings, against `results/h2h-v10-plain/`'s
+own `claude-mem` and `off` cells. Output to `results/h2h-v19-plain/`.
+
+## What is recorded, and what it is allowed to say
+
+- **Mechanism:** `pass(muninn-ack)` on the two scenarios v18 failed. If they do not pass, the
+  fix does not reach what it was built for and the change is reverted.
+- **Recorded, not claimed:** `pass(muninn-ack) − pass(claude-mem)` and `unsafe`. Whatever
+  they read, `docs/claims.md` keeps the plain condition under *Not claimed* until a grid on
+  phrasings this fix has never seen says otherwise. That grid does not exist yet and building
+  it is the next step, not this one.
+- **Registered adverse outcome:** if any of the seven scenarios v18 passed now fails, the
+  change costs more than it buys and is reverted regardless of the total.
