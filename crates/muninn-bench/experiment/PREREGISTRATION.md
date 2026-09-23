@@ -4534,3 +4534,20 @@ re-run too: v10's cells were seeded on `v2`'s wording and cannot be the comparis
 A generated fixture is one model's idea of how people write, and its labels are the
 generator's. The values are fixed by the task file, which is what the oracle reads, so a
 mis-worded pair costs a cell rather than corrupting the measurement.
+
+## The fixture as generated, before any cell ran
+
+The first generation is what is used, as registered. It is **much terser than the prompt
+asked for**: four of the ten pairs are a bare value on both sides (`gzip` → `zstd`,
+`msgpack` → `cbor`, `calver` → `semver`, `GPL-3.0` → `Apache-2.0`), where the prompt asked
+for the way people actually type and for varied grammar. That was not selected for and it is
+not repaired; rewording it here is the contamination this registration exists to prevent.
+
+It passes the mechanical checks: ten pairs, the required order, each `a` names the old value,
+each `b` names the new one and not the old.
+
+**A threat this shape adds, written before the run:** a message that is a bare value may not
+be read as a decision by *any* of the arms, this one included. If both memory arms score near
+the floor the grid is uninformative rather than negative, and the honest reading of that is
+"this fixture could not separate them", not "they are the same". `off` above 12/54 still
+voids it for the opposite reason.
