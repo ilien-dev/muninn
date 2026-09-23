@@ -198,6 +198,22 @@ pub fn project(paths: &ProjectPaths, db: &Db, ids: &[i64]) -> Result<usize> {
         std::fs::write(&p, markdown(r)).map_err(|e| crate::Error::io(&p, e))?;
         n += 1;
     }
+    // A record retired by this same ingest is not in `ids` — the caller passes what it
+    // *wrote* — so its file kept saying `invalid: false` for as long as the store existed. On
+    // disk that is a retired decision presented as current, in the one place `docs/claims.md`
+    // discloses an agent could read around the hooks, and the disclosure says retired records
+    // are "labelled as such" there. They were not.
+    //
+    // Bounded by the retired set, not the store, and each file is rewritten only when it is
+    // actually out of date.
+    for r in load_all(db, "invalid = 1")? {
+        let p = root.join(&r.kind).join(format!("{}.md", r.id));
+        let want = markdown(&r);
+        if std::fs::read_to_string(&p).is_ok_and(|have| have != want) {
+            std::fs::write(&p, want).map_err(|e| crate::Error::io(&p, e))?;
+            n += 1;
+        }
+    }
     write_index(paths, db)?;
     Ok(n)
 }
@@ -566,5 +582,59 @@ mod tests {
         assert_eq!(inc.anchor_path.as_deref(), Some("src/x.rs"));
         assert_eq!(body, "literal body\nsecond line\n");
         assert_eq!(iso_to_ms("2026-09-12T14:03:11Z"), Some(1_789_221_791_000));
+    }
+}
+
+#[cfg(test)]
+mod retired_mirror_tests {
+    use super::*;
+    use crate::db::Mode;
+
+    /// The mirror is the one place `docs/claims.md` discloses an agent could read the store
+    /// around the hooks, and the disclosure says retired records are "labelled as such" there.
+    /// They were not: `project` writes the ids its caller passed, a record retired by the same
+    /// ingest is not among them, and its file kept saying `invalid: false` for as long as the
+    /// store existed — a retired decision presented on disk as current.
+    #[test]
+    fn a_retired_record_is_labelled_retired_on_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        for (h, o) in [("h1", "we use openssl"), ("h2", "we use rustls")] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,1)",
+                    rusqlite::params![h, o],
+                )
+                .unwrap();
+        }
+        // written while both are active, which is what the ingest path does
+        project(&paths, &db, &[1, 2]).unwrap();
+        let file = paths.records_dir().join("decision/1.md");
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains("invalid: false"),
+            "active to begin with"
+        );
+
+        db.conn
+            .execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=2 WHERE id=1",
+                [],
+            )
+            .unwrap();
+        // the next projection names only the record it wrote, as the caller does
+        project(&paths, &db, &[2]).unwrap();
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains("invalid: true"),
+            "and the retired one is relabelled even though nobody asked for it"
+        );
     }
 }
