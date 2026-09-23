@@ -18,6 +18,9 @@ pub use model::{Session, ToolCall, Turn};
 /// and every one of them read `user:` at trust 1, which is the level for something seen in
 /// the transcript rather than for a paraphrase that can be wrong in ways a literal excerpt
 /// cannot. `extract` already refused to make typed records from it; episodes did not know.
+/// The sentence is Claude Code's. Codex compacts differently and its marker is not known
+/// here, so a Codex summary is still captured as a turn of its own; no rollout of this
+/// project was available to read one from.
 pub fn is_compaction_summary(prompt: &str) -> bool {
     prompt
         .trim_start()
