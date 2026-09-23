@@ -4330,3 +4330,35 @@ v10's. A win here would be one reading of those cells against a comparison drawn
 earlier, and the honest wording for anything short of a large effect is that it is not
 distinguishable at this size — the same `[Z7]` that applies to every 54-cell reading in this
 file.
+
+## Result, 2026-09-23
+
+| arm | replacement pass | unsafe | current value written | revocation | errors |
+|---|---|---|---|---|---|
+| muninn-day2 | 42/54 | 12/54 | 36/54 | 6/6 | 0 |
+| muninn-catalog (v10) | 39/54 | 15/54 | 33/54 | 6/6 | 0 |
+| claude-mem | 33/54 | 13/54 | 30/54 | 6/6 | 0 |
+| off | 0/54 | 2/54 | 0/54 | 6/6 | 0 |
+
+**Confirmatory: 42/54 against claude-mem's 33/54, exact Fisher p = 0.094.** Not significant
+at α = 0.05, so by the rule written above **this row does not move**: the plain condition
+stays under *Not claimed*, now at 42/54 against 33/54 where it was 39/54 against 33/54.
+
+**Registered secondary — it does not hold.** `unsafe` is 12/54 here against v17's 0/54 on
+the code condition; against muninn-catalog's 15/54 it is p = 0.657 and against claude-mem's
+13/54 it is p = 1.0. Where nothing in the tree corroborates the retirement, the retired value
+still reaches the file about a fifth of the time, and this grid cannot tell the three arms
+apart on it.
+
+Reported, not confirmatory: 42/54 against the arm v10 ran, 39/54, p = 0.657 — the direction
+of a day of changes, and not distinguishable from nothing at this size.
+
+### Exploratory, not registered for this grid
+
+Injected context on the same cells, `h2h/injected_context.py`: **1.090 [1.027, 1.145]** of
+what muninn-catalog injected, and the interval excludes 1. This condition goes the other way
+from v17's 0.876, and the reason is the one v16-offline already named for the eleven cells
+it found above 1: where the relevance floor has little to cut — and with no commit records
+in the store there is less — what remains is the text the day *added*, the `summary:` label
+and the line `muninn show` prints for an id it could not serve. It is exploratory because
+cost was not this grid's registered secondary; it is written here because it went against us.
