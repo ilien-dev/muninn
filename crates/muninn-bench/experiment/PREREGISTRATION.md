@@ -5005,3 +5005,31 @@ on any one of them measures that draw as much as it measures the engine.
 So a good number here is weaker evidence than a bad one, and the honest comparison is across
 the three sets rather than within this one. Written before the cells ran so it cannot be
 produced afterwards to explain a result either way.
+
+## Result of v26 Part A, 2026-09-23 — 35/54 → 42/54, and it costs 7.8 % more window
+
+| on `v5` | pass | unsafe | injected vs claude-mem |
+|---|---|---|---|
+| with the change (`newest`) | **42/54** | **0/54** | 2.991 [2.814, 3.047] |
+| without it (`ack3`, v24) | 35/54 | 1/54 | 2.747 [2.606, 2.768] |
+| claude-mem | 41/54 | 0/54 | — |
+
+`pass` against the build before it p = 0.20; against claude-mem **p = 1** — on the fixture
+the change was read off, this engine now reads level with the competitor where it read six
+cells behind.
+
+**Mechanism, partial and real.** The three scenarios that read 0/6, 0/6 and 0/6 read 2/6,
+2/6 and 3/6. Delivering the later episode is not the same as the agent writing it, and seven
+of the twelve recovered cells is what that distinction costs.
+
+**Adverse rule not triggered:** the failures are a strict subset of v24's, no scenario that
+passed now fails. `unsafe` 1/54 → 0/54.
+
+**The registered context secondary, and it is the price.** 1.078 [1.056, 1.169] of what the
+build before it injected — 3 662 characters to 3 954, and the interval excludes 1. The floor
+exists to stop padding and this puts one block back into answers that did not have it; that
+block is the point of the change and the 7.8 % is what it costs. Against claude-mem the ratio
+goes 2.747 → 2.991.
+
+Not a claim. Part B is the grid that can be one, and its fixture is already registered as an
+easier draw than this one.
