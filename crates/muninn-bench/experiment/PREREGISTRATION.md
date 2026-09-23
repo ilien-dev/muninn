@@ -4119,3 +4119,59 @@ runs, 54 replacement cells, v13's fixture, against v13's own `claude-mem` and `o
 Three grids in a row have now been run because `master` moved after the last one. That is the
 rule working, and it is also a lot of draws from one 54-cell fixture: each individual figure is
 one reading of those cells, and the direction across them is worth more than any single p.
+
+---
+
+# Pre-registration — v16-offline: what a day of changes did to Muninn's own injection
+
+Registered 2026-09-23, before any cell ran. **No model is involved**, so this is not the
+window cost and cannot replace it: it measures one half of that ratio, ours, with the other
+half held fixed by a pinned competitor version.
+
+## Why
+
+`docs/claims.md` publishes median injected context at 2.591 [2.420, 2.739] times
+claude-mem's. That was measured on a build that has since changed in ways that cut what the
+prompt block serves — the delivery ledger fix, and today the relevance floor, which stopped
+a repeated question from lowering its own bar until the block filled again. The live grid
+that would settle the ratio costs model budget and hours. The half that is ours costs
+neither: the store is built from committed seeding snapshots, the prompts are the frozen
+tasks, and both hooks are deterministic.
+
+## Procedure, fixed before the data
+
+Two binaries, nothing else different:
+
+- **BASE** — `muninn-ship` as v13/v14 ran it, the frozen build at sha256 prefix
+  `85d633a4cce9ba2e`, still on disk under `~/.local/share/muninn-bench/`.
+- **HEAD** — `target/release/muninn` at the commit this registration lands on.
+
+For each of the 6 runs × 10 tasks of the v13 fixture: a fresh store outside any checkout;
+ingest `results/h2h-v13-final/seeding/r<run>-muninn-ship.jsonl`; run `hook SessionStart`;
+then `hook UserPromptSubmit` with that task's `prompt`. The injected characters are the
+`additionalContext` of both, summed. Same seeding file, same prompt, same order, for both
+binaries.
+
+## Outcome and decision rule
+
+- **Primary:** the median per-cell ratio HEAD / BASE of injected characters, with a
+  bootstrap 95 % interval over the 60 cells.
+- It replaces no published figure. What it decides is whether the live grid's registered
+  secondary — the injected-context ratio — has a reason to be re-run at all: if HEAD/BASE
+  is not below 1, today's changes did not reduce what we inject and the v15 arm's secondary
+  has nothing new to find.
+- **A ratio above 1 is a result and gets published as one.** Several of today's changes add
+  text (`muninn show` naming ids it could not serve, the `summary:` label); if they cost
+  more than the floor saves, that is the answer.
+
+## Threats, written down before the numbers
+
+- A real cell fires `UserPromptSubmit` once per user turn and a `claude -p` cell has one
+  user prompt, but the agent's own tool results and any follow-up are not replayed here.
+  This is the first-prompt cost, not the cell total.
+- The store is built by ingesting a seeding snapshot rather than by the arm's own live
+  capture. `an_episodes_subject_does_not_sort_its_session_id_among_the_topic` and the
+  reproducibility check are what make that substitution defensible; it is still a
+  substitution.
+- BASE and HEAD differ by a day of commits, not by one change, so this attributes nothing
+  to any single one of them.
