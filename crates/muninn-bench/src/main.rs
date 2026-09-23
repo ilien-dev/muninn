@@ -297,6 +297,30 @@ fn populate(root: &Path, records: usize, cues: usize) -> Result<()> {
     Ok(())
 }
 
+/// Round-trip of `muninn --version`: spawn, dynamic link, parse one argument, exit. It does
+/// none of Muninn's work, so it is the floor under every hook figure below it — a 13 MB
+/// statically linked binary is most of what the gated contract measures, and without this
+/// line a failure there cannot be told apart from a slower machine.
+fn process_start(bin: &Path, runs: usize) -> Result<(f64, f64, f64)> {
+    let mut ts = Vec::with_capacity(runs);
+    for _ in 0..runs {
+        let t = Instant::now();
+        let out = Command::new(bin)
+            .arg("--version")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .with_context(|| format!("spawning {}", bin.display()))?;
+        ts.push(t.elapsed().as_secs_f64() * 1000.0);
+        anyhow::ensure!(out.status.success(), "muninn --version failed");
+    }
+    Ok((
+        pct(&mut ts.clone(), 0.50),
+        pct(&mut ts.clone(), 0.95),
+        pct(&mut ts, 0.99),
+    ))
+}
+
 fn run_hook(
     bin: &Path,
     root: &Path,
@@ -752,6 +776,7 @@ fn main() -> Result<()> {
             populate(root, records, cues)?;
             let populate_ms = t.elapsed().as_secs_f64() * 1000.0;
             let cwd = root.to_string_lossy().to_string();
+            let start = process_start(&bin, runs)?;
             let ss = run_hook(
                 &bin,
                 root,
@@ -813,6 +838,7 @@ fn main() -> Result<()> {
                     "{}",
                     serde_json::json!({
                         "records": records, "cues": cues, "runs": runs, "populate_ms": populate_ms,
+                        "process_start": start,
                         "hook": { "SessionStart": ss, "UserPromptSubmit_gated": ups_gated, "UserPromptSubmit_full": ups },
                         "cue_eval": { "glob": glob, "ancestor": anc },
                         "ingest_200_ms": ingest_ms,
@@ -827,6 +853,7 @@ fn main() -> Result<()> {
                     "measurement", "p50", "p95", "p99"
                 );
                 for (n, v) in [
+                    ("process start (`--version`, no work)", start),
                     ("hook SessionStart", ss),
                     ("hook UserPromptSubmit (gated)", ups_gated),
                     ("hook UserPromptSubmit (full)", ups),
