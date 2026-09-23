@@ -785,7 +785,7 @@ mod tests {
     fn a_repeat_question_does_not_lower_the_bar_to_fill_the_block() {
         let tmp = tempfile::tempdir().unwrap();
         let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
-        let mut ins = |id: i64, object: &str, body: &str| {
+        let ins = |id: i64, object: &str, body: &str| {
             db.conn
                 .execute(
                     "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
