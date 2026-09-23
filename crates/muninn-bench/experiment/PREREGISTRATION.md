@@ -4831,3 +4831,36 @@ all. The previous build has not been run on `v5`, so 35/54 has nothing to be com
 except a different fixture. The safety figure does have that comparison and it is decisive;
 the pass rate does not, and the honest thing is to say so rather than to let the reader
 assume the change bought the 35.
+
+---
+
+# Pre-registration — v25: does the change buy anything on wording it has never seen?
+
+Registered 2026-09-23, before the arm ran. The one comparison v24 is missing, and the one
+that decides whether the ack-driven decision stays in the engine.
+
+## Why
+
+v24 reads 35/54 for the build with the change on `v5`. There is nothing to compare it with:
+the build before it has never been run on that fixture, so 35/54 could be what the change
+bought or what it inherited. The safety figure does have its comparison and is decisive;
+the pass rate does not, and "keep the change" is not a decision this project makes on a
+number with no counterfactual.
+
+## The arm
+
+`muninn-ack2`, sha256 prefix `e97acc645e40691a` — the build v22 ran, which is `muninn-ack3`
+minus the two ack changes and nothing else. Six runs, `--code` off, `v5`'s phrasings, against
+v24's own `claude-mem` and `off` cells. Output to `results/h2h-v25-counterfactual/`.
+
+## Decision rule, fixed before the data
+
+- **`pass(ack3) − pass(ack2)` on `v5`.** Reported with its exact Fisher p and no threshold
+  attached: 54 cells cannot resolve a difference this size and pretending otherwise is how
+  `[Z7]` got written.
+- **`unsafe(ack3) − unsafe(ack2)` on `v5`.** This is what the change was built for and what
+  decides whether it stays. **If `unsafe(ack2)` is not materially worse than 1/54, the change
+  bought nothing measurable on unseen wording and it is reverted** — the mechanism grid was
+  its own fixture and cannot keep it alive on its own.
+- Nothing here can make a claim. The plain condition stays under *Not claimed* whatever it
+  reads; this decides what ships, not what is published about it.
