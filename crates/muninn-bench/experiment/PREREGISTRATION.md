@@ -4625,3 +4625,48 @@ with a fix behind it, and the change that would have papered over it is reverted
 change this measurement is a fixture where people type the way the generation prompt asked
 for and the first generation did not deliver — and the figure to publish until then is
 11/54.
+
+---
+
+# Pre-registration — v22: the same question on wording that is wording
+
+Registered 2026-09-23, before the phrasings were generated.
+
+## Why a second held-out set, and why this is not fishing
+
+v21's generator returned four pairs that are a bare value on both sides, and the answer it
+gave — 11/54 against claude-mem's 31/53 — is an answer about *that input*, which this file
+now says plainly and will keep saying. It is not an answer about the question v21 was
+registered to ask, which is whether v20's 48/54 survives wording the engine was not fitted
+to. A set where six of ten messages are a word cannot answer that, because four of the cells
+contain nothing to read.
+
+The difference between this registration and regenerating until the numbers improve is that
+the acceptance test is mechanical, fixed here, and says nothing about what this engine reads.
+
+## How the fixture is built, fixed before it exists
+
+`h2h/v4/generation_prompt.txt` is v3's prompt with one paragraph added: **every message, both
+halves of every pair, at least 25 characters and at least four words.** That is the same
+realism the original prompt asked for in words, stated as something a script can check. It
+still says nothing about verbs, markers, acknowledgements, parentheses or anything else this
+engine reads.
+
+`claude-haiku-4-5`, up to **three** attempts. The first attempt that passes the mechanical
+checks — ten pairs, the required order, each `a` names the old value, each `b` names the new
+and not the old, and the length floor — is the one used, and every attempt is committed raw
+whether used or not. If none of the three passes, the grid is not run and that is the result.
+
+## The arm, the grid, and the rule
+
+`muninn-ack2`, unchanged. Six runs, `--code` off, all three arms re-seeded on the new
+phrasings, output to `results/h2h-v22-heldout/`.
+
+- **Confirmatory:** `pass(muninn-ack2) − pass(claude-mem)`, exact Fisher, α = 0.05.
+  Significant and positive moves the plain condition out of *Not claimed*; anything else and
+  it stays.
+- **Fixture validity:** `off` above 12/54 voids the grid.
+- **Both sets are published side by side whatever this reads.** v21 is not withdrawn and is
+  not superseded: it is the figure for people who type a word, and this one is the figure for
+  people who type a sentence. Reporting only the kinder of the two would make this file a
+  brochure.
