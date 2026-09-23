@@ -4084,3 +4084,38 @@ project's real transcripts they take 40 % of captured turns out (harness scaffol
 as things the user said, at trust 3), fourteen captured decisions down to nine, three
 corrections down to the one that is real, and no episode begins mid-word. None of it moves a
 synthetic held-out set, because a synthetic transcript has none of that noise in it.
+
+---
+
+# Pre-registration — v15: the window cost, re-measured after the ledger fix
+
+Registered 2026-09-22, before the arm ran. **Pinned and not launched**: the session was paused
+here, and the arm is ready so it costs one command.
+
+## Why
+
+v14 measured the injected context at 2.591 [2.420, 2.739] times claude-mem's on a build whose
+delivery ledger stopped excluding as soon as `maintain` folded it — 167 of the 224 records its
+prompt blocks served had already been named by that session's catalogue. Every one of those was
+a record the agent already had, rendered again. The published window figure is therefore from a
+build that was repeating itself, and so is the pass rate.
+
+## The arm
+
+`muninn-nodup`, pinned to `master`: `muninn-ship` plus the ledger fix and nothing else. Six
+runs, 54 replacement cells, v13's fixture, against v13's own `claude-mem` and `off` cells.
+
+## Decision rule, fixed before the data
+
+- **Confirmatory:** `pass(muninn-nodup) − pass(claude-mem)`, exact Fisher, α = 0.05. The claim
+  that ships, and the figure that replaces 48/54 in the public documents whatever it is.
+- **Registered secondary:** the median injected-context ratio against claude-mem. The fix removes
+  repeated records from the block, so this should fall; it is registered because a number that
+  goes the other way would mean the fix changed what is served and not only how often.
+- Reported: `pass(muninn-nodup) − pass(muninn-ship)`.
+
+## Threat
+
+Three grids in a row have now been run because `master` moved after the last one. That is the
+rule working, and it is also a lot of draws from one 54-cell fixture: each individual figure is
+one reading of those cells, and the direction across them is worth more than any single p.

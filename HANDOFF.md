@@ -62,6 +62,14 @@ The next honest steps, in the order their evidence supports:
    (2.591×) is from a build that was re-serving records. **Re-measuring it is the
    first thing to do**, and the number should come down on its own.
 
+   That arm is registered and pinned already (`v15`, `muninn-nodup`). One command:
+
+   ```sh
+   cd crates/muninn-bench/experiment/h2h && python3 run_h2h.py \
+       --arms muninn-nodup --runs 6 --code \
+       --seed-phrasings v2/seed_phrasings.json --out ../results/h2h-v13-final
+   ```
+
    Still untested after that: a *shorter* block for a record the catalogue already
    named. That is a real hypothesis and needs its own arm.
 2. **Gate 5b needs size, not another arm.** On haiku it reads 2/24 against 0/24,
