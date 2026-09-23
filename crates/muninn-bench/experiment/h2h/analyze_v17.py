@@ -28,11 +28,14 @@ def fisher_two_sided(a, n1, b, n2):
 
 
 def cells(d: pathlib.Path):
-    f = d / "results.jsonl"
-    rows = [json.loads(l) for l in f.open() if l.strip()]
-    # the published figures are the replacement scenarios; `inferable` marks the two
-    # revocation ones the pre-registration counts separately
-    return [r for r in rows if not r.get("inferable")]
+    """The replacement cells, split exactly as `analyze_h2h.py` splits them: a task is a
+    replacement when its scenario has a `new` value. Nine of the fixture's ten do, which is
+    where the published 54 comes from. (`inferable` is a different field and is false for
+    every row; reading it as the split gave 60 cells here before the config was consulted.)"""
+    cfg = json.load((d / "config.json").open())
+    replacement = {t["id"] for t in cfg["tasks"] if t["scenario"].get("new") is not None}
+    rows = [json.loads(l) for l in (d / "results.jsonl").open() if l.strip()]
+    return [r for r in rows if r["task"] in replacement]
 
 
 def tally(rows, arm):

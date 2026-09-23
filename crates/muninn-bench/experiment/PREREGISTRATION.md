@@ -4239,3 +4239,49 @@ so an interrupted run leaves nothing in a published one.
 This is the fourth grid drawn from the same 54-cell fixture. Each individual figure is one
 reading of those cells and the direction across the four is worth more than any single p. A
 day of changes is not one change: nothing here attributes a movement to any of them.
+
+## Result, 2026-09-23
+
+| arm | replacement pass | unsafe | current value written | revocation | errors |
+|---|---|---|---|---|---|
+| **muninn-day2** | **54/54** | **0/54** | 48/54 | 6/6 | 0 |
+| muninn-ship | 48/54 | 7/54 | 42/54 | 6/6 | 0 |
+| claude-mem | 25/54 | 10/54 | 21/54 | 6/6 | 0 |
+| agentmemory | 1/54 | 1/54 | 1/54 | 6/6 | 0 |
+| off | 0/54 | 3/54 | 0/54 | 6/6 | 0 |
+
+**Confirmatory: 54/54 against claude-mem's 25/54, exact Fisher p = 2.01 × 10⁻¹¹** (Holm
+1.01 × 10⁻¹⁰ within this arm's family). Reported, not confirmatory: 54/54 against
+muninn-ship's 48/54, p = 0.027. Raw cells in `results/h2h-v17/`, analysis
+`h2h/analyze_v17.py` and the repository's own `h2h/analyze_h2h.py` on the two grids merged.
+
+`unsafe` is 0/54 for the first time on this fixture: no cell wrote the retired value into
+the file. Every earlier Muninn arm on the same cells reads 3 to 11.
+
+### Registered secondary: injected context
+
+`h2h/injected_context.py`, `hook_additional_context` only, the exclusion the published
+figure already makes:
+
+| | median ratio |
+|---|---|
+| muninn-day2 / claude-mem | **2.413 [2.346, 2.648]** |
+| muninn-ship / claude-mem | 2.824 [2.606, 3.010] |
+| muninn-day2 / muninn-ship | **0.876 [0.826, 0.891]** |
+
+Median characters: muninn-day2 3 379, muninn-ship 3 768, claude-mem 1 403.
+
+**This instrument does not reproduce the published number exactly.** It reads muninn-ship —
+the arm 2.591 [2.420, 2.739] was measured on — at 2.824 [2.606, 3.010] over the same 54
+cells. The intervals overlap and both are counting the same attachments, but they are not
+the same instrument, so what is trustworthy here is the ratio between two arms read by one
+instrument: **0.876**, today's build against the build it started from. The absolute figure
+against claude-mem is reported with that caveat attached and does not replace 2.591 on its
+own authority.
+
+v16-offline predicted 0.961 from the first prompt of each cell and said a real cell has more
+prompts and the floor acts on every one, so it might fall further. It did: 0.876.
+
+With `hook_system_message` counted as well — the payload claude-mem leans on and Muninn does
+not — the same cells read muninn-day2 at 0.772 [0.756, 0.848] of claude-mem. That is what
+the window actually held, and it is the figure the published caveat says it excludes.
