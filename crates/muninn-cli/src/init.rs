@@ -152,7 +152,14 @@ pub fn remove_block(existing: &str) -> String {
 
 /// The two commands the boot block asks the agent to run must not stop it at a
 /// permission prompt. Narrow patterns; `muninn scan-config` accepts them.
-const ALLOW_RULES: [&str; 2] = ["Bash(muninn why:*)", "Bash(muninn status:*)"];
+// `show` is named by the boot summary — the catalogue tells the agent to pull an entry with
+// it — so an install that does not allow it sends the agent into a permission prompt for the
+// one command the memory asked it to run.
+const ALLOW_RULES: [&str; 3] = [
+    "Bash(muninn why:*)",
+    "Bash(muninn status:*)",
+    "Bash(muninn show:*)",
+];
 
 fn set_allow_rules(root: &Path, add: bool) -> Result<Vec<String>> {
     let dir = root.join(".claude");
@@ -309,7 +316,10 @@ pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
     let added_rules = set_allow_rules(&paths.root, true)?;
     if !added_rules.is_empty() {
         st.allow_rules_added = added_rules;
-        touched.push(".claude/settings.json (permissions.allow: muninn why, muninn status)".into());
+        touched.push(
+            ".claude/settings.json (permissions.allow: muninn why, muninn status, muninn show)"
+                .into(),
+        );
     }
 
     // default: no file is touched; the SessionStart hook injects the compact summary.
@@ -427,12 +437,15 @@ pub fn clean(paths: &ProjectPaths, yes: bool, json: bool) -> Result<()> {
                 .filter(|l| !st.gitignore_lines_added.iter().any(|a| a == l.trim()))
                 .map(|l| format!("{l}\n"))
                 .collect();
+            // only the lines this tool added: a project's own `.gitignore` is not ours to
+            // delete, and the line printed said "removed .gitignore" when it was not
             if next.trim().is_empty() {
                 std::fs::remove_file(&file)?;
+                undone.push(".gitignore".into());
             } else {
                 std::fs::write(&file, next)?;
+                undone.push(".gitignore (its own lines only)".into());
             }
-            undone.push(".gitignore".into());
         }
     }
     if st.codex_hooks_written {
