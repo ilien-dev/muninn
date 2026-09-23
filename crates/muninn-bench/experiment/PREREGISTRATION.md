@@ -5172,3 +5172,20 @@ One arm, six runs, `--code` off, `v6`'s phrasings, against v27's own `claude-mem
   word where a value goes is a defect whether or not a fixture rewards fixing it, and the
   honest reason to keep it does not depend on a number. The grid is here to check the
   diagnosis, not to earn the change.
+
+## Result of v29, 2026-09-23 — the diagnosis was right
+
+| on `v6` | pass | unsafe |
+|---|---|---|
+| with the filler-noun pattern | **53/54** | **0/54** |
+| without it (`newest`) | 50/54 | 4/54 |
+| claude-mem | 50/54 | 0/54 |
+
+**Primary: `unsafe` 4/54 → 0/54.** The rule said anything other than 0 or 1 means the
+diagnosis is wrong. It is 0, and the three `revoke-tls-backend` cells and the one
+`revoke-version-scheme` cell that carried it all pass now. The adverse rule is not triggered:
+`pass` 50 → 53.
+
+Against claude-mem on this fixture, 53/54 against 50/54, p = 0.363 — ahead, and not
+distinguishably so. Fitted, and this grid was registered to check a diagnosis rather than to
+earn the change, so that number is not offered as anything.
