@@ -5073,3 +5073,44 @@ for.
 That is the answer to the question this whole sequence was asked to settle, and it is the
 opposite of the one the day's work was aiming at. The code condition is untouched and stands
 at 54/54.
+
+---
+
+# Pre-registration — v28: does reading order move the figure that has never gone our way?
+
+Registered 2026-09-23, before any cell ran.
+
+## Why, and why `unsafe` is the primary this time
+
+Over four held-out grids Muninn wrote the retired value 21 times against claude-mem's 2,
+pooled p = 4.3 × 10⁻⁵. That figure has gone the same way on every set regardless of how the
+wording fell, which is what makes it worth attacking on its own: the pass rate swings with the
+draw and this does not.
+
+In every one of those cells both statements were served and the stale one was first, because
+the floor's best match is the record that repeats the question's words. `muninn-order`
+(`8a6af0738cd43e34`) puts the later statement at the top and changes nothing else.
+
+The change was read off the *shape* of those failures, not off any one fixture's cells, and it
+is measured on two sets it has never been run against. That is weaker contamination than the
+day's earlier changes and it is still contamination; the registration is what makes it
+legible either way.
+
+## The grids
+
+`v5` and `v6`, one arm each, six runs, `--code` off, against the `claude-mem` and
+`off` cells already run on those fixtures (v24 and v27). Output
+`results/h2h-v28-v5/` and `results/h2h-v28-v6/`.
+
+## Decision rule, fixed before the data
+
+- **Primary:** `unsafe(muninn-order)` pooled over the two sets against `unsafe(claude-mem)`
+  pooled over the same two, exact Fisher, α = 0.05. The pooling is part of the registration
+  rather than applied afterwards.
+- **Registered secondary:** `pass`, against claude-mem on each set. It is not the reason for
+  the change and a gain there is not what keeps it.
+- **Adverse rule:** if `pass` falls on either set against the build immediately before
+  (`muninn-newest`, 42/54 on `v5` and 50/54 on `v6`), reading order costs answers and the
+  change is reverted.
+- The plain condition stays under *Not claimed* whatever this reads. Nothing about ordering
+  can make this engine beat a competitor it has tied or lost to on four sets.
