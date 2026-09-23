@@ -5189,3 +5189,42 @@ diagnosis is wrong. It is 0, and the three `revoke-tls-backend` cells and the on
 Against claude-mem on this fixture, 53/54 against 50/54, p = 0.363 — ahead, and not
 distinguishably so. Fitted, and this grid was registered to check a diagnosis rather than to
 earn the change, so that number is not offered as anything.
+
+## The v30 fixture, characterised before it ran
+
+Attempt 2 of three; 1 fails on three paraphrased values, 3 also passes and is not used because
+the rule takes the first. Zero messages in common with `v4`, `v5` or `v6`.
+
+Six of ten replacement messages carry a change verb, between `v5`'s two and `v6`'s eight.
+The four that do not are the shape that has cost the most all day: `Actually rustls is pure
+Rust…`, `semver gives users much clearer signals…`, `Apache-2.0 gives us better adoption…`,
+`Verification on all builds is the right call…`.
+
+---
+
+# Pre-registration — v30: where the plain condition stands after the whole day
+
+Registered 2026-09-23, before any cell ran. The closing measurement.
+
+## The question
+
+Four held-out sets said this engine does not beat claude-mem when decisions live only in the
+conversation: 11/54, 38/54, 35/54, 50/54 against 31/53, 38/54, 41/54, 50/54, pooled 134/216
+against 160/215. Every fix since came from reading those cells. This asks the same question of
+the build that carries all of them, on wording none of them has seen.
+
+## The grid
+
+`muninn-filler`, sha256 prefix `6b6926a2ff12b011`, the build on `master`. Three arms re-seeded on
+`v7`, six runs, `--code` off. Output `results/h2h-v30-heldout/`.
+
+## Decision rule, fixed before the data
+
+- **Confirmatory:** `pass(muninn-filler) − pass(claude-mem)`, exact Fisher, α = 0.05. This is
+  the only thing that can move the plain condition out of *Not claimed*, and it has had four
+  chances to and has not taken one.
+- **Co-primary, failing on its own:** `unsafe`. Unchanged and for the same reason.
+- **Fixture validity:** `off` above 12/54 voids it.
+- **Whatever it reads, the five sets are published together.** A fifth draw that finally goes
+  our way does not replace four that did not, and the table in `README.md` gets a row rather
+  than a rewrite.
