@@ -196,9 +196,9 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     // for every word of the prompt, `STOP` words included.
     let mut df_of: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     let df = |t: &str,
-                  stmt: &mut rusqlite::Statement,
-                  matched: &mut rusqlite::Statement,
-                  cache: &mut std::collections::HashMap<String, f64>|
+              stmt: &mut rusqlite::Statement,
+              matched: &mut rusqlite::Statement,
+              cache: &mut std::collections::HashMap<String, f64>|
      -> Result<f64> {
         if let Some(v) = cache.get(t) {
             return Ok(*v);
@@ -677,7 +677,56 @@ pub fn show(db: &Db, ids: &[i64], budget: usize) -> Result<Delivery> {
         .query_map(params.as_slice(), |r| Hit::from_served_row(r, 0.0))?
         .filter_map(|r| r.ok())
         .collect();
-    Ok(render(&hits, budget, &[]))
+    let mut d = render(&hits, budget, &[]);
+    // An agent that asks for five ids and is handed three cannot tell which two it did not
+    // get, and the two cases mean opposite things: a retired record was replaced by
+    // something, and the catalogue's `replaces #n` is where those ids come from, while an
+    // id that is in no row at all was a mistake. Saying which is not a leak — no text of a
+    // retired record is rendered, only the fact that it is one, which the catalogue already
+    // prints beside its heir.
+    let missing: Vec<i64> = ids.iter().copied().filter(|i| !d.ids.contains(i)).collect();
+    if !missing.is_empty() {
+        let places = std::iter::repeat_n("?", missing.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut q = db
+            .conn
+            .prepare(&format!("SELECT id FROM record WHERE id IN ({places})"))?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            missing.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        let retired: Vec<i64> = q
+            .query_map(params.as_slice(), |r| r.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        let list = |v: &[i64]| {
+            v.iter()
+                .map(|i| format!("#{i}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let unknown: Vec<i64> = missing
+            .iter()
+            .copied()
+            .filter(|i| !retired.contains(i))
+            .collect();
+        let mut note = String::new();
+        if !retired.is_empty() {
+            note.push_str(&format!(
+                "{} retired: replaced or revoked, and not served. ",
+                list(&retired)
+            ));
+        }
+        if !unknown.is_empty() {
+            note.push_str(&format!(
+                "{} is not a record in this store. ",
+                list(&unknown)
+            ));
+        }
+        d.text.push_str(note.trim_end());
+        d.text.push('\n');
+        d.tokens = d.text.len() / 3;
+    }
+    Ok(d)
 }
 
 pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery> {
@@ -711,6 +760,40 @@ mod tests {
     /// and sorts the whole active set — 23 ms of a 10 ms hook at the schema's cap. Nothing in
     /// the SQL says so; the guard is a unary `+` that reads like a typo. This asserts the plan
     /// instead, so removing it fails here rather than in a latency contract months later.
+    /// The boot summary tells the agent to pull entries by id. If it asks for five and is
+    /// handed three, the two it did not get mean opposite things — one was replaced, one
+    /// never existed — and silence made them look the same.
+    #[test]
+    fn a_pull_says_which_ids_it_could_not_serve() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                 VALUES(1,'decision','k','is','rustls','user: rustls','user_said',3,'s','h1',1), \
+                       (2,'decision','k','is','openssl','user: openssl','user_said',3,'s','h2',1)",
+                [],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded' WHERE id=2",
+                [],
+            )
+            .unwrap();
+        let d = show(&db, &[1, 2, 404], 700).unwrap();
+        assert_eq!(d.ids, vec![1]);
+        assert!(d.text.contains("rustls"), "{}", d.text);
+        assert!(
+            !d.text.contains("openssl"),
+            "a retired record's text is never served"
+        );
+        assert!(d.text.contains("#2 retired"), "{}", d.text);
+        assert!(d.text.contains("#404 is not a record"), "{}", d.text);
+        // nothing to say when every id was served
+        assert!(!show(&db, &[1], 700).unwrap().text.contains("retired"));
+    }
+
     #[test]
     fn the_catalogue_reads_an_index_and_never_sorts_the_store() {
         let tmp = tempfile::tempdir().unwrap();
@@ -950,12 +1033,18 @@ mod tests {
             "show returns the record:\n{}",
             d.text
         );
+        // A retired id yields no text of its own. It does yield the fact that it is retired:
+        // the catalogue prints those ids beside their heir (`replaces #n`), so an agent that
+        // follows one has asked a fair question, and silence answered it the same way a typo
+        // would. F1 is about the record's text, and none of it is here.
         let r = show(&db, &[old], 700).unwrap();
+        assert!(r.ids.is_empty());
         assert!(
-            r.text.is_empty(),
-            "a retired id is not servable, not even by name:\n{}",
+            !r.text.contains("openssl"),
+            "a retired record's text is never served:\n{}",
             r.text
         );
+        assert!(r.text.contains(&format!("#{old} retired")), "{}", r.text);
     }
 
     /// The catalogue's last line decides what an absence from it means, so it has to be right
