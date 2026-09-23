@@ -4551,3 +4551,47 @@ be read as a decision by *any* of the arms, this one included. If both memory ar
 the floor the grid is uninformative rather than negative, and the honest reading of that is
 "this fixture could not separate them", not "they are the same". `off` above 12/54 still
 voids it for the opposite reason.
+
+## Result of v21, 2026-09-23 — a loss, and the clearest one this project has measured
+
+| arm | replacement pass | unsafe | current value written | errors |
+|---|---|---|---|---|
+| claude-mem | **31/53** | 0/53 | 25/53 | 1 |
+| muninn-ack2 | **11/54** | 0/54 | 6/54 | 0 |
+| off | 0/54 | 0/54 | 0/54 | 0 |
+
+**Confirmatory: 11/54 against claude-mem's 31/53, Δ −0.381, exact Fisher p = 6.7 × 10⁻⁵.**
+The plain condition on wording this engine was not fitted to is not a tie and not a win: it
+is a loss, and a large one. The fixture is valid by its own registered control — `off` reads
+0/54, so nothing leaks the answer.
+
+### Why, and it is not the wording being "held out"
+
+The fixture the generator returned is terse: four pairs are a bare value on both sides. A
+two-turn probe says what that does — `gzip` then `zstd` produces **two episodes and no
+decision at all**. Nothing is retired because nothing typed exists to retire, the catalogue
+lists decisions and has none to list, and the read path has an episode whose whole text is
+one word.
+
+Muninn passes exactly the two scenarios whose phrasings kept a sentence: `revoke-cache-
+eviction` (6/6) and `revoke-internal-http` (5/6). claude-mem passes across eight of the ten,
+because it stores the turn and lets the agent search it, and a one-word turn costs it much
+less than it costs a typed ledger.
+
+So the finding is sharper than "held-out wording is harder". **Muninn's typed capture
+requires the user to write a sentence.** When someone types the value and nothing else —
+which people do — this engine records an episode and the entire filter-and-catalogue
+machinery has nothing to act on. Every figure this project publishes on the plain condition
+was measured on phrasings that happened to be sentences.
+
+### What this does and does not touch
+
+- The code condition (v17, 54/54) is unaffected: there the commit carries the value and the
+  typed record comes from the diff, not from the user's grammar. It is not re-run and its
+  claim stands as measured.
+- The plain condition's published figure stays under *Not claimed*, and this result is
+  published beside it as the reason it will stay there for a while.
+- The open hypothesis registered with v20 — using the assistant's reply to *create* a
+  decision rather than only to retire against one — is no longer about one scenario. It is
+  the only route this fixture leaves, because in every failing cell the reply is the only
+  sentence in the turn.
