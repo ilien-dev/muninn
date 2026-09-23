@@ -221,7 +221,7 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
             object: redact(&first_line(up, 160)),
             body,
             origin: "user_said",
-            anchor_path: t.files_touched.first().cloned(),
+            anchor_path: crate::sole_anchor(&t.files_touched),
             turn_index: t.index,
             end_offset: t.end_offset,
         });
@@ -911,7 +911,7 @@ fn commit_candidates(t: &Turn, out: &mut Vec<Candidate>) {
                 object: redact(truncate_chars(msg, 160)),
                 body: redact(&format!("commit {short} on {branch}: {msg}\n{files}")),
                 origin: "commit_linked",
-                anchor_path: t.files_touched.first().cloned(),
+                anchor_path: crate::sole_anchor(&t.files_touched),
                 turn_index: t.index,
                 end_offset: t.end_offset,
             });
@@ -1352,6 +1352,13 @@ mod tests {
         let d = c.iter().find(|x| x.kind == "decision").unwrap();
         assert_eq!(d.subject, "commit:1a2b3c4");
         assert_eq!(d.anchor_path.as_deref(), Some("crates/x.rs"));
+        // a second file and the commit is about neither of them in particular: the anchor
+        // would otherwise be whichever the harness or `git log` happened to list first
+        let mut s_many = s.clone();
+        s_many.turns[0].files_touched.push("docs/y.md".into());
+        let cm = extract(&s_many, "abcdef12");
+        let dm = cm.iter().find(|x| x.kind == "decision").unwrap();
+        assert_eq!(dm.anchor_path, None);
         let de = c.iter().find(|x| x.kind == "deadend").unwrap();
         assert_eq!(de.subject, "cmd:cargo test -p muninn-core");
         assert!(de.object.starts_with("exit 101"));
