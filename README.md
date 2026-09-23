@@ -276,8 +276,12 @@ still more than the competitor's. Turning the per-prompt block off takes it to 1
 about four answers in fifty, which is why it is not the default.
 
 Where the decisions exist only in the conversation and never reach the code, the same grid is
-**not a win and is not claimed as one**: 39 of 54 against 33 of 54, which chance produces often
-enough that it means nothing.
+**not a win and is not claimed as one**: 42 of 54 against 33 of 54, p = 0.094 — closer than the
+39 of 54 it read before, and still inside what chance produces often enough that it means
+nothing. On those cells the retired value still reaches the file 12 times in 54, where with a
+commit in the tree it reaches it none; and the context Muninn occupies goes up rather than
+down. The one condition this engine has never won is still the one where nothing but the
+conversation says a decision changed.
 
 The earlier comparison (claude-mem and agentmemory) gives every tool the same
 decisions from the same real sessions, and nobody tells it which decisions were replaced.
