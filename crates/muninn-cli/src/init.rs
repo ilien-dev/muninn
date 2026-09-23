@@ -26,6 +26,10 @@ struct InitState {
     allow_rules_added: Vec<String>,
     boot_block_files: Vec<String>,
     gitignore_lines_added: Vec<String>,
+    /// What `autoMemoryEnabled` held before `init` set it, so `--undo` restores that
+    /// rather than assuming the key was absent.
+    #[serde(default)]
+    auto_memory_was: Option<bool>,
     codex_hooks_written: bool,
 }
 
@@ -201,7 +205,13 @@ fn set_allow_rules(root: &Path, add: bool) -> Result<Vec<String>> {
     Ok(changed)
 }
 
-fn set_auto_memory(root: &Path, value: Option<bool>) -> Result<bool> {
+/// Set, or with `None` remove, `autoMemoryEnabled` in `.claude/settings.json`.
+///
+/// Returns what the key held before, and whether the file was written — which it is
+/// only when the value actually changes. `init` is run again on every upgrade, and
+/// this file belongs to the user: rewriting it to the value it already holds costs
+/// them a reformatted file and a "touched" line for work that did not happen.
+fn set_auto_memory(root: &Path, value: Option<bool>) -> Result<(Option<bool>, bool)> {
     let dir = root.join(".claude");
     let file = dir.join("settings.json");
     let mut v: serde_json::Value = match std::fs::read_to_string(&file) {
@@ -213,6 +223,14 @@ fn set_auto_memory(root: &Path, value: Option<bool>) -> Result<bool> {
     let Some(obj) = v.as_object_mut() else {
         bail!(".claude/settings.json is not a JSON object")
     };
+    let before = obj.get("autoMemoryEnabled").and_then(|x| x.as_bool());
+    let unchanged = match value {
+        Some(b) => before == Some(b),
+        None => !obj.contains_key("autoMemoryEnabled"),
+    };
+    if unchanged {
+        return Ok((before, false));
+    }
     match value {
         Some(b) => {
             obj.insert("autoMemoryEnabled".into(), serde_json::Value::Bool(b));
@@ -223,12 +241,25 @@ fn set_auto_memory(root: &Path, value: Option<bool>) -> Result<bool> {
     }
     std::fs::create_dir_all(&dir)?;
     std::fs::write(&file, serde_json::to_string_pretty(&v)? + "\n")?;
-    Ok(true)
+    Ok((before, true))
+}
+
+/// Whether the file already ignores the whole store. Every line this tool would add
+/// lives under `.muninn/`, so a rule on the directory makes all four dead text — and
+/// this repository ignores `/.muninn/` on purpose, so appending them put back, on
+/// every `init`, a list a commit had deliberately replaced with one line.
+fn covers_store(existing: &str) -> bool {
+    existing
+        .lines()
+        .any(|l| matches!(l.trim(), ".muninn" | ".muninn/" | "/.muninn" | "/.muninn/"))
 }
 
 fn ensure_gitignore(root: &Path) -> Result<Vec<String>> {
     let file = root.join(".gitignore");
     let existing = std::fs::read_to_string(&file).unwrap_or_default();
+    if covers_store(&existing) {
+        return Ok(Vec::new());
+    }
     let mut added = Vec::new();
     let mut out = existing.clone();
     for line in GITIGNORE_LINES {
@@ -309,9 +340,12 @@ pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
     }
 
     if !opts.keep_native {
-        set_auto_memory(&paths.root, Some(false))?;
-        st.set_auto_memory_false = true;
-        touched.push(".claude/settings.json (autoMemoryEnabled=false)".into());
+        let (before, wrote) = set_auto_memory(&paths.root, Some(false))?;
+        if wrote {
+            st.set_auto_memory_false = true;
+            st.auto_memory_was = before;
+            touched.push(".claude/settings.json (autoMemoryEnabled=false)".into());
+        }
     }
     let added_rules = set_allow_rules(&paths.root, true)?;
     if !added_rules.is_empty() {
@@ -422,7 +456,9 @@ pub fn clean(paths: &ProjectPaths, yes: bool, json: bool) -> Result<()> {
         }
     }
     if st.set_auto_memory_false {
-        set_auto_memory(&paths.root, None)?;
+        // restore what was there, which is not always "absent": a project that had
+        // native memory on explicitly gets its own value back, not a deleted key.
+        set_auto_memory(&paths.root, st.auto_memory_was)?;
         undone.push(".claude/settings.json (autoMemoryEnabled restored)".into());
     }
     if !st.allow_rules_added.is_empty() {
@@ -467,6 +503,58 @@ pub fn clean(paths: &ProjectPaths, yes: bool, json: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `init` runs on every install and must be idempotent against a `.gitignore`
+    /// that is broader than its own list, not only against one that repeats it.
+    #[test]
+    fn gitignore_untouched_when_the_store_is_already_ignored() {
+        let tmp = tempfile::tempdir().unwrap();
+        for rule in ["/.muninn/", ".muninn/", ".muninn", "/.muninn"] {
+            let before = format!("/target\n{rule}\n");
+            std::fs::write(tmp.path().join(".gitignore"), &before).unwrap();
+            assert!(ensure_gitignore(tmp.path()).unwrap().is_empty(), "{rule}");
+            let after = std::fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
+            assert_eq!(after, before, "{rule}");
+        }
+        // a file that does not cover the store still gets the four lines, once
+        std::fs::write(tmp.path().join(".gitignore"), "/target\n").unwrap();
+        assert_eq!(ensure_gitignore(tmp.path()).unwrap().len(), 4);
+        assert!(ensure_gitignore(tmp.path()).unwrap().is_empty());
+    }
+
+    /// `init` is run again on every upgrade. It may not rewrite a file it is not
+    /// changing, and `--undo` may not delete a value the project set itself.
+    #[test]
+    fn auto_memory_is_written_once_and_restored_to_what_was_there() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join(".claude/settings.json");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "{\n  \"autoMemoryEnabled\": true\n}\n").unwrap();
+
+        let (before, wrote) = set_auto_memory(tmp.path(), Some(false)).unwrap();
+        assert_eq!((before, wrote), (Some(true), true));
+        let (before, wrote) = set_auto_memory(tmp.path(), Some(false)).unwrap();
+        assert_eq!(
+            (before, wrote),
+            (Some(false), false),
+            "second run must not write"
+        );
+
+        set_auto_memory(tmp.path(), before).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["autoMemoryEnabled"], serde_json::json!(false));
+
+        // a project that never had the key gets it removed, not set back to false
+        std::fs::write(&file, "{}\n").unwrap();
+        let (was, wrote) = set_auto_memory(tmp.path(), Some(false)).unwrap();
+        assert_eq!((was, wrote), (None, true));
+        set_auto_memory(tmp.path(), was).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert!(v.get("autoMemoryEnabled").is_none());
+        assert!(!set_auto_memory(tmp.path(), None).unwrap().1);
+    }
 
     #[test]
     fn block_roundtrip_preserves_foreign_content() {
