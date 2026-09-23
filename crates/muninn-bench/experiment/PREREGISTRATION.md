@@ -4018,3 +4018,44 @@ answer and **not** run, because a gate that needs its own size chosen after seei
 the thing this file exists to prevent. F2's public wording stays where Gate 5a leaves it, and
 the mechanism contrast (`norule` 8/24 against `control-only` 0/24, +0.333 [+0.250, +0.375])
 remains the only demonstration that the tool boundary holds when the model does not.
+
+---
+
+# Pre-registration — v14: the capture guards, on the build that ships
+
+Registered 2026-09-22, before the arm ran.
+
+## Why
+
+`muninn-stands` scored 51/54 and was pinned before eight capture guards landed: the harness
+strip (both parsers), the `ahora` marker, the abbreviation and bracket rules in the sentence
+splitter, the paste guard, the denied-change guard, the colon rule, the correction guard and
+the word-boundary episode split. Every one of them leaves the held-out sets exactly where they
+were — which is the point, since those transcripts are synthetic and carry none of the noise
+the guards remove.
+
+The grid is the only fixture that has the noise: its seeding sessions are real `claude -p`
+conversations, with harness notifications, pasted material and interruption markers in them.
+So it is the only place the guards can show anything, in either direction. A claim about a
+build is a claim about that build, and the build has moved.
+
+## The arm
+
+`muninn-ship`, pinned to `master`: `muninn-stands` plus the eight guards and nothing else. Six
+runs, 54 replacement cells, v13's fixture, against v13's own `claude-mem` and `off` cells.
+
+## Decision rule, fixed before the data
+
+- **Confirmatory:** `pass(muninn-ship) − pass(claude-mem)`, exact Fisher, α = 0.05. This is the
+  claim that ships. If it fails, the public claim drops to what the last measured build
+  supports and the guards are reported as having cost it.
+- **Reported, not confirmatory:** `pass(muninn-ship) − pass(muninn-stands)`. The guards were not
+  built to move this number and are not expected to; what they were built for is a store that
+  holds what the user said and not what the harness injected, and that is worth having whether
+  or not a grid can see it.
+
+## Threat
+
+The guards were designed by reading this project's own store, and the grid's seeding sessions
+are conversations with the same harness. They are not independent samples of "real
+conversation"; they are two draws from the same tool.
