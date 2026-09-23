@@ -5033,3 +5033,43 @@ goes 2.747 → 2.991.
 
 Not a claim. Part B is the grid that can be one, and its fixture is already registered as an
 easier draw than this one.
+
+## Result of v26 Part B (v27), 2026-09-23 — a tie on the easier draw, and the claim is not made
+
+| arm | replacement pass | unsafe |
+|---|---|---|
+| muninn-newest | **50/54** | **4/54** |
+| claude-mem | **50/54** | **0/54** |
+| off | 0/54 | 0/54 |
+
+**Confirmatory: 50/54 against 50/54, p = 1.** Not significant and not positive, so the plain
+condition stays under *Not claimed*. `off` 0/54, the fixture is valid. This is the set that
+was registered beforehand as the easier draw, and it was: both arms are near the ceiling.
+
+**Co-primary: `unsafe` 4/54 against 0/54, p = 0.118.** Not significant on its own, so it does
+not fail the change. It is the third held-out set in a row where the direction is the same.
+
+### The four held-out grids together, which is the figure this condition should be read by
+
+Every grid on this page where both arms ran on the same generated fixture:
+
+| fixture | Muninn | claude-mem | Muninn `unsafe` | claude-mem `unsafe` |
+|---|---|---|---|---|
+| `v3` terse | 11/54 | 31/53 | 0 | 0 |
+| `v4` | 38/54 | 38/54 | 16 | 2 |
+| `v5` | 35/54 | 41/54 | 1 | 0 |
+| `v6` verb-heavy | 50/54 | 50/54 | 4 | 0 |
+| **pooled** | **134/216** | **160/215** | **21/216** | **2/215** |
+
+Pooled pass p = 0.0071, against us. Pooled `unsafe` p = 4.3 × 10⁻⁵, against us.
+
+**On decisions that live only in the conversation, this engine has never beaten claude-mem on
+any set anyone generated, and it asserts the retired value about ten times as often.** Two
+ties, two losses, and the ties are on the sets whose wording happened to suit a verb list.
+Pooling four pre-registered grids is post-hoc as a test and is reported as a summary, not as
+a p-value anyone should act on; the direction across four independent draws is what it is
+for.
+
+That is the answer to the question this whole sequence was asked to settle, and it is the
+opposite of the one the day's work was aiming at. The code condition is untouched and stands
+at 54/54.
