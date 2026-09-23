@@ -329,7 +329,7 @@ fn change_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch(?:ed|ing)\b|\bswitch\b.{0,20}?\b(?:to|over|back|out)\b|\bswap(?:ped|ping)\b|\bswap\b.{0,30}?\b(?:to|for|with|out|in)\b|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat(?:e|ed|es|ing)\b|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac(?:e|ed|es|ing)\b|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bon second thoughts?\b|\bsecond thoughts\b|\breconsider|\bon reflection\b|\brethink|\bchang(?:ed|ing) (?:my|our) minds?\b|\bchanging course\b|\bwithdraw|\bretract|\bnever ?mind\b|\bforget (?:it|that|this|about)\b|\bcancel\b|\bpensándolo bien\b|\bpensandolo bien\b|\bme retracto\b|\bolvida (?:eso|lo)\b|\bahora\b(?:\s+\w+){0,2}?\s+(?:es|son|usamos|usaremos|usa|usan|va|vamos|toca|queda|quedan|se usa|se usan|sera|será)\b|\bcambi(?:a|an|amos|ar|aron|ado|ando|é|e)\b|\bcambio (?:a|de|al)\b|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra(?:mos|r|ron|ndo|do)\b|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz(?:a|an|amos|ar|ado|ando)\b|\bsustitu(?:ye|yen|imos|ir|ido|yendo)\b|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
+            r"(?i)(\b(?:is|are) now\b|\bnow (?:we|it'?s|use|using|goes|go)\b|\bswitch(?:ed|ing)\b|\bswitch\b.{0,20}?\b(?:to|over|back|out)\b|\b(?:let'?s|lets|we'?ll|i'?ll|time to) switch\b|\bswap(?:ped|ping)\b|\bswap\b.{0,30}?\b(?:to|for|with|out|in)\b|\bmov(?:e|ed|ing)\b.{0,40}?\b(?:to|over|off|onto)\b|\bmigrat(?:e|ed|es|ing)\b|\bchange of plans?\b|\bchang(?:e|ed|ing) (?:to|it|that|this|our|the)\b|\binstead\b|\breplac(?:e|ed|es|ing)\b|\bno longer\b|\bnot .{0,20}\banymore\b|\bfrom now on\b|\bgoing forward\b|\brevert|\broll(?:ed)? back\b|\bgo(?:ing)? back to\b|\bdrop(?:ped|ping)?\b|\bditch|\bscrap|\bscratch that\b|\bactually\b|\bafter all\b|\bupdate[ds]?\s*:|\bturns out\b|\bon second thoughts?\b|\bsecond thoughts\b|\breconsider|\bon reflection\b|\brethink|\bchang(?:ed|ing) (?:my|our) minds?\b|\bchanging course\b|\bwithdraw|\bretract|\bnever ?mind\b|\bforget (?:it|that|this|about)\b|\bcancel\b|\bpensándolo bien\b|\bpensandolo bien\b|\bme retracto\b|\bolvida (?:eso|lo)\b|\bahora\b(?:\s+\w+){0,2}?\s+(?:es|son|usamos|usaremos|usa|usan|va|vamos|toca|queda|quedan|se usa|se usan|sera|será)\b|\bcambi(?:a|an|amos|ar|aron|ado|ando|é|e)\b|\bcambio (?:a|de|al)\b|\bcambio de plan|\bpasamos a\b|\bpasa a\b|\bmigra(?:mos|r|ron|ndo|do)\b|\bvolvemos a\b|\ben vez de\b|\ben lugar de\b|\ba partir de ahora\b|\bya no\b|\breemplaz(?:a|an|amos|ar|ado|ando)\b|\bsustitu(?:ye|yen|imos|ir|ido|yendo)\b|\bdejamos de\b|\bmejor usa|^\s*mejor\b|\bal final\b)",
         )
         .unwrap()
     })
@@ -963,6 +963,12 @@ fn announces_change(s: &str) -> bool {
 
 /// A decision stated outright, and not denied: `switch to X` counts, `I didn't switch to X`
 /// does not, and both reach here through `decision_re` rather than the change markers.
+///
+/// `switch` on its own needed something after it — `to`, `over`, `back`, `out` — because a
+/// bare one is as often a noun. "Benchmarks show zstd is faster - let's switch" ends on it
+/// and announced nothing, so no decision was captured, so the reply that named the pair
+/// outright was never consulted: six of the twelve cells the plain head-to-head fails. A
+/// first person proposing to switch is not a noun in any of these forms.
 fn states_decision(s: &str) -> bool {
     decision_re()
         .find(s)
@@ -1478,6 +1484,31 @@ mod tests {
     /// happen to end on. Before the Spanish half of `STOP` was completed, `tiene` and
     /// `rendimiento` were the two content words `replaces` asks for, and the later decision
     /// retired the earlier one — taking with it the only record that held `Supavisor`.
+    /// `switch` with nothing after it was not a change marker, because a bare one is as often
+    /// a noun. A first person proposing one is not: "Benchmarks show zstd is faster - let's
+    /// switch" ends on it, and until this it announced nothing, so no decision was captured
+    /// from the message and the reply that named the pair outright was never consulted.
+    #[test]
+    fn a_first_person_proposing_to_switch_announces_a_change() {
+        for s in [
+            "Benchmarks show zstd is faster - let's switch",
+            "lets switch",
+            "we'll switch",
+            "I'll switch",
+            "time to switch",
+        ] {
+            assert!(announces_change(s), "{s}");
+        }
+        // the noun keeps its meaning, and a denial still denies
+        for s in [
+            "the switch is in the config",
+            "add a switch for verbose output",
+            "let's not switch",
+        ] {
+            assert!(!announces_change(s), "{s}");
+        }
+    }
+
     /// The assistant names the pair and puts an aside between the two halves of it:
     /// "switching from gzip (the earlier decision, #3) to zstd". The pattern wanted
     /// whitespace there and saw nothing, and those cells' own messages — "Benchmarks show
