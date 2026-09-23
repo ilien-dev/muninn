@@ -4989,3 +4989,19 @@ output `results/h2h-v27-heldout/`.
 - **Co-primary, and it can fail on its own:** `unsafe`. Unchanged from v23's registration
   and for the same reason.
 - **Fixture validity:** `off` above 12/54 voids it.
+
+## The v27 fixture, and a threat visible in it before the run
+
+Attempt 2 of three passes and is used; 1 and 3 paraphrase a value instead of naming it. Zero
+messages in common with `v4` or `v5`.
+
+**It is an easier set for this engine than `v5`, and that is visible without running a
+cell.** Eight of its ten replacement messages carry a change verb — "Actually", "Going with",
+"Switching to", "Moving to", "instead" — where `v5` had two. The same committed prompt
+produced a terse set (`v3`), a comparative set (`v5`) and a verb-heavy one (`v6`); the
+distribution of how people phrase a change is not something this prompt controls, and a grid
+on any one of them measures that draw as much as it measures the engine.
+
+So a good number here is weaker evidence than a bad one, and the honest comparison is across
+the three sets rather than within this one. Written before the cells ran so it cannot be
+produced afterwards to explain a result either way.
