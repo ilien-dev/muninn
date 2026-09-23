@@ -5263,3 +5263,34 @@ current engine's would be as wrong as quoting only `v7`.
 
 The honest closing number does not exist yet, and what it would take is running the build that
 ships against every one of the five fixtures. `v6` and `v7` have it. `v3`, `v4` and `v5` do not.
+
+---
+
+# Pre-registration — v31: the shipping build against all five fixtures
+
+Registered 2026-09-23, before any cell ran. The number the previous entry says does not exist.
+
+## Why
+
+Five held-out sets exist and the build that ships has run on two of them. Pooling the five as
+they stand mixes four builds and reads the engine at its worst on wording that has since been
+fixed; quoting only the two it has run reads it at its best. Neither is the figure someone
+deciding whether to install this needs.
+
+## The grids
+
+`muninn-filler`, sha256 prefix `6b6926a2ff12b011`, against the `claude-mem` and `off` cells already
+measured on each fixture. One arm, six runs, `--code` off, on `v3`, `v4` and `v5`;
+`v6` and `v7` are done. Output `results/h2h-v31-v3/`, `-v4/`, `-v5/`.
+
+## Decision rule, fixed before the data
+
+- **The figure published for the plain condition becomes the shipping build's five-fixture
+  total**, whatever it is, replacing the four-build pooling in every document.
+- **Confirmatory:** that total against claude-mem's on the same five, exact Fisher, α = 0.05.
+  The plain condition moves out of *Not claimed* only on a significant positive. Pooling is
+  part of this registration rather than applied afterwards, and 270 cells is the first size in
+  this file able to resolve an effect `[Z7]` says 54 cannot.
+- **Co-primary, failing on its own:** `unsafe` over the same five.
+- **Adverse:** if the shipping build reads *worse* than the build originally measured on any
+  fixture, that regression is published per-fixture and not averaged away.
