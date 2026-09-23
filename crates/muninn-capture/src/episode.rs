@@ -42,6 +42,25 @@ fn first_line(s: &str, max: usize) -> String {
     truncate_chars(l, max).to_string()
 }
 
+/// How many characters of `s` to keep so the cut lands between words, never inside one.
+///
+/// The head episode kept the first 600 characters and the continuation started at character
+/// 600, both counted exactly, so a word straddling that point was split down the middle: this
+/// project's own store holds `user (cont. 1): uario en sus proyectos internos.` — the tail of
+/// `usuario`. The fragment is indexed as a word of its own and matches nothing.
+fn head_chars(s: &str, max: usize) -> usize {
+    let n = s.chars().count();
+    if n <= max {
+        return n;
+    }
+    let head: String = s.chars().take(max).collect();
+    match head.rfind(char::is_whitespace) {
+        Some(b) if head[..b].chars().count() > max / 2 => head[..b].chars().count(),
+        // a `max`-long run with no space in its second half is not prose; cut where asked
+        _ => max,
+    }
+}
+
 /// Split `text` into chunks of at most `max` chars, cutting on blank lines, then lines,
 /// then whitespace. Literal: nothing is rewritten.
 fn chunks(text: &str, max: usize) -> Vec<String> {
@@ -94,8 +113,9 @@ pub fn from_turn_all(session_id: &str, t: &Turn) -> Vec<Episode> {
         }
     };
     let up = t.user_prompt.trim();
-    if up.chars().count() > 600 && !(up.starts_with('<') && up.contains("</")) {
-        let rest: String = up.chars().skip(600).collect();
+    let head = head_chars(up, 600);
+    if up.chars().count() > head && !(up.starts_with('<') && up.contains("</")) {
+        let rest: String = up.chars().skip(head).collect();
         push("user", &rest);
     }
     let a = t.assistant_text.trim();
@@ -127,7 +147,7 @@ pub fn from_turn(session_id: &str, t: &Turn) -> Option<Episode> {
     }
     let mut body = String::new();
     body.push_str("user: ");
-    body.push_str(truncate_chars(up, 600));
+    body.push_str(truncate_chars(up, head_chars(up, 600)));
     body.push('\n');
     if !t.assistant_text.trim().is_empty() {
         body.push_str("assistant: ");
@@ -230,5 +250,51 @@ mod chunk_tests {
         assert!(all.contains("paragraph 39"));
         let c = chunks("a b c", 10);
         assert_eq!(c, vec!["a b c"]);
+    }
+}
+
+#[cfg(test)]
+mod split_word_tests {
+    use super::{from_turn_all, head_chars};
+    use crate::model::Turn;
+
+    #[test]
+    fn a_long_message_is_not_cut_through_a_word() {
+        let word = "usuario";
+        // 600 characters of filler, then a word straddling the boundary
+        let filler = "palabra ".repeat(74); // 592 chars
+        let msg = format!("{filler}{word} en sus proyectos internos y algo mas que continua");
+        let n = head_chars(&msg, 600);
+        let head: String = msg.chars().take(n).collect();
+        let rest: String = msg.chars().skip(n).collect();
+        assert!(
+            !head.ends_with("us") && !rest.starts_with("uario"),
+            "head ends {:?}, rest starts {:?}",
+            &head[head.len().saturating_sub(12)..],
+            &rest[..12.min(rest.len())]
+        );
+        assert!(
+            head.ends_with(word),
+            "the head keeps the whole word: {:?}",
+            &head[head.len().saturating_sub(12)..]
+        );
+        assert!(
+            rest.trim_start().starts_with("en sus"),
+            "and the continuation begins at the next whole word: {:?}",
+            &rest[..20.min(rest.len())]
+        );
+
+        let t = Turn {
+            index: 0,
+            user_prompt: msg,
+            ..Default::default()
+        };
+        let eps = from_turn_all("s", &t);
+        assert!(eps.len() > 1, "a long message yields a continuation");
+        assert!(
+            eps[1].body.contains("(cont. 1): en sus"),
+            "and it starts on a whole word: {}",
+            &eps[1].body[..60.min(eps[1].body.len())]
+        );
     }
 }
