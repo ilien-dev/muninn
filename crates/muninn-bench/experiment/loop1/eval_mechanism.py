@@ -11,11 +11,31 @@ freeze. The frozen muninn binary ingests each synthetic transcript. Measured per
               (withdrawn scenarios: does not return the old value)
 Usage: eval_mechanism.py --muninn <binary> [--out results.json]
 """
-import argparse, json, os, subprocess, tempfile, uuid
+import argparse, json, os, re, subprocess, tempfile, uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+
+def delivered_text(stdout: str) -> str:
+    """What the blocks actually say, lowercased.
+
+    The oracle asks whether a value appears in what was delivered, and until this existed it
+    asked it of the whole stream. That stream also carries a block's own header line — its
+    date, its synthetic session id — and, before the binary moved it to stderr, a wall-clock
+    timing. A scenario whose value is a short token then matched on the instrument: the
+    retry-budget cell reads `7`, and `session s017` or `0.57 ms` made it pass on some runs
+    and not others, on a fixture this file's own README calls deterministic."""
+    keep = [l for l in stdout.splitlines()
+            if not l.startswith("[muninn:") and not l.lstrip().startswith("evidence:")
+            and not l.startswith("terms:")]
+    return "\n".join(keep).lower()
+
+
+def says(text: str, value: str) -> bool:
+    """`value` as a whole token, so `3` does not match inside `2026-09-01`."""
+    return re.search(r"(?<![0-9a-z])" + re.escape(value) + r"(?![0-9a-z])", text) is not None
 
 
 def transcript(path: Path, sid: str, cwd: str, ts: datetime, user: str, assistant: str) -> None:
@@ -80,7 +100,7 @@ def main() -> None:
                 return [r for r in recs if not r.get("invalid") and text.strip().rstrip(".!;")[:40].lower() in (r.get("body") or "").lower()]
             a_active = active_with(it["a"])
             b_active = active_with(it["b"])
-            rec = subprocess.run([a.muninn, "--cwd", str(root), "recall", s["topic"]], env=env, capture_output=True, text=True).stdout.lower()
+            rec = delivered_text(subprocess.run([a.muninn, "--cwd", str(root), "recall", s["topic"]], env=env, capture_output=True, text=True).stdout)
             old, new = s["old"].lower(), (s["new"] or "").lower()
             served_ok = (old not in rec) and (not new or new.split()[0] in rec)
             # loop 2 (instrument, applied to every binary alike): the later message often names the
@@ -91,7 +111,7 @@ def main() -> None:
             a_served = snippet(it["a"]) in rec
             b_served = snippet(it["b"]) in rec
             results.append({"style": style, "id": s["id"], "retired_a": not a_active, "kept_b": bool(b_active),
-                            "served_ok": served_ok, "old_served": old in rec,
+                            "served_ok": served_ok, "old_served": says(rec, old),
                             "a_served": a_served, "b_served": b_served, "current_only": b_served and not a_served,
                             "a_kinds": sorted({r["kind"] for r in a_active}), "b_kinds": sorted({r["kind"] for r in b_active})})
     json.dump(results, open(a.out, "w"), indent=1)

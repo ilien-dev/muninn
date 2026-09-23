@@ -22,12 +22,32 @@ b_served beside them, so a miss can be read as a retirement miss or a delivery m
 
 Usage: eval_all.py --muninn <binary> --arm both --order adjacent [--out results.json]
 """
-import argparse, json, os, subprocess, tempfile, uuid
+import argparse, json, os, re, subprocess, tempfile, uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EXP = HERE.parent
+
+
+def delivered_text(stdout: str) -> str:
+    """What the blocks actually say, lowercased.
+
+    The oracle asks whether a value appears in what was delivered, and until this existed it
+    asked it of the whole stream. That stream also carries a block's own header line — its
+    date, its synthetic session id — and, before the binary moved it to stderr, a wall-clock
+    timing. A scenario whose value is a short token then matched on the instrument: the
+    retry-budget cell reads `7`, and `session s017` or `0.57 ms` made it pass on some runs
+    and not others, on a fixture this file's own README calls deterministic."""
+    keep = [l for l in stdout.splitlines()
+            if not l.startswith("[muninn:") and not l.lstrip().startswith("evidence:")
+            and not l.startswith("terms:")]
+    return "\n".join(keep).lower()
+
+
+def says(text: str, value: str) -> bool:
+    """`value` as a whole token, so `3` does not match inside `2026-09-01`."""
+    return re.search(r"(?<![0-9a-z])" + re.escape(value) + r"(?![0-9a-z])", text) is not None
 
 
 def sh(args, cwd=None, env=None):
@@ -164,15 +184,15 @@ def main() -> None:
             it = items.get(f"{s['id']}#{style}")
             if not it:
                 continue
-            rec = sh([a.muninn, "--cwd", root, "recall", s["topic"]], root, env).stdout.lower()
+            rec = delivered_text(sh([a.muninn, "--cwd", root, "recall", s["topic"]], root, env).stdout)
             old, new = s["old"].lower(), s["new"].lower()
             snippet = lambda t: t.strip().rstrip(".!;").lower()[:40]
             results.append({
                 "arm": a.arm, "order": a.order, "style": style, "id": s["id"],
                 "retired_a": not active_with(it["a"]),
                 "kept_b": bool(active_with(it["b"])) if a.arm in ("talk", "both") else None,
-                "served_ok": (old not in rec) and (new.split()[0] in rec),
-                "old_served": old in rec,
+                "served_ok": (not says(rec, old)) and says(rec, new.split()[0]),
+                "old_served": says(rec, old),
                 "a_served": snippet(it["a"]) in rec,
                 "b_served": snippet(it["b"]) in rec,
             })
