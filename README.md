@@ -275,29 +275,26 @@ build, on the same cells and one instrument, it is 0.876 [0.826, 0.891] — less
 still more than the competitor's. Turning the per-prompt block off takes it to 1.8 and costs
 about four answers in fifty, which is why it is not the default.
 
-Where the decisions exist only in the conversation and never reach the code, the same grid is
-**not a win and is not claimed as one**: 42 of 54 against 33 of 54, p = 0.094 — closer than the
-39 of 54 it read before, and still inside what chance produces often enough that it means
-nothing. On those cells the retired value still reaches the file 12 times in 54, where with a
-commit in the tree it reaches it none; and the context Muninn occupies goes up rather than
-down. The one condition this engine has never won is still the one where nothing but the
-conversation says a decision changed — and a held-out set built after the fact, by another
-model family, says it is worse than that. On wording this engine was never fitted to, Muninn
-passes 11 of 54 where claude-mem passes 31 of 53. The reason is worth knowing before you
-install this: **a message that is just a value — `zstd`, on its own, the way people type —
-produces an episode and no decision at all.** Nothing is retired, nothing reaches the
-catalogue, and the filter has nothing to filter. Muninn's typed memory needs you to write a
-sentence. The obvious repair — treat the assistant's reply as saying the word was a choice —
-was built and thrown away without running it, because in that fixture the assistant replied
-"noted, though there's no task attached yet": it read no decision there either. A bare word
-is a turn with no statement in it, and a typed ledger has nothing to record; a store-
-everything memory keeps the raw turn and its agent finds the later word by searching. That is
-a difference in design, and on that input theirs is better. On a second held-out set where every message is a
-sentence, it ties: 38 of 54 against claude-mem's 38 of 54. But it writes the retired value into
-16 of those 54 cells where claude-mem writes it into 2. When this engine misses on that
-condition it does not go quiet — it serves the old decision as the current one, which is the
-opposite of what it exists to do. Where the decision also reaches the code, it does not: the
-value comes from the diff, and that is the condition the 54 of 54 above was measured in.
+Where the decisions exist only in the conversation and never reach the code, **this engine has
+never beaten claude-mem on any wording anyone generated**, and that is now four held-out sets,
+each registered before it ran:
+
+| how the change was worded | Muninn | claude-mem | Muninn wrote the retired value | claude-mem did |
+|---|---|---|---|---|
+| bare values (`zstd`) | 11 of 54 | 31 of 53 | 0 | 0 |
+| sentences | 38 of 54 | 38 of 54 | 16 | 2 |
+| sentences, comparative | 35 of 54 | 41 of 54 | 1 | 0 |
+| sentences with change verbs | 50 of 54 | 50 of 54 | 4 | 0 |
+| **all four** | **134 of 216** | **160 of 215** | **21** | **2** |
+
+Two ties and two losses, and the ties are the wordings that happen to suit a list of decision
+verbs. Across all four it also asserts the stale value about ten times as often. The reason is
+structural: typed capture fires on a vocabulary, conversation's grammar is unbounded, and
+every widening tried reached the cells it was read off and did not survive the next set
+generated afterwards. A store-everything memory has no vocabulary to miss.
+
+Where the decision also reaches the code, none of that applies: the value comes from the diff,
+and that is the condition the 54 of 54 above was measured in.
 
 The earlier comparison (claude-mem and agentmemory) gives every tool the same
 decisions from the same real sessions, and nobody tells it which decisions were replaced.
