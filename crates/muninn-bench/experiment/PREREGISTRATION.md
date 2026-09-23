@@ -4175,3 +4175,21 @@ binaries.
   substitution.
 - BASE and HEAD differ by a day of commits, not by one change, so this attributes nothing
   to any single one of them.
+
+## Result, 2026-09-23
+
+**Median HEAD/BASE = 0.961 [0.958, 0.962]** over the 60 cells; 49 of 60 below 1, range
+0.894 to 1.036. Median injected characters 3 614 → 3 461. Raw rows in
+`results/v16-offline.json`, script `h2h/offline_injection.py`.
+
+Read literally and no further: on the first prompt of each cell, on the same seeding and
+the same frozen task, today's build puts about 3.9 % less in front of the model than the
+build the published 2.591× was measured on. It is not the window cost — the competitor's
+half is untouched — and it is not the cell total, because a real cell's later turns are
+not replayed. The registered decision was whether the live grid's secondary has anything
+to find; it does.
+
+The eleven cells above 1 are the ones the day's additions reach and the floor does not:
+the changes that add text (`muninn show` naming ids it could not serve, the `summary:`
+label, `why`'s corrected wording) cost a constant, and where the floor removed nothing
+that constant is all there is.
