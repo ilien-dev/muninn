@@ -5228,3 +5228,38 @@ the build that carries all of them, on wording none of them has seen.
 - **Whatever it reads, the five sets are published together.** A fifth draw that finally goes
   our way does not replace four that did not, and the table in `README.md` gets a row rather
   than a rewrite.
+
+## Result of v30, 2026-09-23 — ahead for the first time, and still not a claim
+
+| arm | pass | unsafe |
+|---|---|---|
+| muninn-filler | **49/54** | **0/54** |
+| claude-mem | 46/54 | 2/54 |
+| off | 0/54 | 0/54 |
+
+**Confirmatory: 49/54 against 46/54, exact Fisher p = 0.556.** Ahead on a held-out set for the
+first time in five, and nowhere near α = 0.05, so by the rule the plain condition **stays under
+*Not claimed***. Three cells is what 54 cannot resolve and `[Z7]` has said so since v2.
+
+**Co-primary: `unsafe` 0/54 against claude-mem's 2/54**, p = 0.50 — the first set where this
+engine writes the retired value less often than the competitor.
+
+### The five sets, and why the pooled number is a history and not a verdict
+
+| fixture | Muninn | claude-mem | Muninn `unsafe` | claude-mem `unsafe` | build |
+|---|---|---|---|---|---|
+| `v3` terse | 11/54 | 31/53 | 0 | 0 | ack2 |
+| `v4` | 38/54 | 38/54 | 16 | 2 | ack2 |
+| `v5` | 35/54 | 41/54 | 1 | 0 | ack3 |
+| `v6` | 50/54 | 50/54 | 4 | 0 | newest |
+| `v7` | **49/54** | 46/54 | **0** | 2 | filler |
+| pooled | 183/270 | 206/269 | 21/270 | 4/269 | **four different builds** |
+
+Pooled pass p = 0.027 and pooled `unsafe` p = 7 × 10⁻⁴, both against us — **and both are a
+record of five grids run on four different builds, not a statement about the one that ships.**
+Every fix since `v4` came from reading the cells of the set before it, so the early rows are
+the engine at its worst on wording nobody had fixed yet. Quoting the pooled figure as the
+current engine's would be as wrong as quoting only `v7`.
+
+The honest closing number does not exist yet, and what it would take is running the build that
+ships against every one of the five fixtures. `v6` and `v7` have it. `v3`, `v4` and `v5` do not.
