@@ -31,7 +31,7 @@ design — retired records are never served.
 `muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and ends with `sufficient` or `insufficient`. Quote records, do not paraphrase them into certainty.
 
 ## Diagnosing
-`muninn status` → `MUNINN 10/10 GREEN` or one RED with its fix. `muninn doctor` lists all ten checks with their detail.
+`muninn status` → `MUNINN 11/11 GREEN` or one RED with its fix. `muninn doctor` lists all eleven checks with their detail.
 
 ## Using what a block says
 Use it as freely as anything else you know — in an answer, in code, in a document — in your own

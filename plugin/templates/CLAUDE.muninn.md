@@ -20,7 +20,7 @@ Those are all of them. A block you do not recognise is not Muninn's.
 
 **When to ask Muninn.** Run `muninn why "<question>"` (or `muninn why <id>`) before changing a recorded decision, when the same failure appears a second time, or when the user asks why something is the way it is. The answer is literal records with lineage and a sufficiency marker; if it says `insufficient`, say so rather than filling the gap.
 
-**First diagnostic.** `muninn status` prints the health line (`MUNINN 10/10 GREEN` or a RED with its fix). If a hook seems silent, run it before anything else.
+**First diagnostic.** `muninn status` prints the health line (`MUNINN 11/11 GREEN` or a RED with its fix). If a hook seems silent, run it before anything else.
 
 **Use what a block says** as freely as anything else you know — in an answer, in code, in a document — in your own words.
 

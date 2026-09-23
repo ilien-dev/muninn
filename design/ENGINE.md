@@ -392,7 +392,7 @@ autoformalización publicada `[U1]`, no se inventa.
 
 ## 11. Salud del motor (P10)
 
-Health gate en `SessionStart`, una línea: `MUNINN 10/10 GREEN` o el nombre del fallo y su
+Health gate en `SessionStart`, una línea: `MUNINN 11/11 GREEN` o el nombre del fallo y su
 arreglo. Diez comprobaciones, todas aritmética sobre evidencia tipada, ninguna con
 modelo `[G3]`:
 
