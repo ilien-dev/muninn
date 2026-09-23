@@ -4912,3 +4912,40 @@ the held-out grid to show only that nothing got worse. `v5` shows nothing got wo
 file records the refusal because `[Z6]` and the v8 entry above set the standard: a registered
 rule may be refused, and the refusal is published with its reasoning where the rule is, never
 quietly reinterpreted.
+
+## Why v24's three total failures are not another rule away — the boundary, read off the cells
+
+`revoke-wire-format`, `revoke-async-runtime` and `revoke-license` fail 6/6 each on `v5`.
+`revoke-version-scheme` passes 5/6 with the same comparative shape. The difference is one
+clause of the assistant's reply:
+
+    Semver is clearer…   -> "…and this replaces the earlier calver choice."      passes
+    tokio fits better…   -> "going with tokio as the async runtime."             fails
+    cbor makes more…     -> "I'll treat CBOR as the serialization format."       fails
+    Apache-2.0 is…       -> "Apache-2.0 it is, since it's better for adoption."  fails
+
+The passing reply names the pair; the failing ones name only the arrival. A bridge was built
+for that — the reply names the *slot* ("async runtime") and the earlier record names it too,
+so the reply can stand in for the user's words in the supersession test. It was thrown away
+without a grid, because a two-turn probe shows the problem is a layer earlier: **neither
+message is captured as a decision in the first place.**
+
+    async-std is our chosen async runtime.        -> episode, no decision
+    tokio fits better with the broader ecosystem. -> episode, no decision
+
+Nothing to supersede, nothing to supersede it with. On this fixture Muninn's 35/54 comes from
+episodes reaching the lexical read path, and the whole typed ledger — the filter, the
+catalogue, `[Z5]`'s machinery — is inert.
+
+**This is the boundary, and it is structural rather than a list of missing cases.** Typed
+capture fires on a vocabulary of decision verbs. `X is our chosen Y` and `Serialization
+format is msgpack` carry no such verb, and the only deterministic thing separating them from
+`the build is slow` is more vocabulary. Every widening measured today reached the cells it was
+read off and did not survive a fixture generated afterwards: v20 read 48/54 fitted and 35/54
+unseen. That is not a reason to add a fourth list.
+
+The engine wins where a commit carries the value — 54/54, and there the record comes from a
+diff and not from grammar. It ties or loses where only the conversation does, and the reason
+is that conversation's grammar is unbounded and a verb list is not. **No LLM is the
+constraint this project accepted, and this is what the constraint costs.** It is the sharpest
+statement of the ceiling `[Z5]` names that this file has been able to make.
