@@ -697,6 +697,26 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         "\u{2026} and more, not listed \u{2014} a subject missing from this list may still be on \
          record; ask `muninn why \"<question>\"`. "
             .to_string()
+    } else if db
+        .conn
+        .query_row(
+            "SELECT 1 FROM served_record WHERE kind = 'episode' LIMIT 1",
+            [],
+            |_| Ok(()),
+        )
+        .is_ok()
+    {
+        // The list is every typed record, and on a store that also holds episodes that is not
+        // the same as everything on record. The old sentence said it was, and it was read on
+        // exactly the store where it does most harm: where a person typed the value and
+        // nothing else, nothing is typed, the list has two lines, and twenty episodes hold
+        // every value the question is about. An agent told those subjects have nothing on
+        // record has been told the opposite of the truth, by the one block whose job is to say
+        // what is there.
+        "That is every decision, rule and correction on record. Earlier sessions are kept too, \
+         as episodes, and they are not listed here \u{2014} a subject missing from this list may \
+         still be in one; ask `muninn why \"<question>\"`. "
+            .to_string()
     } else {
         "That is all of it: a subject missing from this list has nothing on record. ".to_string()
     };
@@ -1275,6 +1295,33 @@ mod tests {
             c2.text.contains("That is all of it"),
             "a complete catalogue says so, which is what makes an absence mean something:\n{}",
             c2.text
+        );
+
+        // …and it only means it where there is nothing else. One episode in the same store and
+        // the sentence is false: the list holds the typed records and the episodes hold the
+        // rest, which is the whole of what a store of bare values has.
+        db2.conn
+            .execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                 VALUES('episode','said:seen:z','is','zstd','user: zstd','tool_observed',1,'s','e',2)",
+                [],
+            )
+            .unwrap();
+        let c3 = catalog(&db2, 300).unwrap();
+        assert!(
+            !c3.text.contains("nothing on record"),
+            "a store with episodes in it does not say a missing subject has nothing:\n{}",
+            c3.text
+        );
+        assert!(
+            c3.text.contains("as episodes") && c3.text.contains("muninn why"),
+            "it names what else is there and how to reach it:\n{}",
+            c3.text
+        );
+        assert!(
+            !c3.text.contains("zstd"),
+            "and still does not list the episode itself:\n{}",
+            c3.text
         );
         assert!(
             c2.text.contains("the only decision"),
