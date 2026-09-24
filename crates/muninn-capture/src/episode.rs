@@ -43,8 +43,18 @@ fn strip_tags(s: &str) -> String {
 /// follows, the same rule `decision_candidates` applies to a sentence), and a line without two
 /// words in it. If the whole text is that, the first non-empty line is used anyway: an object
 /// is better wrong than missing.
+///
+/// The two-word test has one exception, and it is the message that is one word. `gzip`,
+/// `zstd`, `msgpack`, `semver` — a person types the value and nothing else, and the test threw
+/// it away and took whatever came next. On the fixture built out of such messages, eight of
+/// twenty episodes carried the harness's own trailing instruction as their object instead of
+/// the value, so the catalogue, `muninn why` and every listing showed the same sentence eight
+/// times over and the values appeared nowhere. What the test is for is a line that opens a
+/// block rather than states something — a fence, a heading, a numbered marker — and every one
+/// of those is *marked*: it carries a `#`, a bullet, a digit, a trailing colon. An unmarked
+/// first line is not opening anything. It is the message.
 fn first_line(s: &str, max: usize) -> String {
-    let says_something = |l: &str| {
+    let says_something = |l: &str, is_first: bool| {
         let t = l.trim();
         let bare = t
             .trim_start_matches(|c: char| {
@@ -59,10 +69,13 @@ fn first_line(s: &str, max: usize) -> String {
             .split_whitespace()
             .filter(|w| w.chars().any(char::is_alphanumeric))
             .collect();
-        words.len() >= 2
-            && words
-                .iter()
-                .any(|w| w.chars().filter(|c| c.is_alphabetic()).count() >= 3)
+        let long_enough = words
+            .iter()
+            .any(|w| w.chars().filter(|c| c.is_alphabetic()).count() >= 3);
+        if words.len() == 1 && is_first && bare == t {
+            return long_enough || t.chars().any(|c| c.is_ascii_digit());
+        }
+        words.len() >= 2 && long_enough
     };
     let mut fenced = false;
     let mut pick: Option<&str> = None;
@@ -72,12 +85,13 @@ fn first_line(s: &str, max: usize) -> String {
         if t.is_empty() {
             continue;
         }
+        let is_first = first.is_none();
         first.get_or_insert(t);
         if t.starts_with("```") || t.starts_with("~~~") {
             fenced = !fenced;
             continue;
         }
-        if !fenced && pick.is_none() && says_something(t) {
+        if !fenced && pick.is_none() && says_something(t, is_first) {
             pick = Some(t);
         }
     }
@@ -329,6 +343,21 @@ mod split_word_tests {
             ),
             // nothing in it says anything, so the first line is used rather than nothing
             ("},", "},"),
+            // the message is one word, and what follows it is not what the message is about
+            (
+                "zstd\n\n(Reply with one short sentence acknowledging.)",
+                "zstd",
+            ),
+            ("GPL-3.0\n\nplease confirm you have read this", "GPL-3.0"),
+            // a marked line still opens a block rather than stating anything, one word or not
+            (
+                "# Setup\nuse the pinned toolchain",
+                "use the pinned toolchain",
+            ),
+            (
+                "- one\nthe list above is the whole of it",
+                "the list above is the whole of it",
+            ),
         ];
         for (body, want) in cases {
             assert_eq!(super::first_line(body, 160), want, "{body:?}");
