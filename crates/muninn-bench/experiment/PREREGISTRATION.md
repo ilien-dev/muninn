@@ -5370,3 +5370,36 @@ through `-v7/`.
   code condition, and this is the first thing that has ever been added to it. **If any fixture
   reads worse than v31's build, the change is reverted**, and the per-fixture number is
   published rather than averaged into the total.
+
+## Result of v32, 2026-09-23 — the adverse rule fires, and the catalogue change is reverted
+
+| fixture | sparse catalogue | v31's build | claude-mem |
+|---|---|---|---|
+| `v3` bare values | **27/54** | 18/54 | 31/53 |
+| `v4` | 48/54 | **53/54** | 38/54 |
+| `v5` | 42/54 | **45/54** | 41/54 |
+| `v6` | 53/54 | 53/54 | 50/54 |
+| `v7` | 45/54 | **49/54** | 46/54 |
+| total | 215/270 | 218/270 | 206/269 |
+| `unsafe` | **9/270** | 1/270 | 4/269 |
+
+**It buys nine cells on the fixture it was aimed at and loses twelve across the other three.**
+`unsafe` goes 1/270 to 9/270. The adverse rule fires on `v4`, `v5` and `v7`, and by what was
+written before the cells ran the change is reverted. It is reverted.
+
+This is the thing the rule existed to catch, and it is worth stating plainly: **the catalogue
+works because of what it leaves out.** It is the change that won the code condition, 54/54, and
+the first thing ever added to it made three of five fixtures worse and tripled the rate at
+which the retired value reaches the file. Filling its remaining budget with the short things
+that were said is not free even when the budget is there to spend.
+
+### What is confounded, and what is not
+
+v32's arm carries two changes: this and the `STOP` fix in the term fallback. The fallback only
+runs when *every* content word of the question is absent from the store, which on `v4` through
+`v7` never happens — those queries reach records with the words in them. So the three
+regressions cannot be the fallback, and reverting the catalogue alone is the right cut.
+
+`v3`'s 18 → 27 is therefore unattributed between the two, and the honest consequence is that
+**the published 218/270 stands until the fallback alone is measured on `v3`**. That grid is
+one arm on one fixture, and it is registered below rather than assumed.
