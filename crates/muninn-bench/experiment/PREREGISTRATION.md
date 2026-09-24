@@ -5706,6 +5706,18 @@ with the old value still typed in 4 either way. **The proxy cannot see what this
 Putting two values on the catalogue where one was is precisely the shape that makes an agent
 write the retired one, and that is `unsafe`, which the proxy does not measure and the grid does.
 
+## Precision on real text, measured before the grid
+
+The rule's predicate was run over every user turn of this project's own transcripts — the only
+corpus of real messages available here — and it fires on **0 of 1 175**. That is the check this
+file has asked of a capture rule since the one that produced a false retirement on an ordinary
+English word, and it is the strongest thing that can be said for this one's precision.
+
+It is also the fair criticism of it: a rule that never fires on the only real conversation to
+hand may be a rule shaped to the fixtures. The fixtures were generated after the fact by another
+model family from a prompt that says nothing about what this engine reads, which is what makes
+them worth running at all, and it is why the grid below is the test and this paragraph is not.
+
 ## The grid
 
 `run_h2h.py --out results/h2h-v35-v5 --runs 6 --arms off,claude-mem,muninn-shown,muninn-said
