@@ -673,7 +673,7 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
     }
     if st.commits + st.reverts + st.values_retired > 0
         || db
-            .meta_get("records_changed_since_render")
+            .meta_get("records_changed_since_project")
             .ok()
             .flatten()
             .as_deref()
@@ -682,7 +682,7 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         match muninn_core::project::project(paths, &db, &[]) {
             Ok(n) => {
                 st.projected = n;
-                let _ = db.meta_set("records_changed_since_render", "0");
+                let _ = db.meta_set("records_changed_since_project", "0");
             }
             Err(e) => output::err(&format!("muninn maintain: project: {e}")),
         }

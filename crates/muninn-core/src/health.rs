@@ -387,19 +387,42 @@ pub fn run(
         Some(db) => {
             let last = db.meta_get("last_render_hash").ok().flatten();
             let prev = db.meta_get("prev_render_hash").ok().flatten();
-            let changed_since = db
-                .meta_get("records_changed_since_render")
+            // What the session-start cue can serve is the active invariants and corrections.
+            // `fold_into_db` pins their count beside the hash, so a pool larger than the
+            // pinned one means records this render could have carried arrived after it was
+            // taken. Reading the projection trigger here instead made the check RED on every
+            // healthy store: commits set that flag too, and a commit is not something the
+            // session-start render was ever going to show.
+            let pinned: i64 = db
+                .meta_get("last_render_pool")
                 .ok()
                 .flatten()
-                .unwrap_or_default()
-                == "1";
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(i64::MAX);
+            let pool: i64 = db
+                .conn
+                .query_row(
+                    "SELECT count(*) FROM served_record WHERE kind IN ('invariant','correction')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
             match (last, prev) {
-                (Some(a), Some(b)) if a == b && changed_since => check(
+                (Some(a), Some(b)) if a == b && pool > pinned => check(
                     6,
                     "render",
                     Status::Red,
-                    "invariant render identical across sessions despite new records",
+                    format!(
+                        "same invariant render two sessions running while the pool grew {pinned} → {pool}"
+                    ),
                     Some("run `muninn status --render` to inspect"),
+                ),
+                (Some(a), Some(b)) if a == b => check(
+                    6,
+                    "render",
+                    Status::Green,
+                    format!("render stable, pool unchanged at {pool}"),
+                    None,
                 ),
                 (Some(_), Some(_)) => check(6, "render", Status::Green, "render changed", None),
                 _ => check(6, "render", Status::Cold, "fewer than two renders", None),
@@ -789,6 +812,53 @@ mod tests {
         assert_eq!(head(&long, 160).chars().count(), 161);
         assert_eq!(head("short", 160), "short");
         assert_eq!(head("áéíóú", 2), "áé…");
+    }
+
+    /// Check 6 spent its whole life cold, reading two keys nothing wrote; the day it could
+    /// fire it went RED on a store where nothing was frozen, because it read the projection
+    /// trigger — a key every commit sets. What it means to ask is whether the session-start
+    /// render stood still while the records it draws from grew, and only those records count.
+    #[test]
+    fn a_frozen_render_is_one_the_new_invariants_never_reached() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        std::fs::create_dir_all(paths.muninn_dir.clone()).unwrap();
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let render6 = |db: &Db| {
+            run(&paths, Some(db), None, true)
+                .checks
+                .into_iter()
+                .find(|c| c.id == 6)
+                .expect("check 6")
+        };
+        let add = |db: &Db, kind: &str, obj: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,'s','is',?2,'b','user_said',3,'s',?2,1)",
+                    [kind, obj],
+                )
+                .unwrap();
+        };
+        add(&db, "invariant", "one");
+        db.meta_set("last_render_hash", "abc").unwrap();
+        db.meta_set("prev_render_hash", "abc").unwrap();
+        db.meta_set("last_render_pool", "1").unwrap();
+        assert_eq!(render6(&db).status, Status::Green, "the pool has not moved");
+
+        // a commit decision is not something the session-start render was going to carry
+        add(&db, "decision", "shipped");
+        assert_eq!(
+            render6(&db).status,
+            Status::Green,
+            "commits are not the pool"
+        );
+
+        // a new invariant that two identical renders never served is the real fault
+        add(&db, "invariant", "two");
+        let c = render6(&db);
+        assert_eq!(c.status, Status::Red, "{}", c.detail);
+        assert!(c.detail.contains("1 \u{2192} 2"), "{}", c.detail);
     }
 
     #[test]

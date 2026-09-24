@@ -528,7 +528,7 @@ pub fn import(db: &Db, path: &Path) -> Result<ImportStats> {
     }
     tx.commit()?;
     let _ = crate::cue::derive_missing(db);
-    db.meta_set("records_changed_since_render", "1")?;
+    db.meta_set("records_changed_since_project", "1")?;
     Ok(st)
 }
 
