@@ -657,14 +657,22 @@ pub fn ingest_transcript_with(
         )?;
         stats.archived += n;
     }
-    // caps: active records beyond 20 000 → the oldest episodes (retained, not served)
+    // caps: active records beyond 20 000 → the oldest episodes with nothing pointing at them
+    //
+    // `ENGINE.md` says "sin referencias entrantes" and the query did not ask. An episode can
+    // be another record's heir — 68 of them are in this project's own store — and archiving
+    // one leaves a lineage whose `replaces #n` names a record that is itself retired, so
+    // `muninn show` answers "retired" to a question the catalogue told the agent to ask.
     let active: i64 = tx.query_row("SELECT count(*) FROM record WHERE invalid=0", [], |r| {
         r.get(0)
     })?;
     if active > MAX_ACTIVE_RECORDS {
         let over = active - MAX_ACTIVE_RECORDS;
         stats.archived += tx.execute(
-            "UPDATE record SET invalid=1, invalid_reason='cap' WHERE id IN (SELECT id FROM record WHERE invalid=0 AND kind='episode' ORDER BY created_at ASC LIMIT ?1)",
+            "UPDATE record SET invalid=1, invalid_reason='cap' WHERE id IN (\
+               SELECT id FROM record WHERE invalid=0 AND kind='episode' \
+               AND id NOT IN (SELECT invalidated_by FROM record WHERE invalidated_by IS NOT NULL) \
+               ORDER BY created_at ASC LIMIT ?1)",
             [over],
         )?;
     }
