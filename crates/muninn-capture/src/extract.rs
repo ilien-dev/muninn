@@ -939,8 +939,11 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
     // is the replacement appearing *before* the phrase
     let one = ONE.get_or_init(|| {
         [
-            r"(?i)\binstead of\s+([\w./@+-]{2,40})",
-            r"(?i)\b(?:en vez de|en lugar de)\s+([\w./@+-]{2,40})",
+            // `instead of the bcrypt decision that's on record (#10)` — the article is what
+            // the capture hit, and `the` is a stop word, so the whole reply read as saying
+            // nothing and the earlier decision stayed active beside its replacement.
+            r"(?i)\binstead of\s+(?:the\s+|our\s+|that\s+)?([\w./@+-]{2,40})",
+            r"(?i)\b(?:en vez de|en lugar de)\s+(?:la\s+|el\s+|nuestro\s+|nuestra\s+)?([\w./@+-]{2,40})",
             // `<arrived> replaces the earlier <gone>` — the reverse of `replace X with Y`,
             // and the form an assistant actually writes when it is acknowledging a change
             // it has just been told about. Every failing scenario of v22 has it in every
@@ -954,7 +957,7 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
             // same shape with a verb where the value would be. Allowing it returned `turn`,
             // and before `usable` had a floor it returned `it`, which retired the current
             // serialization decision because that word is in its sentence.
-            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b(?:\s+to\s+[\w-]+\s+(?:with|to|on|of|for)|\s+(?:with|on|of|for))?\s+([\w./@+-]{2,40})",
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:recorded\s+|existing\s+|standing\s+|current\s+|original\s+|stated\s+)?(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b(?:\s+to\s+[\w-]+\s+(?:with|to|on|of|for)|\s+(?:with|on|of|for))?\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:reemplaza|sustituye|revierte|anula)\s+(?:la|el)?\s*(?:decisi[oó]n\s+)?(?:anterior|previa|previo)\s+(?:de\s+)?([\w./@+-]{2,40})",
         ]
@@ -988,9 +991,12 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
     // ten retirements off one fixture and six typed records off another, because values that
     // short are real — `off` in "verification off in dev builds" is the value. The floor stays
     // at two and the list does the work.
-    const FILLER: [&str; 11] = [
+    // The nouns the patterns step over on the way to the value, and the words that mark the
+    // phrase as pointing backwards. Neither is ever the value, and both sit exactly where one
+    // would if a pattern reached one token too far.
+    const FILLER: [&str; 16] = [
         "decision", "choice", "plan", "policy", "call", "one", "note", "record", "entry",
-        "setting", "value",
+        "setting", "value", "earlier", "previous", "prior", "old", "former",
     ];
     let usable = |gone: String| {
         (gone.chars().count() >= 2
@@ -1091,7 +1097,7 @@ pub fn ack_states_replacement(ack: &str, new_object: &str) -> bool {
     static PHRASE: OnceLock<Regex> = OnceLock::new();
     let phrase = PHRASE.get_or_init(|| {
         Regex::new(
-            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b",
+            r#"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:(?:recorded\s+|existing\s+|standing\s+|current\s+|original\s+|stated\s+)?(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b|["“«`][^"”»`]{2,60}["”»`])"#,
         )
         .unwrap()
     });
