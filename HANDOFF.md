@@ -5,6 +5,12 @@ exact-tokens`, `cargo fmt`, `cargo clippy --workspace --all-targets --features e
 -- -D warnings`, `cargo run --release -p muninn-bench -- perf --strict`, and the fault suite
 at 200 repetitions. Nothing is running in the background.
 
+**The v34 grid was launched and is not finished.** It stalled in `claude-mem` seeding after
+two of six runs — two `muninn-base` snapshots exist under `/tmp/muninn-h2h/h2h-v34-v3/` and no
+task cell ran, so `results.jsonl` does not exist. The process and its orphaned competitor
+daemons were killed. Re-running the same command resumes from those snapshots; the stall is in
+the competitor's own seeding and has not been diagnosed.
+
 ## What is claimed
 
 **Where a decision is replaced in conversation *and* in the code** — the condition the engine
@@ -94,11 +100,25 @@ its own fixture — `v3`, 27/54 against 18/54, p = 0.118 — and not on the rule
    the delivery serves `gzip` and not `zstd`, because `gzip`'s turn contains the question's
    words and `zstd`'s does not. No lexical rule links a record whose whole text is one word to
    a question that does not contain it.
-2. **`--share-seed` exists and no grid has used it.** Each arm seeding its own store is the
+2. **The afternoon's capture work is measured on a proxy, not on cells.** `store_answers.py`
+   rebuilds each fixture's store offline and asks, per scenario, whether the new value is in an
+   active typed record and the old one is not. Against the build the day started from, on all
+   thirty seeded stores: **175 → 204 of 270 answered cleanly**, and the old value is still
+   typed in 12 against 25. Raw output in `results/store-answers-2026-09-23/`. It is a proxy —
+   an agent can read a correct store and write the wrong thing, and read an incomplete one and
+   get it right from the episodes, which is what `v3` does — and **no published cell figure
+   moves until a grid runs**.
+
+   What it found, each by reading the scenarios it called wrong: a pronoun retiring the current
+   decision (`it` was missing from `STOP`, and so were seventeen other function words); an
+   article after `instead of`; an adjective between `earlier` and the noun; a quoted phrase
+   where the typing gate wanted a noun; and one function answering two questions, which is why
+   `ack_states_replacement` now exists beside `ack_replacement`.
+3. **`--share-seed` exists and no grid has used it.** Each arm seeding its own store is the
    remaining structural source of the drift above; pairing on the task was tried on all six
    grids that hold both arms and recovers nothing (McNemar and Fisher agree to within 0.05),
    so the analysis side is closed and the store side is not.
-3. **Gate 5b still needs size and its own registration.**
-4. `PREREGISTRATION.md` is the file that matters: every arm, its rule written before its data,
+4. **Gate 5b still needs size and its own registration.**
+5. `PREREGISTRATION.md` is the file that matters: every arm, its rule written before its data,
    every result including the four changes reverted and the one registered rule this project
    refused in writing.
