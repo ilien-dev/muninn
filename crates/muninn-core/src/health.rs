@@ -1,4 +1,4 @@
-//! Health gate: nine checks, all arithmetic over typed evidence, no model [G3].
+//! Health gate: ten checks, all arithmetic over typed evidence, no model [G3].
 //! Alert semantics: cold ≠ dead; optional ≠ broken; RED is always actionable.
 
 use crate::caps;
@@ -375,39 +375,12 @@ pub fn run(
         None => check(4, "fts", Status::Cold, "no database", None),
     });
 
-    // 5. pending capture queue
-    checks.push(match db {
-        Some(db) => {
-            let pending = db
-                .meta_get("capture_pending")
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-            let n = if pending.trim().is_empty() {
-                0
-            } else {
-                pending.split('\n').filter(|l| !l.is_empty()).count()
-            };
-            match n {
-                0 => check(5, "capture", Status::Green, "queue empty", None),
-                1..=3 => check(
-                    5,
-                    "capture",
-                    Status::Cold,
-                    format!("{n} transcript(s) pending"),
-                    None,
-                ),
-                _ => check(
-                    5,
-                    "capture",
-                    Status::Red,
-                    format!("{n} transcripts pending"),
-                    Some("run `muninn doctor --ingest`"),
-                ),
-            }
-        }
-        None => check(5, "capture", Status::Cold, "no database", None),
-    });
+    // There is no check 5. It watched a `capture_pending` queue by reading a `meta` key
+    // nothing has ever written, so it answered "queue empty" in every report this project has
+    // produced, whatever the truth was — a green that asserted rather than observed. The
+    // question it meant to ask, whether ingest has kept up, is check 1's and check 1 answers
+    // it from two keys that are written. The id is left out rather than reused so that a
+    // reference to any other check keeps meaning what it meant.
 
     // 6. render not frozen
     checks.push(match db {
