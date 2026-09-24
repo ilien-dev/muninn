@@ -288,8 +288,44 @@ fn populate(root: &Path, records: usize, cues: usize) -> Result<()> {
         }
     }
     tx.commit()?;
-    db.conn
-        .execute_batch("INSERT INTO record_fts(record_fts) VALUES('optimize');")?;
+    // The index a store actually has, not the one a bulk load leaves.
+    //
+    // Everything above goes in one transaction and was followed by an `optimize`, which is
+    // the tidiest FTS5 index SQLite can produce. Production never sees it: `Stop` writes a
+    // handful of records per turn, so a store at the schema's cap is the product of thousands
+    // of small commits. Measured on 20 000 records written in 2 000 transactions of ten, the
+    // BM25 query costs 8.56 ms against 6.54 ms after an optimize, on an index with 918
+    // segments against 416 — and the bulk-loaded fixture was reporting 1.4 ms.
+    //
+    // So the rows are rewritten into the index the way they arrive. The `optimize` stays out:
+    // whether the engine should run one is the question the contract is now able to ask.
+    {
+        let ids: Vec<i64> = db
+            .conn
+            .prepare("SELECT id FROM record WHERE invalid = 0")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        db.conn.execute_batch(
+            "INSERT INTO record_fts(record_fts) VALUES('delete-all');              INSERT OR REPLACE INTO meta(key,value) VALUES('fts_rows','0');",
+        )?;
+        for chunk in ids.chunks(10) {
+            let tx = db.write_tx()?;
+            {
+                let mut st = tx.prepare(
+                    "INSERT INTO record_fts(rowid, subject, object, body)                      SELECT id, subject, object, body FROM record WHERE id = ?1",
+                )?;
+                for id in chunk {
+                    st.execute([id])?;
+                }
+            }
+            tx.execute(
+                "UPDATE meta SET value = CAST(CAST(value AS INTEGER) + ?1 AS TEXT) WHERE key='fts_rows'",
+                [chunk.len() as i64],
+            )?;
+            tx.commit()?;
+        }
+    }
     db.meta_set(
         "bench_populated_ms",
         &(t.elapsed().as_secs_f64() * 1000.0).to_string(),
