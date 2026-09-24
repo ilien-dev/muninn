@@ -1300,6 +1300,64 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
             });
         }
     }
+    // The shape v22 named and did not solve: the user states the new value with a reason, in
+    // no form this file recognises as a decision, and the assistant's reply names nothing that
+    // went either — "Apache-2.0 is better for enterprise adoption", answered with "Noted:
+    // Apache-2.0 it is, since it's the better fit for enterprise adoption". Six of six cells of
+    // one fixture's license scenario, where nothing at all is typed and the catalogue shows the
+    // value the user moved away from.
+    //
+    // What is recorded here is what the person wrote, not an inference from it. No retirement
+    // follows: nothing in the turn names what went, and the catalogue lists both, newest first.
+    // The guard is the shape rather than the wording — one line, short, opening on a value, and
+    // a comparison in it — because a message that is a paragraph of reasoning is not somebody
+    // settling on a value, and a message with no name in it names nothing to settle on.
+    if out.len() == before && !up.trim_end().ends_with('?') {
+        let line = up
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .trim();
+        let names = name_tokens(line);
+        let opens_on_a_value = names.first().is_some_and(|first| {
+            line.split_whitespace().next().is_some_and(|w| {
+                w.trim_matches(|c: char| !c.is_alphanumeric())
+                    .eq_ignore_ascii_case(first)
+            })
+        });
+        if (8..=120).contains(&line.chars().count()) && opens_on_a_value && compares(line) {
+            let words = topic_words(line);
+            if !words.is_empty() {
+                out.push(Candidate {
+                    kind: "decision",
+                    ack: t.assistant_text.clone(),
+                    subject: format!("said:state:{}", words.join(" ")),
+                    relation: "user_decision".into(),
+                    object: redact(line),
+                    body: redact(&format!("user: {line}\n")),
+                    origin: "user_said",
+                    anchor_path: None,
+                    turn_index: t.index,
+                    end_offset: t.end_offset,
+                });
+            }
+        }
+    }
+}
+
+/// Does this line weigh one thing against another? The comparative is what separates somebody
+/// settling on a value from somebody mentioning one.
+fn compares(s: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(?:better|best|cleaner|clearer|simpler|safer|faster|stronger|nicer|\
+               makes more sense|make more sense|fits better|fit better|more sense|\
+               mejor|m\u{e1}s claro|m\u{e1}s simple|m\u{e1}s r\u{e1}pido|tiene m\u{e1}s sentido)\b",
+        )
+        .unwrap()
+    })
+    .is_match(s)
 }
 
 fn commit_candidates(t: &Turn, out: &mut Vec<Candidate>) {
@@ -1811,7 +1869,10 @@ mod tests {
                 .unwrap_or_else(|| panic!("no decision for {up}"));
             assert!(d.subject.starts_with("said:change:"), "{}", d.subject);
         }
-        // a reply that names no pair leaves the message where it was
+        // A reply that names no pair claims no change. The message is still what the person
+        // wrote — a value with a reason — so it is recorded, as a statement and not as a
+        // change: `said:state:`, which is what `supersede_said` reads, so nothing is retired
+        // on the strength of a comparison nobody corroborated.
         let mut t = turn(
             0,
             "LRU with a 300-second TTL is cleaner and way easier to reason about",
@@ -1821,9 +1882,35 @@ mod tests {
             turns: vec![t],
             ..Default::default()
         };
-        assert!(!extract(&s, "abcdef12")
+        let d = extract(&s, "abcdef12");
+        let d = d
             .iter()
-            .any(|x| x.kind == "decision" && x.relation == "user_decision"));
+            .find(|x| x.kind == "decision" && x.relation == "user_decision")
+            .expect("a value with a reason is what was said");
+        assert!(d.subject.starts_with("said:state:"), "{}", d.subject);
+
+        // …and a paragraph of reasoning is not somebody settling on a value, nor is a line
+        // with no value in it, nor one that only mentions a name in passing.
+        for up in [
+            "I have been reading about eviction policies and there are a lot of trade-offs \
+             here, LRU is cleaner in some ways but LFU keeps hot items around, and it really \
+             depends on the access pattern we end up with in production",
+            "this is better",
+            "redis is what we already run",
+        ] {
+            let mut t = turn(0, up);
+            t.assistant_text = "Noted.".into();
+            let s = Session {
+                turns: vec![t],
+                ..Default::default()
+            };
+            assert!(
+                !extract(&s, "abcdef12")
+                    .iter()
+                    .any(|x| x.kind == "decision" && x.relation == "user_decision"),
+                "{up}"
+            );
+        }
     }
 
     /// `switch` with nothing after it was not a change marker, because a bare one is as often
@@ -2335,4 +2422,3 @@ mod correction_tests {
         ));
     }
 }
-
