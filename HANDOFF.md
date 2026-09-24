@@ -11,6 +11,14 @@ sentence for the catalogue, 23 vs 18, p = 0.0625, reverted by its rule. v37 — 
 twelve fresh runs counted alone, **56 vs 38 of 108, p = 7.6 × 10⁻⁶: ships.** The binary on
 `master` is byte-identical to the one v37 measured. v36 also withdrew a claim of the morning:
 the sentence the agents blamed for their refusals cost nothing (18 vs 18, all 54 cells agree).
+v38 — the same statement in `muninn why`'s verdict when only episodes answer: **68 vs 52 of
+108, p = 0.0009, `unsafe` 5 → 2: ships.** `master` is `16d29b222af40391`, the binary v38 measured.
+
+**v39 is running**: that binary against claude-mem, in one grid per fixture, all five, six runs
+each, registered before any cell. It is the benchmark the five-fixture figure has waited for.
+`scratchpad/v39.sh` drives it and completes cells voided by the account's session limit. Until it
+reads, no engine change should land on `master`, or the figure will describe a build that does
+not ship.
 
 Yesterday's attempt was read as hung and a cause was published for it. **That cause is
 withdrawn** — the evidence was a seeding log at zero bytes, and the log was buffered. Measured

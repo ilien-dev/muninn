@@ -2,6 +2,9 @@
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **`muninn why` says what the episodes under an `insufficient` verdict are**, in the words the
+  catalogue already uses: 68 of 108 against 52 on the bare-value fixture (v38, p = 0.0009),
+  with `unsafe` falling from 5 to 2.
 - **An agent handed the answer in an episode now uses it: 56 of 108 against 38 on the
   bare-value fixture** (v37, exact McNemar p = 7.6 × 10⁻⁶, 18 discordant cells and all one
   way, `unsafe` 2 against 0). The agents' own reports showed the failure: they found the
