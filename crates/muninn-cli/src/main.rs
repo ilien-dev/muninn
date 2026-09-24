@@ -312,6 +312,29 @@ fn main() {
                             .unwrap_or(0);
                         let rules = db.count("SELECT count(*) FROM rule").unwrap_or(0);
                         output::out(&format!("  records: {active} active, {invalid} retained-invalid · rules: {rules} · store: {}", paths.db_path().display()));
+                        // When each pass of the write path last ran. These four timestamps
+                        // have been written since they were added and read by nothing, so a
+                        // report could say the store was healthy while the embedder had not
+                        // run for a week. They are shown, not checked: a stale one is a fact
+                        // about a machine, not a fault this file can name.
+                        if full {
+                            let when = |k: &str| {
+                                db.meta_get(k)
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|v| v.parse::<i64>().ok())
+                                    .map(muninn_core::recall::date_time_of)
+                                    .unwrap_or_else(|| "never".into())
+                            };
+                            output::out(&format!(
+                                "  last run · ingest {} · git {} · anchors {} · embed {} · symbols {}",
+                                when("ingest_watermark_ms"),
+                                when("git_watermark_ms"),
+                                when("anchors_checked_ms"),
+                                when("embed_at_ms"),
+                                when("symbols_indexed_ms"),
+                            ));
+                        }
                     }
                 }
                 if report.is_green() {
