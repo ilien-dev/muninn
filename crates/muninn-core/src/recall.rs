@@ -415,7 +415,7 @@ pub fn date_time_of(ms: i64) -> String {
     format!("{} {:02}:{:02}", date_of(ms), mins / 60, mins % 60)
 }
 
-fn date_of(ms: i64) -> String {
+pub(crate) fn date_of(ms: i64) -> String {
     // yyyy-mm-dd from epoch ms without pulling a date crate
     let days = ms / 86_400_000;
     let (y, m, d) = civil_from_days(days);
@@ -483,8 +483,9 @@ pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
         };
         let ev = evidence_line(&h.transcript_ref);
         let mut block = format!(
-            "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}\n{}",
+            "[muninn:{}] #{} · {} · session {} · origin: {} · trust {}{}\n{}\n{}",
             h.kind,
+            h.id,
             date_of(h.created_at),
             short,
             h.origin,
@@ -498,8 +499,9 @@ pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
             // trim the body to the block budget
             let keep = truncate_chars(body, (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120));
             block = format!(
-                "[muninn:{}] {} · session {} · origin: {} · trust {}{}\n{}…\n{}",
+                "[muninn:{}] #{} · {} · session {} · origin: {} · trust {}{}\n{}…\n{}",
                 h.kind,
+                h.id,
                 date_of(h.created_at),
                 short,
                 h.origin,

@@ -697,10 +697,16 @@ pub fn merge(
         } else {
             ""
         };
+        // The two renderers disagreed about what a block header carries: this one gave the id
+        // and no date, `recall::render` the date and no id. An agent needs both — the id is
+        // what `muninn show <id>` takes, and the date is the only thing in the block that says
+        // which of two statements came later, which is the question a stale value poses. It is
+        // eleven characters a block.
         let block = format!(
-            "[muninn:{}] #{} · {} · origin: {} · trust {}{}\n{}\n{}",
+            "[muninn:{}] #{} · {} · {} · origin: {} · trust {}{}\n{}\n{}",
             h.kind,
             h.id,
+            crate::recall::date_of(h.created_at),
             short,
             h.origin,
             h.trust,
