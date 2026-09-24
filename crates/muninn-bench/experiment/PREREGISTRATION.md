@@ -5739,3 +5739,28 @@ capture change and the two arms' stores are meant to differ.
 - **Reported:** both against `claude-mem` in the same grid.
 - If the primary is not significant and `unsafe` has not risen, the change stays on the strength
   of what it is — a record of what the person wrote — and the row says "not shown".
+
+---
+
+# Built and reverted, 2026-09-24 — the reply's words on the decision's key
+
+A decision is findable by the words of the sentence that made it, and that sentence is often
+not the one a question is asked in. "Going with LRU with a 300-second TTL, easier to reason
+about" holds neither `cache` nor `eviction`; the episode it replaced holds both, because the
+person wrote them there. The reply in the same turn does have them — "Got it: LRU **eviction**
+with a 300-second TTL" — so the reply's content words were added to the record's subject, which
+is indexed and never rendered, the same mechanism and the same guarantee as `inherit_topic`.
+
+Measured on the thirty seeded stores, against the build before it: the cells where the block
+holds the old value and not the new one go **16 → 15**, and the cells where the new value
+reaches the session at all go **265 → 264**. One cell each way.
+
+**Reverted.** A mechanism that moves one cell in each direction has not been shown to do
+anything, and the standard this file has held since v32 is that a change carries its own
+evidence. The fixture it was aimed at — `v6`'s cache eviction, four cells — did not move at
+all: the episode still holds every word of the question and the decision still holds one, so
+the episode is still what the query reaches.
+
+That is worth keeping on record because it says where the remaining fifteen live. They are not
+a missing rule in capture; they are a retrieval question, and the words to answer it with do
+not exist in the record the answer is in.
