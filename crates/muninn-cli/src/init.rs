@@ -304,18 +304,23 @@ fn shell_quote_binary(binary: &Path) -> Result<String> {
 
 pub fn codex_hooks_json(binary: &Path) -> Result<serde_json::Value> {
     let bin = shell_quote_binary(binary)?;
-    let cmd = |ev: &str| serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": 5 });
+    // The per-turn hooks get 2 seconds and the per-session ones 5, the same split the Claude
+    // plugin ships and the same the committed `codex/hooks.json` template describes. This
+    // generator gave every synchronous hook 5, so a `muninn init --codex` install let a
+    // prompt hook block the user for five seconds where the plugin lets it block for two —
+    // and the contracts say these run in under a millisecond.
+    let cmd = |ev: &str, timeout: u32| serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": timeout });
     let cmd_async = |ev: &str| serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": 30, "async": true });
     Ok(serde_json::json!({
         "description": "Muninn memory engine hooks (Codex). Same binary as the Claude Code plugin.",
         "hooks": {
-            "SessionStart":     [{ "matcher": "startup|resume|compact", "hooks": [cmd("SessionStart")] }],
-            "UserPromptSubmit": [{ "hooks": [cmd("UserPromptSubmit")] }],
+            "SessionStart":     [{ "matcher": "startup|resume|compact", "hooks": [cmd("SessionStart", 5)] }],
+            "UserPromptSubmit": [{ "hooks": [cmd("UserPromptSubmit", 2)] }],
             // Codex edits files through `apply_patch`; the hook reshapes it into Edit/Write
-            "PreToolUse":       [{ "matcher": "^(Bash|Edit|Write|MultiEdit|Read|apply_patch)$", "hooks": [cmd("PreToolUse")] }],
-            "PostToolUse":      [{ "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit|apply_patch)$", "hooks": [cmd("PostToolUse")] }],
-            "PreCompact":       [{ "hooks": [cmd("PreCompact")] }],
-            "PostCompact":      [{ "hooks": [cmd("PostCompact")] }],
+            "PreToolUse":       [{ "matcher": "^(Bash|Edit|Write|MultiEdit|Read|apply_patch)$", "hooks": [cmd("PreToolUse", 2)] }],
+            "PostToolUse":      [{ "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit|apply_patch)$", "hooks": [cmd("PostToolUse", 2)] }],
+            "PreCompact":       [{ "hooks": [cmd("PreCompact", 5)] }],
+            "PostCompact":      [{ "hooks": [cmd("PostCompact", 5)] }],
             "Stop":             [{ "hooks": [cmd_async("Stop")] }],
             "SessionEnd":       [{ "hooks": [{ "type": "command", "command": format!("{bin} hook SessionEnd"), "timeout": 1 }] }]
         }
@@ -506,6 +511,31 @@ mod tests {
 
     /// `init` runs on every install and must be idempotent against a `.gitignore`
     /// that is broader than its own list, not only against one that repeats it.
+    /// The generator and the committed `codex/hooks.json` template are two descriptions of
+    /// one install, and they disagreed on three timeouts: every synchronous hook got 5
+    /// seconds here where the plugin and the template give the per-turn ones 2.
+    #[test]
+    fn the_codex_hooks_match_the_template_that_documents_them() {
+        let generated = codex_hooks_json(std::path::Path::new("/usr/local/bin/muninn")).unwrap();
+        let template: serde_json::Value =
+            serde_json::from_str(include_str!("../../../codex/hooks.json")).unwrap();
+        let (g, t) = (&generated["hooks"], &template["hooks"]);
+        let names: Vec<&String> = t.as_object().unwrap().keys().collect();
+        assert!(!names.is_empty());
+        for k in names {
+            let (a, b) = (&g[k][0], &t[k][0]);
+            assert_eq!(a["matcher"], b["matcher"], "{k}: matcher");
+            assert_eq!(
+                a["hooks"][0]["timeout"], b["hooks"][0]["timeout"],
+                "{k}: timeout"
+            );
+            assert_eq!(
+                a["hooks"][0]["command"], b["hooks"][0]["command"],
+                "{k}: command"
+            );
+        }
+    }
+
     #[test]
     fn gitignore_untouched_when_the_store_is_already_ignored() {
         let tmp = tempfile::tempdir().unwrap();
