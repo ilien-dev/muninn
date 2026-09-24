@@ -5653,3 +5653,72 @@ The change is inert where five or more typed records exist, which is every other
 measured (`v4` 10–11, `v5` 7–9, `v6` 11–12, `v7` 8–12) and this repository's own store (792
 active records, zero episode lines in its catalogue). That inertness is checked by
 `store_shape.py` and by reading the live block, not by spending grids on it.
+
+---
+
+# Measured, 2026-09-24 — what the "stall" was: the competitor's settle under concurrency
+
+Yesterday's v34 attempt was read as hung and a cause was published for it. That cause is
+withdrawn; this is what the numbers say instead.
+
+In isolation, one seeding session costs almost nothing:
+
+| | |
+|---|---|
+| a bare `claude -p` session in the grid's checkout, no memory arm | 2.8 s |
+| the same with the `claude-mem` plugin loaded | 2.4 s, 3.2 s |
+| that arm's `settle` after one session, alone on the machine | 8.2 s, 11.2 s |
+
+Inside the grid, with three seeding jobs running at once, the same `settle` reads **61 seconds**
+— 368 849 ms over six rows on two separate runs, and 191 151 over four on a third. The session
+itself is unchanged at about 3 seconds. So a seeding job of twenty rows costs twenty minutes
+rather than four, six of them cost about two hours, and that is the whole of what was read as a
+hang. The seeding log was buffered, so none of it was visible while it happened.
+
+Nothing here is a defect in this engine or in the competitor. It is the cost of the arm, under
+the concurrency the harness chooses, and it belongs in the record because the next person to see
+a grid sit for an hour should not go looking for a deadlock.
+
+---
+
+# Pre-registration — v35: a value with a reason, recorded as what was written
+
+Registered 2026-09-24, before any cell ran. `muninn-said`, master at `502e9a54`; the arm against
+it is `muninn-shown`, master at `0a1976ad` — one capture change apart, plus the day's earlier
+capture work, which is stated here rather than hidden: **this is not a one-commit comparison**
+and the confounding is named before the data.
+
+## The change
+
+A message that is one short line, opens on a value, and weighs it against something — "Apache-2.0
+is better for enterprise adoption", "semver gives users much clearer signals" — becomes a
+`said:state:` decision. No retirement follows and none is inferred: nothing in the turn names
+what went, so the catalogue lists both values, newest first.
+
+v22 closed the neighbouring route — reading a *bare word* as a decision — because there the
+assistant's reply said nothing either and the turn held no statement at all. This is the shape
+v22 named and left open.
+
+## What it risks, which is the reason for the grid
+
+The offline proxy (`store_answers.py`) reads 221 of 270 scenarios answered cleanly against 212,
+with the old value still typed in 4 either way. **The proxy cannot see what this change risks.**
+Putting two values on the catalogue where one was is precisely the shape that makes an agent
+write the retired one, and that is `unsafe`, which the proxy does not measure and the grid does.
+
+## The grid
+
+`run_h2h.py --out results/h2h-v35-v5 --runs 6 --arms off,claude-mem,muninn-shown,muninn-said
+--seed-phrasings h2h/v5/seed_phrasings.json`, `--code` off. `v5` is the comparative fixture and
+the one the change is aimed at; **`--share-seed` is not used and must not be**, because this is a
+capture change and the two arms' stores are meant to differ.
+
+## Decision rule, fixed before the data
+
+- **Primary:** `muninn-said` against `muninn-shown`, exact Fisher on the totals, α = 0.05.
+- **Co-primary, failing on its own:** `unsafe`. **A rise of three cells or more reverts the
+  change whatever the pass rate does.** Two active values with no marker saying which won is the
+  known shape of that failure, and this change creates it deliberately.
+- **Reported:** both against `claude-mem` in the same grid.
+- If the primary is not significant and `unsafe` has not risen, the change stays on the strength
+  of what it is — a record of what the person wrote — and the row says "not shown".
