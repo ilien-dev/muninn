@@ -126,6 +126,63 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
             }
         }
     }
+    // The render fingerprint, rolled here because a read hook may not write the store.
+    //
+    // Health check 6 watches for the session-start reinjection going stale — the same
+    // invariants delivered every session while new ones arrive — by comparing the last two
+    // renders. It compared two `meta` keys **that nothing in this repository ever wrote**, so
+    // it has read `cold: fewer than two renders` since the day it was added and could never
+    // read anything else. A check that cannot fire is worse than no check: it holds a slot in
+    // `10/11 GREEN` and tells the reader something is being watched.
+    //
+    // What is hashed is the set of record ids the session-start event delivery served, in
+    // order, which is exactly the thing that going stale would mean.
+    if let Some(latest) = taken
+        .lines
+        .iter()
+        .filter_map(|l| serde_json::from_str::<Line>(l).ok())
+        .filter(|v| v.reason.contains("session_start") && !v.ids.is_empty())
+        .max_by_key(|v| v.at)
+    {
+        let mut ids = latest.ids.clone();
+        ids.sort_unstable();
+        let hash = blake3::hash(format!("{ids:?}").as_bytes())
+            .to_hex()
+            .to_string();
+        let prev: Option<String> = tx
+            .query_row(
+                "SELECT value FROM meta WHERE key='last_render_hash'",
+                [],
+                |r| r.get(0),
+            )
+            .ok();
+        if prev.as_deref() != Some(hash.as_str()) || prev.is_none() {
+            if let Some(p) = prev {
+                tx.execute(
+                    "INSERT INTO meta(key,value) VALUES('prev_render_hash',?1) \
+                     ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    [p],
+                )?;
+            }
+            tx.execute(
+                "INSERT INTO meta(key,value) VALUES('last_render_hash',?1) \
+                 ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                [&hash],
+            )?;
+            tx.execute(
+                "INSERT INTO meta(key,value) VALUES('records_changed_since_render','0') \
+                 ON CONFLICT(key) DO UPDATE SET value='0'",
+                [],
+            )?;
+        } else {
+            // identical to the last one: keep both, which is what check 6 reads as frozen
+            tx.execute(
+                "INSERT INTO meta(key,value) VALUES('prev_render_hash',?1) \
+                 ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                [&hash],
+            )?;
+        }
+    }
     tx.commit()?;
     taken.finish();
     Ok(n)
@@ -168,4 +225,62 @@ pub fn bump_epoch(paths: &ProjectPaths, session: &str) -> i64 {
         },
     );
     e
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+    use muninn_core::db::Mode;
+
+    /// Health check 6 watches the session-start reinjection for going stale, by comparing the
+    /// last two renders. It compared two `meta` keys nothing ever wrote, so it read `cold:
+    /// fewer than two renders` from the day it was added and could never read anything else.
+    #[test]
+    fn folding_a_delivery_rolls_the_render_fingerprint() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        std::fs::create_dir_all(paths.log_dir()).unwrap();
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        for i in 1..4 {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,'invariant',?2,'must','o','b','user_said',3,'s',?2,1)",
+                    rusqlite::params![i, format!("k{i}")],
+                )
+                .unwrap();
+        }
+        let deliver = |ids: Vec<i64>, at: i64| {
+            append(
+                &paths,
+                &Line {
+                    at,
+                    session: "s".into(),
+                    arm: "literal".into(),
+                    ids,
+                    tokens: 30,
+                    reason: "cue:event:session_start".into(),
+                },
+            );
+        };
+        let get = |k: &str| db.meta_get(k).ok().flatten();
+
+        deliver(vec![1, 2], 100);
+        fold_into_db(&paths, &db).unwrap();
+        let first = get("last_render_hash").expect("a render is recorded");
+        assert!(get("prev_render_hash").is_none(), "one render is not two");
+
+        // the same invariants again: the check needs both keys equal to call it frozen
+        deliver(vec![2, 1], 200);
+        fold_into_db(&paths, &db).unwrap();
+        assert_eq!(get("prev_render_hash").as_deref(), Some(first.as_str()));
+        assert_eq!(get("last_render_hash").as_deref(), Some(first.as_str()));
+
+        // a different set rolls the old one back and clears the changed flag
+        deliver(vec![3], 300);
+        fold_into_db(&paths, &db).unwrap();
+        assert_eq!(get("prev_render_hash").as_deref(), Some(first.as_str()));
+        assert_ne!(get("last_render_hash").as_deref(), Some(first.as_str()));
+        assert_eq!(get("records_changed_since_render").as_deref(), Some("0"));
+    }
 }
