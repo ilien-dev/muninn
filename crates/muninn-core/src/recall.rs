@@ -408,6 +408,13 @@ pub struct Delivery {
     pub tokens: usize,
 }
 
+/// `yyyy-mm-dd hh:mm` from epoch milliseconds, UTC. Used where a date alone is ambiguous —
+/// two builds of the same day are the case this exists for.
+pub fn date_time_of(ms: i64) -> String {
+    let mins = (ms / 60_000).rem_euclid(1_440);
+    format!("{} {:02}:{:02}", date_of(ms), mins / 60, mins % 60)
+}
+
 fn date_of(ms: i64) -> String {
     // yyyy-mm-dd from epoch ms without pulling a date crate
     let days = ms / 86_400_000;

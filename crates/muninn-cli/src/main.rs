@@ -262,12 +262,32 @@ fn main() {
                     Ok(db) => health::run(&paths, Some(db), None, full),
                     Err(e) => health::run(&paths, None, Some(e), full),
                 };
+                // Which binary produced this report. A plugin keeps its own copy and a
+                // developer builds another; twice in one day this project read a report that
+                // described a build two hours older than the one just compiled, and nothing
+                // in the report said so. The hook path does not pay for this — `doctor` is
+                // the live report and runs once, by hand.
+                let who = std::env::current_exe().ok().map(|p| {
+                    let when = std::fs::metadata(&p)
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| muninn_core::recall::date_time_of(d.as_millis() as i64))
+                        .unwrap_or_default();
+                    (p.display().to_string(), when)
+                });
                 if cli.json {
-                    output::json(
-                        &serde_json::json!({ "summary": report.summary(), "checks": report.checks }),
-                    );
+                    output::json(&serde_json::json!({
+                        "summary": report.summary(),
+                        "checks": report.checks,
+                        "binary": who.as_ref().map(|(p, _)| p),
+                        "binary_built": who.as_ref().map(|(_, t)| t),
+                    }));
                 } else {
                     output::out(&report.summary());
+                    if let Some((p, t)) = &who {
+                        output::out(&format!("this report is from {p}, built {t}"));
+                    }
                     if full {
                         for c in &report.checks {
                             output::out(&format!(
