@@ -5881,3 +5881,26 @@ a difference of that size will be.
 
 What stands: five cells, all one way, on a sentence that also raised `unsafe`. That is a reason
 to register a powered test of it, not to ship it.
+
+---
+
+# Pre-registration — v37: the same sentence, powered
+
+Registered 2026-09-24, before any cell ran, and motivated by v36's point estimate, which is said
+here rather than left to be inferred. The arms are v36's own pinned binaries: `muninn-latest2`
+(`559e0ea213d717e5`) against `muninn-quiet2` (`83ad991f8e67b5b0`), one sentence apart, on one
+shared store (`--share-seed muninn-quiet2`).
+
+**Twelve runs, freshly seeded**, `results/h2h-v37-v3/`, 108 replacement cells an arm. Only this
+grid's cells are counted. v36's are not pooled in: pooling a result with the grid that
+suggested it is the choice that would be made after seeing the data, and this registration
+exists so that it is not.
+
+## Decision rule
+
+- **Primary:** exact McNemar on the paired cells, α = 0.05. Only a significant positive ships the
+  sentence.
+- **Co-primary:** `unsafe`. A rise of six cells or more over `muninn-quiet2` — v36's three-cell
+  line, scaled to twice the cells — reverts it whatever the pass rate does.
+- If it ships, the claims row for the plain condition does not move on this alone: `v3` is one
+  fixture, and the five-fixture figure is stale until all five are re-measured on one build.
