@@ -762,18 +762,9 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         // every value the question is about. An agent told those subjects have nothing on
         // record has been told the opposite of the truth, by the one block whose job is to say
         // what is there.
-        //
-        // v34 read what the previous wording did, in the agent's own reports: it found the
-        // values in the episodes, in order, and refused them as "unclassified excerpts, not
-        // decisions", writing "no decision is currently recorded" with the answer in front of
-        // it. The sentence was true and was read as a ranking. What it has to say instead is
-        // also true: an episode is the person's own words, and when nothing on this list covers
-        // a subject, the newest thing said about it is the latest word on it — which is a fact
-        // about time, not an inference about which record retired which.
-        "That is every decision, rule and correction on record. What was said in earlier \
-         sessions is kept too, word for word, as episodes; a subject missing from this list may \
-         be in one, and when it is, the newest thing said about it is the latest word on it \
-         \u{2014} ask `muninn why \"<question>\"`. "
+        "That is every decision, rule and correction on record. Earlier sessions are kept too, \
+         as episodes, and they are not listed here \u{2014} a subject missing from this list may \
+         still be in one; ask `muninn why \"<question>\"`. "
             .to_string()
     } else {
         "That is all of it: a subject missing from this list has nothing on record. ".to_string()
@@ -1412,14 +1403,6 @@ mod tests {
         assert!(
             c3.text.contains("as episodes") && c3.text.contains("muninn why"),
             "it names what else is there and how to reach it:\n{}",
-            c3.text
-        );
-        // …and says how to read it. v34's agents found the values in the episodes and refused
-        // them as "not decisions"; the sentence has to say that the newest one is the latest
-        // word, which is true of any record ordered in time.
-        assert!(
-            c3.text.contains("word for word") && c3.text.contains("latest word"),
-            "it says an episode is what was said and that the newest is the latest word:\n{}",
             c3.text
         );
         assert!(
