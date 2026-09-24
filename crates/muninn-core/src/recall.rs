@@ -581,52 +581,10 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
          ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
         PAGE + 1
     ))?;
-    let mut rows: Vec<CatalogRow> = stmt
+    let rows: Vec<CatalogRow> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .filter_map(|r| r.ok())
         .collect();
-    // A store can hold nothing this list is made of. Where a person types the value and
-    // nothing else — `gzip`, then later `zstd` — no sentence carries a decision verb, capture
-    // types nothing, and the one channel that tells an agent what is on record says nothing
-    // at all while the episodes sit there unreachable: a question about the compression codec
-    // shares no word with a record whose whole text is `zstd`. That fixture is the one
-    // condition this engine loses, 18 cells of 54 against a competitor that keeps the raw
-    // turn and lets its agent look.
-    //
-    // So when there is no typed record to list, the short statements are listed instead,
-    // newest first, under the same budget and pulled by the same `muninn show <id>`. Only
-    // when there is nothing else: a store with one decision in it is unchanged.
-    // Whatever budget the typed records leave goes to the short things that were said.
-    //
-    // Where a person types the value and nothing else — `gzip`, then later `zstd` — no
-    // sentence carries a decision verb, capture types nothing for that topic, and the one
-    // channel that tells an agent what is on record passes over it in silence while the
-    // episodes sit there unreachable: a question about the compression codec shares no word
-    // with a record whose whole text is `zstd`. That fixture is the condition this engine
-    // loses, 18 cells of 54 against a competitor that keeps the raw turn and lets its agent
-    // look through it.
-    //
-    // This costs nothing where the catalogue is already full, which is every store with a
-    // working page of decisions in it: the budget is spent before the episodes are reached.
-    // It costs the remainder where the catalogue is nearly empty, which is exactly the store
-    // that has nothing else to offer.
-    // …and only when there is almost nothing typed to list. A store with a working page of
-    // decisions keeps the list that won the grid, unchanged and undiluted; the threshold is
-    // what stops this from being a change to every store in exchange for one fixture.
-    const SPARSE: usize = 5;
-    let typed = rows.len();
-    if typed < SPARSE {
-        let mut ep = db.conn.prepare(&format!(
-            "SELECT r.id, r.kind, r.object, NULL AS anchored FROM served_record r \
-             WHERE +r.kind = 'episode' AND length(r.object) <= 120 \
-             ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
-            PAGE + 1
-        ))?;
-        rows.extend(
-            ep.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-                .filter_map(|r| r.ok()),
-        );
-    }
     // The `+` on `kind` is not decoration. Without it SQLite takes the equality on
     // `record_kind`, cannot then satisfy the ORDER BY from an index, and sorts every active
     // decision in a temp B-tree before the LIMIT throws almost all of it away: 23 ms of a
@@ -735,18 +693,9 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     } else {
         "That is all of it: a subject missing from this list has nothing on record. ".to_string()
     };
-    let head = if typed >= SPARSE {
-        "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
-         corrections"
-    } else if typed == 0 {
-        "[muninn:catalog] what is on record, newest first \u{2014} nothing here was stated as a \
-         decision, so these are the short things that were said"
-    } else {
-        "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
-         corrections, then the short things that were said"
-    };
     let text = format!(
-        "{head}\n{text}{more}Ask for any of them by id: `muninn show <id> [<id> \u{2026}]`.\n"
+        "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
+         corrections\n{text}{more}Ask for any of them by id: `muninn show <id> [<id> \u{2026}]`.\n"
     );
     let tokens = text.len() / 3;
     Ok(Delivery { text, ids, tokens })
@@ -1240,27 +1189,9 @@ mod tests {
             "and the retired record's own text is not in it:\n{}",
             c.text
         );
-        // With a working page of decisions an episode is not a catalogue entry. This store
-        // has three, which is under `SPARSE`, so the remainder is filled with what was said
-        // — the case where a catalogue of three lines is all an agent would otherwise get.
-        assert!(
-            c.text.contains("some conversation"),
-            "a sparse catalogue is filled with the short things that were said:\n{}",
-            c.text
-        );
-        for i in 0..8 {
-            db.conn
-                .execute(
-                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
-                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,9)",
-                    rusqlite::params![format!("filler{i}"), format!("decision number {i}")],
-                )
-                .unwrap();
-        }
-        let c = catalog(&db, 700).unwrap();
         assert!(
             !c.text.contains("some conversation"),
-            "and once there is a page of decisions it is not:\n{}",
+            "an episode is not a catalogue entry:\n{}",
             c.text
         );
         assert!(
