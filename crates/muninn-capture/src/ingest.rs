@@ -314,11 +314,39 @@ fn supersede_via_ack(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> R
         let rows = st.query_map([new_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.flatten().collect()
     };
-    let Some((id, _, tref)) = olds
+    let candidate = olds
         .into_iter()
         .filter(|(_, object, _)| holds(object))
-        .min_by_key(|(_, object, _)| object.len())
-    else {
+        .min_by_key(|(_, object, _)| object.len());
+    // The reply names a value that was never typed. That happens whenever the earlier message
+    // stated it in no form this file recognises — "LFU cache keeps frequently accessed items
+    // around, makes sense for our workload" — and it leaves the value on record as an episode
+    // with nothing to retire it, so a question about the cache eviction policy reaches that
+    // episode and not the decision that replaced it. Measured on one fixture's stores: the
+    // per-prompt block held the old value and not the new one in eleven of fifty-four cells,
+    // and the new decision shares no content word with the question because the words are all
+    // in the episode.
+    //
+    // So the episode is retired, and `inherit_topic` then carries its words to the record that
+    // replaced it, which is what makes the replacement reachable by the words it omits. The
+    // guards are the same ones that make this safe for a decision and one more: the reply must
+    // name the value outright, the value must be a whole word of the episode, only the
+    // shortest match goes, and the episode has to be short enough to be a statement rather
+    // than a transcript.
+    let candidate = match candidate {
+        Some(c) => Some(c),
+        None => {
+            let mut st = tx.prepare(
+                "SELECT id, object, transcript_ref FROM record WHERE invalid = 0 \
+                 AND kind = 'episode' AND length(body) <= 700 AND id <> ?1",
+            )?;
+            let rows = st.query_map([new_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.flatten()
+                .filter(|(_, object, _): &(i64, String, Option<String>)| holds(object))
+                .min_by_key(|(_, object, _)| object.len())
+        }
+    };
+    let Some((id, _, tref)) = candidate else {
         return Ok(0);
     };
     let mut n = tx.execute(
