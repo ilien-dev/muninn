@@ -5584,10 +5584,17 @@ what noise looks like — it is one cause, and `[Z5]` already names it.
 
 # Pre-registration — v34: the sparse catalogue, rebuilt on a store whose episodes carry values
 
-Registered 2026-09-23, before any cell ran. Two arms of one tree, one commit apart:
-`muninn-base`, sha256 prefix `a9aaf1c8d2462d4f` (master at `1f1b5a50`), and `muninn-shown`,
-`0381c1b0dd8654e8` (master at `0a1976ad`). The diff is one file, `recall::catalog`, and nothing
-in it writes.
+Registered 2026-09-23, before any cell ran. **Re-pinned 2026-09-24, still before any cell ran**,
+and the reason is recorded rather than the old pins quietly replaced: the first attempt stalled
+in the competitor's seeding, no cell of it ever ran, and by the time the harness was fixed the
+tree had moved — a day of capture work that changes what the catalogue has to list. Measuring
+the catalogue change against a build whose capture is a day behind would answer a question
+nobody will ask again. So both arms are rebuilt from the same tree as it stands today, one
+`git revert` apart.
+
+`muninn-shown`, sha256 prefix `ae6c9b931e6065de`, is master. `muninn-base`, `905c370e1cea3fe9`,
+is master with commit `0a1976ad` reverted and nothing else. The diff is one file,
+`recall::catalog`, and nothing in it writes.
 
 ## Why this is not v32 again
 
