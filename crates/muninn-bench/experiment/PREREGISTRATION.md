@@ -5808,3 +5808,46 @@ nothing on record"), and on this evidence it cost cells: the v31 build read asyn
 password-hashing 1/6 and TLS 3/6 on this fixture; today's reads 0 on all three, and the reports
 name the reason. That comparison is across grids and within the twelve-cell drift, so it is
 stated as what the reports say and not as a measured regression; v36 below measures it.
+
+---
+
+# Pre-registration — v36: the catalogue's closing sentence, three ways, on one store
+
+Registered 2026-09-24, before any cell ran. Three arms of one tree that differ in one sentence —
+what `[muninn:catalog]` says at its end when the list is complete and the store holds episodes —
+and in nothing else. All three read the same seeded store (`--share-seed muninn-quiet2`), which
+is valid because the change is one string on the read path.
+
+| arm | sha256 prefix | the sentence |
+|---|---|---|
+| `muninn-nothing` | `bc3be0e326f788a2` | "That is all of it: a subject missing from this list has nothing on record." (before `b760ba75`) |
+| `muninn-quiet2` | `83ad991f8e67b5b0` | "… Earlier sessions are kept too, as episodes, and they are not listed here …" (`b760ba75`, what ships now) |
+| `muninn-latest2` | `559e0ea213d717e5` | "… What was said in earlier sessions is kept too, word for word, as episodes; … the newest thing said about it is the latest word on it …" |
+
+## Why
+
+v34's agents found the values in the episodes and refused them as "not decisions", on every run
+of three scenarios, and the reports name the sentence. The first sentence was false and the
+second was read as a ranking. This grid measures both against the third on the fixture where the
+refusal was seen.
+
+## The grid
+
+`run_h2h.py --out results/h2h-v36-v3 --runs 6 --arms muninn-quiet2,muninn-nothing,muninn-latest2
+--seed-phrasings h2h/v3/seed_phrasings.json --share-seed muninn-quiet2`, `--code` off. No
+competitor arm: v34 measured claude-mem and `off` on this fixture yesterday, in-grid, and the
+primary here is between builds on one store. Any comparison to claude-mem this grid reports is
+across grids and is labelled so.
+
+## Decision rule, fixed before the data
+
+- **Primary:** `muninn-latest2` against `muninn-quiet2`, exact McNemar on the paired cells,
+  α = 0.05. Only a significant positive ships the new sentence; otherwise it is reverted.
+- **Secondary, confirmatory for a question of its own:** `muninn-quiet2` against
+  `muninn-nothing`, the same test. A significant negative says `b760ba75` cost cells, and the
+  sentence it replaced is not restored on that alone — it was false — but the finding is
+  published and the claims row says so.
+- **Co-primary:** `unsafe`. A rise of three or more cells for `muninn-latest2` over
+  `muninn-quiet2` reverts it whatever the pass rate does: telling an agent the newest episode is
+  the latest word is exactly what would make it write a value that a later, unrecorded statement
+  replaced.
