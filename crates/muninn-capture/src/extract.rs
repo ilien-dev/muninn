@@ -889,6 +889,24 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
         .collect()
     });
 
+    // `<arrived> replaces <gone>`, with no `the earlier` in it: "tokio replaces async-std as
+    // the async runtime", "Apache-2.0 supersedes GPL-3.0". The one-sided set needs
+    // `earlier|previous|…` because there only one value is named and that word is what makes
+    // the phrase point backwards. Here both are named and the verb itself carries the
+    // direction, so the word is not needed and requiring it lost the shape entirely — three
+    // cells of one fixture and six of another, every one of them the assistant stating the
+    // pair outright. The groups are the reverse of the two-sided set above, which is why this
+    // is its own set rather than another pattern in it.
+    static REVERSED: OnceLock<Vec<Regex>> = OnceLock::new();
+    let reversed = REVERSED.get_or_init(|| {
+        [
+            r"(?i)\b([\w./@+-]{2,40})\s+(?:replaces|supersedes|overrides|reverses)\s+(?:the\s+)?([\w./@+-]{2,40})",
+            r"(?i)\b([\w./@+-]{2,40})\s+(?:reemplaza|sustituye|anula)\s+(?:a\s+)?(?:la|el)?\s*([\w./@+-]{2,40})",
+        ]
+        .iter()
+        .map(|p| Regex::new(p).unwrap())
+        .collect()
+    });
     // one-sided: only the replaced value is named, so what ties the sentence to this decision
     // is the replacement appearing *before* the phrase
     let one = ONE.get_or_init(|| {
@@ -923,6 +941,30 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
     let usable = |gone: String| {
         (gone.len() >= 2 && !STOP.contains(&gone.as_str()) && !newn.contains(&gone)).then_some(gone)
     };
+    for re in reversed {
+        for cap in re.captures_iter(ack) {
+            let arrived = norm(cap.get(1)?.as_str());
+            let gone = norm(cap.get(2)?.as_str());
+            // "argon2id replaces the earlier bcrypt decision" matches this shape too, and what
+            // sits where the value should be is the back-reference. That sentence is the
+            // one-sided set's, and it reads it correctly, so this one steps aside rather than
+            // returning `earlier` as the value that went.
+            const BACKREF: [&str; 6] = ["the", "earlier", "previous", "prior", "old", "former"];
+            if BACKREF.contains(&gone.as_str()) {
+                continue;
+            }
+            if !newn
+                .iter()
+                .any(|w| *w == arrived || arrived.contains(w.as_str()))
+            {
+                continue;
+            }
+            if let Some(g) = usable(gone) {
+                return Some(g);
+            }
+        }
+    }
+
     for re in two {
         for cap in re.captures_iter(ack) {
             let gone = norm(cap.get(1)?.as_str());
@@ -1636,6 +1678,20 @@ mod tests {
                 "Noted: argon2id for password hashing, which supersedes the earlier \
                  \"We're using bcrypt\" note on record.",
                 "bcrypt",
+            ),
+            // Both values named and the verb carrying the direction, with no `the earlier`
+            // in it. Requiring that word lost this shape entirely, and it is the one an
+            // assistant writes when the user's sentence is a comparison rather than a change.
+            (
+                "tokio fits better with the broader ecosystem.",
+                "Noted: tokio replaces async-std as the async runtime, since it fits better \
+                 with the broader ecosystem.",
+                "async-std",
+            ),
+            (
+                "Apache-2.0 for the license",
+                "Understood: Apache-2.0 supersedes GPL-3.0 for this project.",
+                "gpl-3.0",
             ),
         ];
         for (up, reply, gone) in cases {
