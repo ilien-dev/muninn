@@ -13,9 +13,14 @@ Arm plug-ins live in competitors/<arm>/arm.sh with subcommands install|start|cla
 snapshot|restore|stop|delivered (see competitors/muninn/arm.sh). Arms that share a fixed port
 (agentmemory*) never run at the same time.
 
+Each arm seeding its own store is right when the arms are different products. It is wrong when
+two arms are two builds of this one: the stores then differ as well as the cells, and a read-path
+change is read through that difference. `--share-seed` makes one arm seed and hands its store to
+the others, which is the paired design for a read-path comparison.
+
 Usage:
   run_h2h.py --out <dir> [--runs 3] [--jobs 3] [--arms off,muninn,claude-mem,agentmemory,agentmemory-inject]
-             [--only-seed] [--rerun-errors]
+             [--only-seed] [--rerun-errors] [--share-seed <arm>] [--code]
 """
 import argparse, json, os, random, shutil, subprocess, sys, tempfile, threading, time
 from concurrent.futures import ThreadPoolExecutor
@@ -300,6 +305,17 @@ def main() -> None:
     ap.add_argument("--seed-phrasings", default=None,
                     help="v2: JSON list of {key,a,b}, one per seed pair in time order, used instead of the seed bodies")
     ap.add_argument("--tasks", default=str(EXP / "revocation" / "tasks-revocation-public.json"))
+    ap.add_argument("--share-seed", default=None, metavar="ARM",
+                    help="Seed once with ARM and give every other arm named muninn* a copy of "
+                         "its store, instead of letting each arm build its own from its own live "
+                         "sessions. Two builds compared across grids differ in their stores as "
+                         "well as in their cells: measured on v32, four fixtures where the code "
+                         "under test provably never ran still read -5, -3, 0 and -4 cells, "
+                         "200/216 against 188/216. Sharing the snapshot pairs a read-path "
+                         "comparison on the store and leaves only the agent stochastic. It is "
+                         "valid ONLY for a change that cannot alter what capture writes; the "
+                         "caller asserts that, the harness cannot check it, and the assertion is "
+                         "recorded in FROZEN.jsonl.")
     ap.add_argument("--code", action="store_true",
                     help="v4: also implement each decision in the checkout — one tracked file per "
                          "scenario holding its value, and a commit with an uninformative subject "
@@ -320,7 +336,11 @@ def main() -> None:
     if a.seed_phrasings:
         PHRASINGS = json.loads(Path(a.seed_phrasings).read_text())
         assert len(PHRASINGS) * 2 == len(seed_rows), "one phrasing pair per seed pair"
-    frozen = {"arms": arms, "runs": a.runs, "code": bool(a.code), "model": MODEL, "repo": str(REPO), "base_ref": BASE_REF, "ack": ACK,
+    if a.share_seed and a.share_seed not in arms:
+        raise SystemExit(f"--share-seed {a.share_seed} is not one of --arms {a.arms}")
+    shared = [x for x in arms if x.startswith("muninn") and x != a.share_seed] if a.share_seed else []
+    frozen = {"arms": arms, "runs": a.runs, "code": bool(a.code),
+              "share_seed": a.share_seed, "share_seed_receivers": shared, "model": MODEL, "repo": str(REPO), "base_ref": BASE_REF, "ack": ACK,
               "tasks_file": a.tasks, "seed_phrasings": a.seed_phrasings, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "harness_sha256": subprocess.run(["sha256sum", __file__], capture_output=True, text=True).stdout[:64],
               "arm_scripts_sha256": {arm: subprocess.run(["sha256sum", str(HERE / "competitors" / arm / "arm.sh")], capture_output=True, text=True).stdout[:64]
@@ -337,8 +357,10 @@ def main() -> None:
             done[(r["run"], r["task"], r["arm"])] = r
     rlock = threading.Lock()
 
-    # seeding: per run, per memory arm (arms of one port group serialise through their lock)
-    seed_jobs = [(arm, run) for run in range(a.runs) for arm in arms if arm != "off"]
+    # seeding: per run, per memory arm (arms of one port group serialise through their lock).
+    # Under --share-seed the receivers are left out here and given the seeder's snapshot below.
+    seed_jobs = [(arm, run) for run in range(a.runs) for arm in arms
+                 if arm != "off" and arm not in shared]
     def seed_one(j):
         try:
             return j[0], j[1], seed_arm(j[0], j[1], out, work, seed_rows), None
@@ -352,6 +374,28 @@ def main() -> None:
                 print(f"SEEDING FAILED r{run} {arm}: {exc}", flush=True)
             else:
                 print(f"seeded r{run} {arm} -> {snap}", flush=True)
+    # The receivers get the seeder's store, byte for byte, and its checkout history under
+    # --code so every commit a record cites still resolves. A receiver whose seeder failed is
+    # marked failed with it rather than run against a store that is not there.
+    for run in range(a.runs):
+        if (run, a.share_seed) in failed_seed:
+            for arm in shared:
+                failed_seed.add((run, arm))
+            continue
+        for arm in shared:
+            src, dst = work / f"snap-r{run}-{a.share_seed}", work / f"snap-r{run}-{arm}"
+            if not (src / ".done").exists():
+                failed_seed.add((run, arm))
+                print(f"SHARE FAILED r{run} {arm}: {src} has no snapshot", flush=True)
+                continue
+            shutil.rmtree(dst, ignore_errors=True)
+            shutil.copytree(src, dst)
+            hsrc, hdst = work / f"hist-r{run}-{a.share_seed}", work / f"hist-r{run}-{arm}"
+            if hsrc.exists():
+                shutil.rmtree(hdst, ignore_errors=True)
+                shutil.copytree(hsrc, hdst)
+            print(f"shared r{run} {a.share_seed} -> {arm}", flush=True)
+
     if a.only_seed:
         return
 
