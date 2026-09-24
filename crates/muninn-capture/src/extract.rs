@@ -870,6 +870,25 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
         .map(|p| Regex::new(p).unwrap())
         .collect()
     });
+    // The same shape with the earlier value in quotes, which is what an assistant writes when
+    // that value is a phrase rather than a token: `supersedes the earlier "We're using bcrypt"
+    // note on record`. The patterns above capture `[\w./@+-]`, so an opening quote stops them
+    // dead and the whole reply reads as saying nothing. The quotes are also what makes this
+    // safe to read as a phrase: the assistant marked where the value starts and ends, so the
+    // name inside it is taken rather than guessed.
+    static QUOTED: OnceLock<Vec<Regex>> = OnceLock::new();
+    let quoted = QUOTED.get_or_init(|| {
+        [
+            "(?i)\\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\
+             \\s+(?:the\\s+)?(?:earlier|previous|prior|old|former)\\s+[\"\u{201c}\u{ab}`]([^\"\u{201d}\u{bb}`]{2,60})[\"\u{201d}\u{bb}`]",
+            "(?i)\\b(?:reemplaza|sustituye|revierte|anula)\\s+(?:la|el)?\\s*(?:decisi[o\u{f3}]n\\s+)?\
+             (?:anterior|previa|previo)\\s+(?:de\\s+)?[\"\u{201c}\u{ab}`]([^\"\u{201d}\u{bb}`]{2,60})[\"\u{201d}\u{bb}`]",
+        ]
+        .iter()
+        .map(|p| Regex::new(p).unwrap())
+        .collect()
+    });
+
     // one-sided: only the replaced value is named, so what ties the sentence to this decision
     // is the replacement appearing *before* the phrase
     let one = ONE.get_or_init(|| {
@@ -884,7 +903,7 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
             // The value can sit behind a filler noun and whatever verb the assistant chose —
             // "replaces the earlier decision to stick with openssl" — and this goes first
             // because the general shape below would capture `decision` or `choice` instead.
-            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one)\b(?:\s+to\s+[\w-]+)?(?:\s+(?:with|to|on|of|for))?\s+([\w./@+-]{2,40})",
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b(?:\s+to\s+[\w-]+)?(?:\s+(?:with|to|on|of|for))?\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:reemplaza|sustituye|revierte|anula)\s+(?:la|el)?\s*(?:decisi[oó]n\s+)?(?:anterior|previa|previo)\s+(?:de\s+)?([\w./@+-]{2,40})",
         ]
@@ -917,6 +936,21 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
                 continue;
             }
             if let Some(g) = usable(gone) {
+                return Some(g);
+            }
+        }
+    }
+    for re in quoted {
+        for cap in re.captures_iter(ack) {
+            let m = cap.get(0)?;
+            if !names_new(&ack[..m.start()]) {
+                continue;
+            }
+            // Inside the quotes is a phrase, and what retires a record is one word of it. The
+            // name is the one to take — `bcrypt` out of "We're using bcrypt", `LFU` out of
+            // "LFU eviction" — and a phrase with no name in it names no value, so it is left.
+            let phrase = cap.get(1)?.as_str();
+            if let Some(g) = name_tokens(phrase).into_iter().next().and_then(usable) {
                 return Some(g);
             }
         }
@@ -1091,8 +1125,17 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
     // This is the narrowest form of "the reply says it was a decision" that has evidence
     // behind it. The broader form — a bare value, with the reply saying nothing — was built
     // and thrown away after v21, because there the assistant read no decision either.
+    //
+    // The eight-character floor the block above uses is not this block's floor. That one keeps
+    // a message with no evidence in it from becoming a decision on its own words, and eight
+    // characters is a reasonable place to stop reading a sentence. Here the evidence is the
+    // reply, not the message, and a message of four characters is exactly the case this loses:
+    // `zstd`, `cbor`, `gzip`, `tokio`, `semver` — a person types the value and the assistant
+    // answers "which supersedes the earlier gzip note on record". Nothing was typed for any of
+    // them, so nothing was retired, and the fixture built out of such pairs is the one
+    // condition this engine loses. The floor here is two, and the test remains the function.
     if out.len() == before
-        && (8..=700).contains(&n)
+        && (2..=700).contains(&n)
         && !up.trim_end().ends_with('?')
         && ack_replacement(&t.assistant_text, up).is_some()
     {
@@ -1572,6 +1615,27 @@ mod tests {
                 "Noted — LRU with a 300-second TTL, which replaces the earlier LFU eviction \
                  decision.",
                 "lfu",
+            ),
+            // The message is the value and nothing else, which the eight-character floor on
+            // the block above threw away, and the reply names what went in the noun an
+            // assistant actually reaches for. Four characters, and the whole of the evidence
+            // is in the reply.
+            (
+                "zstd",
+                "Noted: zstd it is, which supersedes the earlier gzip note on record.",
+                "gzip",
+            ),
+            (
+                "cbor",
+                "Got it: cbor, replacing the earlier msgpack entry.",
+                "msgpack",
+            ),
+            // and the value it names is a phrase, so the assistant quoted it
+            (
+                "argon2id",
+                "Noted: argon2id for password hashing, which supersedes the earlier \
+                 \"We're using bcrypt\" note on record.",
+                "bcrypt",
             ),
         ];
         for (up, reply, gone) in cases {
