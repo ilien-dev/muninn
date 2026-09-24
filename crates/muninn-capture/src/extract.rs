@@ -957,8 +957,8 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
             // same shape with a verb where the value would be. Allowing it returned `turn`,
             // and before `usable` had a floor it returned `it`, which retired the current
             // serialization decision because that word is in its sentence.
-            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former|recorded|existing|standing|current|original|stated)\s+(?:recorded\s+|existing\s+|standing\s+|current\s+|original\s+|stated\s+)?(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b(?:\s*\([^)]{0,30}\))?(?:\s+to\s+[\w-]+)?(?:\s+(?:with|on|of|for))?\s+([\w./@+-]{2,40})",
-            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+the\s+([\w./@+-]{2,40})(?:\s+[\w-]+)?\s+(?:decision|choice|plan|policy|note|record|entry|setting|value)\b",
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former|recorded|existing|standing|current|original|stated)\s+(?:recorded\s+|existing\s+|standing\s+|current\s+|original\s+|stated\s+)?(?:decision|choice|plan|policy|call|one|note|idea|record|entry|setting|value)\b(?:\s*\([^)]{0,30}\))?(?:\s+to\s+[\w-]+)?(?:\s+(?:with|on|of|for))?\s+([\w./@+-]{2,40})",
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+the\s+([\w./@+-]{2,40})(?:\s+[\w-]+)?\s+(?:decision|choice|plan|policy|note|idea|record|entry|setting|value)\b",
             r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former|recorded|existing|standing|current|original|stated)\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:reemplaza|sustituye|revierte|anula)\s+(?:la|el)?\s*(?:decisi[oó]n\s+)?(?:anterior|previa|previo)\s+(?:de\s+)?([\w./@+-]{2,40})",
         ]
@@ -995,9 +995,9 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
     // The nouns the patterns step over on the way to the value, and the words that mark the
     // phrase as pointing backwards. Neither is ever the value, and both sit exactly where one
     // would if a pattern reached one token too far.
-    const FILLER: [&str; 22] = [
+    const FILLER: [&str; 23] = [
         "decision", "choice", "plan", "policy", "call", "one", "note", "record", "entry",
-        "setting", "value", "earlier", "previous", "prior", "old", "former", "recorded",
+        "setting", "value", "idea", "earlier", "previous", "prior", "old", "former", "recorded",
         "existing", "standing", "current", "original", "stated",
     ];
     let usable = |gone: String| {
@@ -1099,7 +1099,7 @@ pub fn ack_states_replacement(ack: &str, new_object: &str) -> bool {
     static PHRASE: OnceLock<Regex> = OnceLock::new();
     let phrase = PHRASE.get_or_init(|| {
         Regex::new(
-            r#"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former|recorded|existing|standing|current|original|stated)\s+(?:(?:recorded\s+|existing\s+|standing\s+|current\s+|original\s+|stated\s+)?(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b|["“«`][^"”»`]{2,60}["”»`])"#,
+            r#"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former|recorded|existing|standing|current|original|stated)\s+(?:(?:recorded\s+|existing\s+|standing\s+|current\s+|original\s+|stated\s+)?(?:decision|choice|plan|policy|call|one|note|idea|record|entry|setting|value)\b|["“«`][^"”»`]{2,60}["”»`])"#,
         )
         .unwrap()
     });
