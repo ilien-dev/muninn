@@ -5683,8 +5683,8 @@ a grid sit for an hour should not go looking for a deadlock.
 
 # Pre-registration — v35: a value with a reason, recorded as what was written
 
-Registered 2026-09-24, before any cell ran. `muninn-said`, sha256 prefix `e7d024d00cfc87c1`, is
-master. The arm against it is `muninn-shown`, `ae6c9b931e6065de`.
+Registered 2026-09-24, before any cell ran. `muninn-said`, sha256 prefix `2b181c14ca64da18`, is
+master — re-pinned once, still before any cell ran, when the rule's opener was widened. The arm against it is `muninn-shown`, `ae6c9b931e6065de`.
 
 This registration first said those were a day of capture work apart and named the confounding.
 **They are not**: building master with commit `502e9a54` reverted and nothing else produces
