@@ -5851,3 +5851,33 @@ across grids and is labelled so.
   `muninn-quiet2` reverts it whatever the pass rate does: telling an agent the newest episode is
   the latest word is exactly what would make it write a value that a later, unrecorded statement
   replaced.
+
+## Result of v36, 2026-09-24
+
+Six runs, one shared store, 54 replacement cells an arm, no errors.
+
+| arm | pass | `unsafe` |
+|---|---|---|
+| `muninn-latest2` ("the newest thing said … is the latest word") | 23/54 | 2/54 |
+| `muninn-quiet2` (what ships) | 18/54 | 0/54 |
+| `muninn-nothing` (the sentence before `b760ba75`) | 18/54 | 0/54 |
+
+**Primary: 23 against 18, discordant 5 / 0, exact McNemar p = 0.0625. Not significant, and by
+the rule the new sentence is reverted.** Five to nothing is the smallest split that cannot reach
+α = 0.05 two-sided; the point estimate is the largest this file has recorded for a change to
+what Muninn says, and it is still not a result. `unsafe` rose by two, under the revert line and
+in the direction the registration named as the risk.
+
+**Secondary: `muninn-quiet2` against `muninn-nothing`, 18 against 18, and every one of the 54
+cells agrees.** So `b760ba75` cost nothing, and the claim v34's write-up made from the agents'
+reports — that the sentence it introduced was why the agent refused the episodes — is
+**withdrawn**. The agents said the sentence was their reason; with the older sentence in its
+place they refuse the same cells in the same way. What they give as a reason is not evidence of
+what caused the behaviour, and this is the grid that shows it.
+
+The comparison v34 drew to the v31 build (async-runtime, password-hashing and TLS reading 0
+where they read 2, 1 and 3) is therefore drift between grids, as the audit of 2026-09-23 says
+a difference of that size will be.
+
+What stands: five cells, all one way, on a sentence that also raised `unsafe`. That is a reason
+to register a powered test of it, not to ship it.
