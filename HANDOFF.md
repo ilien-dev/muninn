@@ -8,8 +8,13 @@ at 200 repetitions. Nothing is running in the background.
 **The v34 grid was launched and is not finished.** It stalled in `claude-mem` seeding after
 two of six runs — two `muninn-base` snapshots exist under `/tmp/muninn-h2h/h2h-v34-v3/` and no
 task cell ran, so `results.jsonl` does not exist. The process and its orphaned competitor
-daemons were killed. Re-running the same command resumes from those snapshots; the stall is in
-the competitor's own seeding and has not been diagnosed.
+daemons were killed. Re-running the same command resumes from those snapshots.
+
+The cause is in the harness and is fixed: `claude()` captured a session's output through pipes,
+so an MCP server the session started held the write end open and the 300-second timeout could
+never return — the same failure `arm_cmd` six lines above it already documents from pilot 1. It
+writes to files now, in a process group the timeout can end. **The fix has not been run**, and
+the mechanism is inferred from the state the stall left rather than from a reproduction.
 
 ## What is claimed
 
