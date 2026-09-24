@@ -5904,3 +5904,29 @@ exists so that it is not.
   line, scaled to twice the cells — reverts it whatever the pass rate does.
 - If it ships, the claims row for the plain condition does not move on this alone: `v3` is one
   fixture, and the five-fixture figure is stale until all five are re-measured on one build.
+
+## Result of v37, 2026-09-24 — the sentence ships
+
+Twelve fresh runs, one shared store, 108 replacement cells an arm, no errors, only this grid's
+cells counted.
+
+| arm | pass | `unsafe` |
+|---|---|---|
+| `muninn-latest2` ("the newest thing said about it is the latest word on it") | **56/108** | 2/108 |
+| `muninn-quiet2` | 38/108 | 0/108 |
+
+**Primary: discordant 18 / 0, exact McNemar p = 7.6 × 10⁻⁶. It ships.** `unsafe` rose by two,
+under the six-cell line that would have reverted it. The binary that ships from `master` is
+`559e0ea213d717e5`, byte for byte the one this grid measured as `muninn-latest2`.
+
+The effect is one-directional in 108 pairs: no cell where the sentence made an agent fail that
+passed without it. What changes is exactly what v34's reports described — an agent that found
+the values in the episodes and declined to use them now uses the newest one — and it changes
+it by telling the agent something true about the records rather than by adding any.
+
+**What it does not do.** It moves the bare-value fixture from 38 to 56 of 108, which is 52 %.
+claude-mem read 32/54 on this fixture in v34, 59 %. Those are different grids and the audit of
+2026-09-23 puts the drift between them near twelve cells in 216, so the honest statement is
+that the gap on `v3` has narrowed from 0.26 to about 0.07 and has not closed, and that no
+comparison to the competitor is claimed from this grid. The five-fixture figure is stale and
+is not updated.
