@@ -78,6 +78,14 @@ def main() -> None:
     ap.add_argument("--grids", nargs="*", default=DEFAULT_GRIDS)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
+    # Which binary this is, printed before any number it produced. `cargo test` does not
+    # rebuild `target/release/muninn`, so a gate that ends green can leave this reading an
+    # older binary than the tree — it did, and a published figure was two cells low because
+    # of it.
+    sha = subprocess.run(["sha256sum", str(a.binary)], capture_output=True, text=True).stdout[:16]
+    mtime = Path(a.binary).stat().st_mtime if Path(a.binary).exists() else 0
+    import datetime as _dt
+    print(f"binary {sha} built {_dt.datetime.fromtimestamp(mtime):%Y-%m-%d %H:%M}")
     rows = []
     for g in a.grids:
         d = EXP / "results" / g / "seeding"

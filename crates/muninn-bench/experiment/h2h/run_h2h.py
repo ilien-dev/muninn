@@ -208,7 +208,11 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
         try:
             arm_cmd(arm, "start", env)
             spec = json.loads(arm_cmd(arm, "claude-args", env))
-            with open(log, "w") as fh:
+            # Line-buffered on purpose. Buffered, this file stays at zero bytes for the first
+            # dozen sessions, and a seeding job that is merely slow is indistinguishable from
+            # one that is hung — which is exactly how the v34 grid was read as hung when it was
+            # running. Progress a watcher can see is worth one syscall a session.
+            with open(log, "w", buffering=1) as fh:
                 for i, r in enumerate(seed_rows):
                     body = r["body"].strip()
                     body = body[len("user: "):] if body.startswith("user: ") else body
