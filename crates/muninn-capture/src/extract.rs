@@ -361,6 +361,34 @@ const STOP: &[&str] = &[
     "onto",
     "our",
     "we",
+    // The list held `the`, `and`, `for`, `with`, `that` and `this` but not `to`, `of`, `in`,
+    // `on`, `at`, `by`, `is`, `as`, `it`, `a`, `an`, `or`, `no`, `be`, `so`, `if`, `do` or
+    // `up`. Every consumer wants them gone, and one of them retires records: `ack_replacement`
+    // hands `supersede_via_ack` a word and it invalidates the shortest active decision that
+    // contains it, so a preposition coming back from a pattern retires whatever record is
+    // shortest. `it` did exactly that to the current serialization decision. The rest were
+    // latent and are closed here rather than one at a time as each is found.
+    //
+    // `off` is deliberately not on this list: "verification off in dev builds" is a sentence
+    // where `off` is the value, and adding it took ten retirements off one fixture's stores.
+    "to",
+    "of",
+    "in",
+    "on",
+    "at",
+    "by",
+    "is",
+    "as",
+    "it",
+    "a",
+    "an",
+    "or",
+    "no",
+    "be",
+    "so",
+    "if",
+    "do",
+    "up",
     "will",
     "are",
     "was",
@@ -921,7 +949,12 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
             // The value can sit behind a filler noun and whatever verb the assistant chose —
             // "replaces the earlier decision to stick with openssl" — and this goes first
             // because the general shape below would capture `decision` or `choice` instead.
-            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b(?:\s+to\s+[\w-]+)?(?:\s+(?:with|to|on|of|for))?\s+([\w./@+-]{2,40})",
+            // A bare `to` straight after the noun is not one of the ways in: `choice of X` and
+            // `decision to <verb> with X` are, and `plan to turn it off in dev builds` is the
+            // same shape with a verb where the value would be. Allowing it returned `turn`,
+            // and before `usable` had a floor it returned `it`, which retired the current
+            // serialization decision because that word is in its sentence.
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b(?:\s+to\s+[\w-]+\s+(?:with|to|on|of|for)|\s+(?:with|on|of|for))?\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+([\w./@+-]{2,40})",
             r"(?i)\b(?:reemplaza|sustituye|revierte|anula)\s+(?:la|el)?\s*(?:decisi[oó]n\s+)?(?:anterior|previa|previo)\s+(?:de\s+)?([\w./@+-]{2,40})",
         ]
@@ -938,8 +971,33 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
         let low = t.to_lowercase();
         newn.iter().any(|w| low.contains(w.as_str()))
     };
+    // What comes back retires a record: `supersede_via_ack` looks for an active decision with
+    // this word in it and invalidates the shortest match. So a word that is in half the
+    // sentences in the store is not a value, it is a way to retire the wrong record.
+    //
+    // It happened, and on the current decision. "…which replaces the earlier plan to turn it
+    // off in dev builds" gave `it`, which is a whole word of "Switching over to cbor, better
+    // type safety and **it** handles our schema better", and the serialization decision was
+    // retired by the certificate one — five of five cells of that fixture's wire-format task.
+    // `it` was simply missing from `STOP`. It also earns its place twice over: an assistant
+    // that writes "tell me if argon2id replaces it" is asking, not saying, and that sentence
+    // was being read as a retirement.
+    //
+    // The nouns the patterns above step over are excluded here for the same reason. A floor of
+    // three characters was tried instead and measured on the thirty seeded stores: it takes
+    // ten retirements off one fixture and six typed records off another, because values that
+    // short are real — `off` in "verification off in dev builds" is the value. The floor stays
+    // at two and the list does the work.
+    const FILLER: [&str; 11] = [
+        "decision", "choice", "plan", "policy", "call", "one", "note", "record", "entry",
+        "setting", "value",
+    ];
     let usable = |gone: String| {
-        (gone.len() >= 2 && !STOP.contains(&gone.as_str()) && !newn.contains(&gone)).then_some(gone)
+        (gone.chars().count() >= 2
+            && !STOP.contains(&gone.as_str())
+            && !FILLER.contains(&gone.as_str())
+            && !newn.contains(&gone))
+        .then_some(gone)
     };
     for re in reversed {
         for cap in re.captures_iter(ack) {
@@ -1009,6 +1067,42 @@ pub fn ack_replacement(ack: &str, new_object: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Does the acknowledgement say this message replaced something, whether or not it names what?
+///
+/// `ack_replacement` answers a narrower question — *which* value went — because that is what
+/// retires a record, and it returns nothing when the reply names the thing it replaced in a
+/// clause rather than a token: "which replaces the earlier note that plain http was fine for
+/// internal hosts". There is no value in that sentence to hand a retirement, and there is no
+/// doubt at all that the assistant said a replacement happened.
+///
+/// Those are two questions and they were being answered by one function, which is how the
+/// second one came to be answered by accident: the general pattern captured the filler noun
+/// itself, `note`, no record contained that word so nothing was retired, and the junk value's
+/// only effect was to let this message be typed. Naming the noun as a noun took the typing
+/// with it. This is the question the typing rule actually asks.
+///
+/// Tied to this decision the same way: the value the user decided appears before the phrase.
+pub fn ack_states_replacement(ack: &str, new_object: &str) -> bool {
+    if ack_replacement(ack, new_object).is_some() {
+        return true;
+    }
+    static PHRASE: OnceLock<Regex> = OnceLock::new();
+    let phrase = PHRASE.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(?:replaces?|replacing|supersedes?|superseding|reverses?|reversing|overrides?)\s+(?:the\s+)?(?:earlier|previous|prior|old|former)\s+(?:decision|choice|plan|policy|call|one|note|record|entry|setting|value)\b",
+        )
+        .unwrap()
+    });
+    let newn = topic_words(new_object);
+    if newn.is_empty() {
+        return false;
+    }
+    phrase.find_iter(ack).any(|m| {
+        let before = ack[..m.start()].to_lowercase();
+        newn.iter().any(|w| before.contains(w.as_str()))
+    })
 }
 
 pub fn replaces_text(old: &str, new: &str, announces_change: bool) -> bool {
@@ -1179,7 +1273,7 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
     if out.len() == before
         && (2..=700).contains(&n)
         && !up.trim_end().ends_with('?')
-        && ack_replacement(&t.assistant_text, up).is_some()
+        && ack_states_replacement(&t.assistant_text, up)
     {
         let words = topic_words(up);
         if !words.is_empty() {
@@ -1795,6 +1889,37 @@ mod tests {
         ] {
             assert_eq!(ack_replacement(ack, new_obj).as_deref(), Some(gone), "{ack}");
         }
+        // The same shape with a verb phrase where the value would be. There is no value in
+        // "the earlier plan to turn it off in dev builds", and what came back was `it` — a
+        // whole word of "Switching over to cbor, better type safety and it handles our schema
+        // better", which is how the certificate decision retired the serialization one on five
+        // of five cells of that fixture's wire-format task.
+        assert_eq!(
+            ack_replacement(
+                "Understood: certificate verification stays on in all builds, dev included, \
+                 which replaces the earlier plan to turn it off in dev builds.",
+                "Verification on all builds is the right call, even in development environments"
+            ),
+            None
+        );
+        // The reply says a replacement happened and names what went in a clause rather than a
+        // token. There is nothing there to retire a record with, and no doubt that it was
+        // said, so the typing gate reads it and the retirement gate does not.
+        let clause = "Understood: HTTPS everywhere with no plaintext exceptions, which \
+                      replaces the earlier note that plain http was fine for internal hosts.";
+        assert_eq!(
+            ack_replacement(clause, "Https everywhere, no plaintext exceptions here"),
+            None
+        );
+        assert!(super::ack_states_replacement(
+            clause,
+            "Https everywhere, no plaintext exceptions here"
+        ));
+        // …and it is still tied to this decision: a reply about something else does not count
+        assert!(!super::ack_states_replacement(
+            clause,
+            "we should document the release process"
+        ));
         // an aside is not a licence to pair anything: the `to` side must still be the
         // decision's own value
         assert_eq!(
