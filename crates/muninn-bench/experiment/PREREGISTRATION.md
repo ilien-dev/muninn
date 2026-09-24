@@ -5927,6 +5927,6 @@ it by telling the agent something true about the records rather than by adding a
 **What it does not do.** It moves the bare-value fixture from 38 to 56 of 108, which is 52 %.
 claude-mem read 32/54 on this fixture in v34, 59 %. Those are different grids and the audit of
 2026-09-23 puts the drift between them near twelve cells in 216, so the honest statement is
-that the gap on `v3` has narrowed from 0.26 to about 0.07 and has not closed, and that no
+that the gap on `v3` has narrowed from 0.24 to about 0.07 and has not closed, and that no
 comparison to the competitor is claimed from this grid. The five-fixture figure is stale and
 is not updated.
