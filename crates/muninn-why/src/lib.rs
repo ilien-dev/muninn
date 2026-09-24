@@ -280,6 +280,24 @@ pub fn answer(
             ),
         ),
         None if records.is_empty() => (false, "insufficient: nothing recorded matches".into()),
+        // Only episodes, and at least one of them: the person's own words are below, and no
+        // typed record covers the subject. v34's agents ran this, read "insufficient", and
+        // wrote that nothing was recorded with the values in front of them; v37 measured what
+        // the same true statement does in the catalogue, 56 against 38 of 108. It is said here
+        // in the same words, and still opens with `insufficient`, because nothing of trust 2
+        // answers this and an agent that goes on to write a value should know that.
+        None if records
+            .iter()
+            .any(|f| f.record.kind == "episode" && !f.record.invalid) =>
+        {
+            (
+                false,
+                "insufficient: no typed record answers this — the episodes below are what was \
+                 said, word for word, and the newest one about the subject is the latest word \
+                 on it; name their trust, and do not invent a value"
+                    .into(),
+            )
+        }
         None => (
             false,
             // what this has to prevent is an invented value, not an answer: an agent told
@@ -425,6 +443,43 @@ mod tests {
         assert!(
             !a.records[0].record.subject.starts_with("commit:"),
             "and it must not lead the list"
+        );
+    }
+
+    /// Only episodes answer: the verdict stays `insufficient`, and says what the episodes are.
+    /// v34's agents read the older wording as "nothing is recorded" with the values below it.
+    #[test]
+    fn episodes_alone_are_named_as_what_was_said() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        for (i, v) in ["openssl for TLS", "rustls for TLS, better defaults"]
+            .iter()
+            .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('episode',?1,'happened',?2,?2,'tool_observed',1,'s',?1,?3)",
+                    rusqlite::params![format!("session:s#{i}"), format!("user: {v}"), i as i64],
+                )
+                .unwrap();
+        }
+        let a = answer(&db, "the TLS backend", false, 20, 1_500).unwrap();
+        assert!(!a.sufficient);
+        assert!(
+            a.sufficiency.starts_with("insufficient"),
+            "{}",
+            a.sufficiency
+        );
+        assert!(
+            a.sufficiency.contains("word for word") && a.sufficiency.contains("latest word"),
+            "{}",
+            a.sufficiency
+        );
+        assert!(
+            a.sufficiency.contains("do not invent a value"),
+            "{}",
+            a.sufficiency
         );
     }
 
