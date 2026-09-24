@@ -5461,3 +5461,85 @@ in every fixture is a single line, so the store a grid builds is unchanged: rebu
 own seeding with the binary before and after, all 32 records identical in kind, object and
 validity. The published 218/270 stands without re-running anything, and this paragraph exists
 because "it cannot have changed anything" is the kind of claim that should cost one command.
+
+---
+
+# Post-hoc audit, 2026-09-23 — v32 was reverted by a rule that fired where the change could not run
+
+**This is an audit and not a registration. Nothing here moves a published figure**, and the
+five-fixture total stays 218/270 exactly as v31 and v33 left it. What it does is measure a
+thing every grid in this file assumed and none of them checked: whether the code under test
+executed on the fixtures the decision rule read.
+
+## What was assumed
+
+v32's change fills a catalogue's remaining budget with short episodes **only when the store
+holds fewer than five typed records**. Its registration said so, and said that at five or more
+"nothing changes at all". The adverse rule then reverted the change because `v4`, `v5` and `v7`
+read below their baselines — three fixtures whose stores were never counted.
+
+## What the stores hold
+
+`h2h/store_shape.py` rebuilds each fixture's store offline from the committed seeding snapshot
+— no model, the same path `offline_injection.py` uses — and counts what the read path branches
+on. Six seeds per fixture, raw output in `results/store-shape-2026-09-23/shapes.json`:
+
+| fixture | typed records per seed | branch under five |
+|---|---|---|
+| `v3` | 2, 2, 2, 2, 3, 4 | fires in 6 of 6 |
+| `v4` | 10, 10, 10, 11, 11, 11 | never |
+| `v5` | 7, 8, 8, 8, 8, 9 | never |
+| `v6` | 11, 11, 11, 12, 12, 12 | never |
+| `v7` | 8, 8, 9, 9, 10, 12 | never |
+
+**The change executed on one fixture of five, in every seed of that one and no seed of the
+other four.** The three fixtures the adverse rule fired on are three where the treatment was
+never applied.
+
+## What that makes the differences
+
+Those four fixtures are therefore four measurements of the same build against itself, taken in
+different grids:
+
+| fixture | baseline | v32 | difference | exact Fisher |
+|---|---|---|---|---|
+| `v4` | 53/54 (`h2h-v31-v4`) | 48/54 | −5 | 0.113 |
+| `v5` | 45/54 (`h2h-v31-v5`) | 42/54 | −3 | 0.628 |
+| `v6` | 53/54 (`h2h-v29-v6`) | 53/54 | 0 | 1.000 |
+| `v7` | 49/54 (`h2h-v30-heldout`) | 45/54 | −4 | 0.391 |
+| pooled | 200/216 | 188/216 | **−12** | **0.079** |
+
+`unsafe` says it more sharply. v32's co-primary went 1/270 to 9/270 and that is what the
+registration called the change tripling the rate at which the retired value reaches the file.
+Per fixture: **`v3` 2, `v4` 6, `v5` 0, `v6` 1, `v7` 0.** Seven of the nine are on fixtures where
+the change never ran, six of them on the one fixture whose store holds ten and eleven typed
+records.
+
+## The number this project did not have
+
+**Twelve cells in 216 is what two grids differ by when nothing differs between the builds.**
+The published headline is 218/270 against 206/269 — a margin of twelve cells, p = 0.249. The
+drift measured here is the same size as every effect this file has published or rejected, and
+until now there was no figure to compare an effect against. `[Z7]` said 54 cells cannot resolve
+a small effect; this says what "small" is.
+
+## What it does not license
+
+It does not resurrect the sparse catalogue. On `v3`, the one fixture where the change runs, it
+read 27/54 against 18/54, exact Fisher **p = 0.118** — below the α the registration fixed, and
+within the drift band this audit just measured. **The change stays reverted, now for a reason
+that holds: its own fixture does not show an effect.** What is withdrawn is the *evidence* the
+revert was decided on, not the revert.
+
+It also does not make the four re-measurements a regression to publish. v31's adverse rule asks
+whether the shipping build reads worse than the build measured before it; these are not the
+shipping build, and the shipping build's five-fixture figures stand as v31 measured them.
+
+## What it changes going forward
+
+Every arm in `run_h2h.py` seeds its own store from its own live sessions, so two builds compared
+across grids differ in their stores as well as in their cells, and a read-path change is read
+through that noise. **Before the next grid decides anything at this size, the arms have to share
+a seeding snapshot**, so that a read-path comparison is paired on the store and only the agent
+remains stochastic. Until that exists, no decision rule in this file may turn on a margin
+smaller than the twelve cells measured above, and the ones that already did are listed here.
