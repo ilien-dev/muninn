@@ -656,6 +656,21 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         Ok(n) => st.values_retired = n,
         Err(e) => output::err(&format!("muninn maintain: dropped values: {e}")),
     }
+    // Tidy the full-text index. `Stop` writes a handful of records per turn, so a store at
+    // the schema's cap is the product of thousands of small commits and its FTS5 index is in
+    // as many segments: measured on 20 000 records written in 2 000 transactions of ten, 918
+    // segments where a bulk load leaves a few, and a BM25 query costing 8.56 ms against
+    // 6.54 ms once merged. Nothing in this engine has ever run this — `optimize` appears in
+    // the bench fixture and nowhere else — so the degradation was permanent and grew.
+    //
+    // It belongs here and not on a read path: 22 ms the first time on that store, and 0 ms
+    // every time after, because there is nothing left to merge.
+    if let Err(e) = db
+        .conn
+        .execute_batch("INSERT INTO record_fts(record_fts) VALUES('optimize');")
+    {
+        output::err(&format!("muninn maintain: fts optimize: {e}"));
+    }
     if st.commits + st.reverts + st.values_retired > 0
         || db
             .meta_get("records_changed_since_render")
