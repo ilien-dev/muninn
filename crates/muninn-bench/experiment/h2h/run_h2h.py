@@ -229,6 +229,7 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
             # dozen sessions, and a seeding job that is merely slow is indistinguishable from
             # one that is hung — which is exactly how the v34 grid was read as hung when it was
             # running. Progress a watcher can see is worth one syscall a session.
+            unsettled = 0
             with open(log, "w", buffering=1) as fh:
                 for i, r in enumerate(seed_rows):
                     body = r["body"].strip()
@@ -247,8 +248,20 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
                                       "commit", "-qm", CODE_COMMIT_MSG]):
                                 subprocess.run(["git", "-C", str(co), *g], capture_output=True)
                     settled = arm_cmd(arm, "settle", env)
+                    st = json.loads(settled or "{}")
+                    unsettled += st.get("settled") is False
                     fh.write(json.dumps({"i": i, "created_at": r["created_at"], "prompt": prompt, "reply": str(v.get("result"))[:300],
-                                         "is_error": v.get("is_error"), "secs": round(secs, 1), "settle": json.loads(settled or "{}")}) + "\n")
+                                         "is_error": v.get("is_error"), "secs": round(secs, 1), "settle": st}) + "\n")
+            # A competitor that does not finish processing its sessions is not the competitor
+            # as it ships. v39's first attempt ran claude-mem with its observer rejected by the
+            # account's five-hour usage window: every settle hit its ten-minute timeout, the
+            # store held raw prompts and no observations, and the grid would have measured
+            # Muninn against a crippled arm without saying so. A seeding where most sessions
+            # never settled is a failed seeding, and its cells are not run.
+            if unsettled * 2 > len(seed_rows):
+                raise RuntimeError(f"{arm}: {unsettled} of {len(seed_rows)} seeding sessions never "
+                                   "settled — the arm is not working as it ships (check its worker "
+                                   "log, e.g. a usage limit on its observer)")
             snap.mkdir(parents=True, exist_ok=True)
             arm_cmd(arm, "snapshot", env, str(snap))
             if CODE_PAIRS:
