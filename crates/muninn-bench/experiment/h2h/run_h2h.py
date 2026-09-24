@@ -22,7 +22,7 @@ Usage:
   run_h2h.py --out <dir> [--runs 3] [--jobs 3] [--arms off,muninn,claude-mem,agentmemory,agentmemory-inject]
              [--only-seed] [--rerun-errors] [--share-seed <arm>] [--code]
 """
-import argparse, json, os, random, shutil, subprocess, sys, tempfile, threading, time
+import argparse, json, os, random, shutil, signal, subprocess, sys, tempfile, threading, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -142,12 +142,27 @@ def claude(prompt: str, cwd: Path, env: dict, spec: dict, settings: Path, max_tu
     if allowed is not None:
         args += ["--permission-mode", "acceptEdits", "--allowedTools", allowed]
     t0 = time.time()
-    try:
-        p = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
-        out = p.stdout
-    except subprocess.TimeoutExpired as e:
-        out = ""
-        return {"error": "timeout"}, "", time.time() - t0
+    # Files, not pipes, and a session of its own — the same lesson `arm_cmd` above already
+    # carries, learned again on the v34 grid. A session starts MCP servers, they inherit this
+    # process's stdout, and `capture_output=True` then makes the timeout meaningless: killing
+    # the session leaves the servers holding the write end, and `subprocess.run` goes on
+    # reading a pipe that will never reach EOF. The v34 grid sat for two hours on a 300-second
+    # timeout with the seeding log at zero bytes, and three `chroma-mcp` processes alive.
+    # `start_new_session` puts the whole tree in one group so the timeout can end all of it.
+    with tempfile.TemporaryFile("w+") as fo, tempfile.TemporaryFile("w+") as fe:
+        proc = subprocess.Popen(args, cwd=cwd, env=env, stdout=fo, stderr=fe, text=True,
+                                stdin=subprocess.DEVNULL, start_new_session=True)
+        try:
+            proc.wait(timeout=timeout)
+            fo.seek(0)
+            out = fo.read()
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            proc.wait()
+            return {"error": "timeout"}, "", time.time() - t0
     try:
         v = json.loads(out) if out.strip() else {}
     except json.JSONDecodeError:
