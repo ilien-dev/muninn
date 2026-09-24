@@ -5403,3 +5403,35 @@ regressions cannot be the fallback, and reverting the catalogue alone is the rig
 `v3`'s 18 → 27 is therefore unattributed between the two, and the honest consequence is that
 **the published 218/270 stands until the fallback alone is measured on `v3`**. That grid is
 one arm on one fixture, and it is registered below rather than assumed.
+
+---
+
+# Pre-registration — v33: the term fallback alone, on the one fixture it can reach
+
+Registered 2026-09-23, before any cell ran. `muninn-nostop`, sha256 prefix `5153b0b3347fce0a`: v31's
+build plus the `STOP` fix and nothing else, the catalogue change having been reverted.
+
+## Why one fixture and not five
+
+The fallback runs only when every content word of the question is absent from the store. On
+`v4` through `v7` that never happens — their queries reach records that contain the words —
+so the change cannot move those cells and re-running them would spend a grid to confirm an
+identity. **This is an argument and not a measurement, and it is why it is written here before
+the run rather than offered afterwards to explain a number.**
+
+`v3` is where it fires: records whose whole text is `gzip` or `zstd`, a question about the
+compression codec with no word in common, and a fallback that used to answer it with `the`.
+
+## The grid
+
+One arm, six runs, `--code` off, `v3`, against v21's own `claude-mem` and `off` cells.
+Output `results/h2h-v33-v3/`.
+
+## Decision rule, fixed before the data
+
+- **What is measured:** `pass` and `unsafe` on `v3` against v31's 18/54 and 0/54.
+- **If it reads at or above 18/54**, the fallback fix ships and the published five-fixture
+  total becomes v31's four unchanged fixtures plus this `v3` number.
+- **If it reads below 18/54**, it is reverted and the published figure stays exactly 218/270.
+- Nothing here can move the plain condition out of *Not claimed*: `v3` at its best was 31/53
+  for the competitor and this engine would have to double to reach it.
