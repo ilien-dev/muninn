@@ -684,7 +684,54 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let cap = budget * 3;
     let mut cut = 0usize;
     for (id, kind, object, anchored) in rows.iter().take(PAGE) {
-        let flat = object.trim().replace('\n', " ");
+        // The first line of the object, not the whole of it flattened. A decision made from a
+        // whole message carries every line of that message, and flattening them into one
+        // string spends the line's 72 characters on whatever followed the statement — in the
+        // fixtures, on the harness's own trailing instruction, so half of every catalogue line
+        // was the same sentence and three or four fewer decisions fitted the budget. The
+        // measured cost of that: on two fixtures the cache-eviction decision fell off the
+        // bottom of the list, and its value then reached the session nowhere at all — nine of
+        // eighteen cells. What a reader wants from one line is the first one.
+        let first = object
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
+        // …and of that line, the clause that carries the value. A decision's sentence is
+        // usually the value and then the reason for it — "Going with LRU with a 300-second
+        // TTL, easier to reason about", "Semver is better, our API compatibility matters way
+        // more than publication dates" — and the reason is what a one-line index does not need.
+        // Dropping it is not cosmetic: the list is cut by a token budget, and on two fixtures
+        // the two oldest decisions fell off the bottom for want of about a hundred and fifty
+        // characters, so the value an early question asks about reached the session nowhere at
+        // all. The cut needs a floor, because "Actually, let's switch to zstd" and "Yes, use
+        // LFU" open on a clause that names nothing. The floor is what the clause says rather
+        // than how long it is: two words, one of them four characters or more and not a
+        // function word. That keeps "Apache-2.0 instead" and "https everywhere", which a
+        // character floor threw away, and still refuses "Actually" and "OK so".
+        let carries_a_value = |clause: &str| {
+            let words: Vec<&str> = clause.split_whitespace().collect();
+            words.len() >= 2
+                && words.iter().any(|w| {
+                    let bare = w.trim_matches(|c: char| !c.is_alphanumeric());
+                    bare.chars().count() >= 4
+                })
+        };
+        // Only where the line does not fit anyway. A first line inside the display width is
+        // shown whole — on a real store those are ordinary prose and the clause before their
+        // first comma is not what they are about. A line that is going to be cut is cut at
+        // something that means something instead of at a character count.
+        let flat = if first.chars().count() > 72 {
+            first
+                .char_indices()
+                .filter(|(_, c)| *c == ',' || *c == ';')
+                .map(|(i, _)| i)
+                .find(|i| carries_a_value(&first[..*i]))
+                .map_or(first, |i| &first[..i])
+                .to_string()
+        } else {
+            first.to_string()
+        };
         let short = crate::sanitize::truncate_chars(&flat, 72);
         let one = if short.len() < flat.len() {
             format!("{short}\u{2026}")
@@ -1290,6 +1337,44 @@ mod tests {
             c.text.contains("then what was said") && c.text.contains("newest first"),
             "and says so, and that the order is time order:\n{}",
             c.text
+        );
+
+        // A line that fits is shown whole; one that does not is cut at a clause that says
+        // something rather than at a character count, and never at one that says nothing.
+        let tmp3 = tempfile::tempdir().unwrap();
+        let db3 = Db::open(&tmp3.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (i, obj) in [
+            "Going with LRU with a 300-second TTL, easier to reason about",
+            "Semver is better, our API compatibility matters way more than publication dates",
+            "Actually, let us switch to zstd because the ratios are better and it decompresses faster",
+        ]
+        .iter()
+        .enumerate()
+        {
+            db3.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,?3)",
+                    rusqlite::params![format!("said:state:s{i}"), obj, i as i64],
+                )
+                .unwrap();
+        }
+        let c5 = catalog(&db3, 300).unwrap();
+        assert!(
+            c5.text
+                .contains("Going with LRU with a 300-second TTL, easier to reason about"),
+            "a line inside the width is shown whole:\n{}",
+            c5.text
+        );
+        assert!(
+            c5.text.contains("Semver is better\n") || c5.text.contains("Semver is better ·"),
+            "a line over it is cut at the clause that carries the value:\n{}",
+            c5.text
+        );
+        assert!(
+            !c5.text.contains("· Actually\n") && !c5.text.contains("· Actually ·"),
+            "and never at one that carries none:\n{}",
+            c5.text
         );
         assert!(
             !c.text.contains("update dependencies"),
