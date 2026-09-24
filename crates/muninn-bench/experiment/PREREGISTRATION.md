@@ -5994,3 +5994,23 @@ dropped.
   published per fixture, beside the total, and is not averaged away.
 - **What is published regardless:** every per-fixture figure, the total, and `unsafe`, whatever
   they read.
+
+## v39, first attempt, 2026-09-24 — void: the competitor's observer was rejected by a usage limit
+
+The `v3` grid was stopped during seeding and no cell of it ran. claude-mem's worker log reads
+`Subscription usage limit hit {window=five_hour, overageStatus=rejected}`: its observer model runs
+through the account's Claude Code login, and the account's five-hour window was spent. The
+seeding sessions themselves still ran (2 s each), so nothing looked wrong from the outside — but
+claude-mem produced no observations, left every prompt unanswered, and hit its ten-minute settle
+timeout on almost every session. By run 3 not one session settled.
+
+A grid run on that would have measured Muninn against claude-mem **with its memory switched off
+in all but name**, and reported it as the competitor. It is void; the partial seeding is kept
+under `results/h2h-v39-v3-void-usage-limit/` with the worker's log beside it.
+
+The harness now refuses such a seeding: an arm whose settle reports `settled: false` for more
+than half of its sessions fails, and its cells are not run. Checked against the grids that
+count: every claude-mem seeding in v34 settled 20 of 20.
+
+v39 is re-run as registered when the account has the headroom for it. Nothing about the
+registration changes.
