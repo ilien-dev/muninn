@@ -125,7 +125,16 @@ disparar aparece como ausencia `[G3]`.
 - `record_fts`: FTS5 **de contenido externo** sobre `record(subject, object, body)`, para
   no almacenar el texto dos veces. Solo entran filas con `invalid=0`; al invalidar se
   ejecuta el `delete` del FTS5 externo y la fila queda en `record`.
-- `record(subject, relation) WHERE invalid=0`: índice parcial para la supersesión en O(1).
+- `record(subject, relation) WHERE invalid=0`: índice parcial. Sirve la supersesión **por
+  clave exacta** (`ingest.rs`: mismo `subject` y `relation`, otro `object`) y la detección de
+  conflictos. La supersesión por **palabras de contenido**, que es la que hace el trabajo, no
+  puede usarlo: compara conjuntos de palabras en Rust y necesita todos los candidatos, así que
+  recorre las decisiones de usuario activas — cuatro en la tienda de este proyecto, porque los
+  registros de commit usan `relation = 'is'`.
+  Medido: con el plan que toma `record_kind` en vez de este índice, la consulta de conflictos
+  cuesta 0,003 ms por llamada sobre 5 982 decisiones activas, y 1,45 ms cuando 2 658 comparten
+  un `subject` — **lo mismo por los dos planes**. Un plan malo solo cuesta cuando el conjunto
+  de resultados es pequeño; ahí lo que se paga son las filas, no el camino.
 - `record(anchor_path)`: para el validador de anclas.
 - `cue(kind, key, record_id, grp)`: cubriente. Una cue de directorio sobre un directorio
   concurrido casa miles de filas y `evaluate` solo quiere el par; leerlas de la tabla costaba
