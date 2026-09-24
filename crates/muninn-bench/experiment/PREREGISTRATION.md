@@ -5579,3 +5579,70 @@ analysis to sharpen a decision on these grids.
 discordant split is **0 / 20**: there is no cell in that grid where this engine answered and the
 competitor did not. Every cell Muninn wins there, claude-mem wins too. A strict subset is not
 what noise looks like — it is one cause, and `[Z5]` already names it.
+
+---
+
+# Pre-registration — v34: the sparse catalogue, rebuilt on a store whose episodes carry values
+
+Registered 2026-09-23, before any cell ran. Two arms of one tree, one commit apart:
+`muninn-base`, sha256 prefix `a9aaf1c8d2462d4f` (master at `1f1b5a50`), and `muninn-shown`,
+`0381c1b0dd8654e8` (master at `0a1976ad`). The diff is one file, `recall::catalog`, and nothing
+in it writes.
+
+## Why this is not v32 again
+
+v32 tested the same idea and bought nothing, and the audit above found the reason its adverse
+rule fired on drift. This registration is different in three ways that were measured, not
+argued:
+
+1. **The list it produces is different.** At v32 the episode objects were wrong: `first_line`
+   skipped a one-word line, so eight of the fixture's twenty episodes carried the harness's own
+   trailing instruction as their object and the list was that sentence repeated. Those defects
+   are fixed, and the same store now renders `zstd` above `gzip`, `cbor` above `msgpack`,
+   `semver` above `calver`, `Apache-2.0` above `GPL-3.0`.
+2. **The comparison is within one grid and on one store.** v32 compared its arm against
+   numbers from four other grids, which the audit measured at twelve cells of drift in 216.
+   Here both Muninn arms and the competitor run in the same grid, and `--share-seed
+   muninn-base` gives the two Muninn arms the same seeded store — valid because the diff is
+   read-path only, asserted here and recorded in `FROZEN.jsonl`.
+3. **The block says what it is holding.** The header names what was said as a third group and
+   the closing line says those lines were not stated as decisions and are newest first. It
+   stops there: nothing tells an agent that a later line retires an earlier one.
+
+## The grid
+
+`run_h2h.py --out results/h2h-v34-v3 --runs 6 --arms off,claude-mem,muninn-base,muninn-shown
+--seed-phrasings h2h/v3/seed_phrasings.json --share-seed muninn-base`, `--code` off. Nine of
+the fixture's ten tasks are replacements, so 54 cells an arm.
+
+## Decision rule, fixed before the data
+
+- **Primary:** `muninn-shown` against `muninn-base`, same store, same task, same run — exact
+  McNemar on the discordant cells, α = 0.05. The design is paired for the first time in this
+  file, so the paired test is the primary one; the exact Fisher on the totals is reported
+  beside it.
+- **Co-primary, failing on its own:** `unsafe`, the retired value written into the file.
+  **A rise of five cells or more over `muninn-base` reverts the change whatever the pass rate
+  does.** v32's version of this idea tripled it on the numbers as they were read then, and a
+  catalogue that lists two values with no marker saying which won is exactly the shape that
+  can.
+- **Reported, not confirmatory:** `muninn-shown` against `claude-mem` in the same grid — the
+  first within-grid measurement of this comparison on this fixture. `off` is the registered
+  control and must stay at or near 0/54 or the grid is void.
+- **If the primary is not significant, the change is reverted.** It was built for this fixture
+  and it has no other argument; "it did not lose" is not a reason to carry a change that
+  dilutes the list that won the code condition.
+
+## What this grid does not do
+
+It does not update the published five-fixture total. **That figure, 218/270, was measured on a
+build that no longer ships** — the day's capture fixes moved the stores of four of the five
+fixtures (typed records 15 → 17, retired 9 → 10, 34 → 36, 44 → 46, measured offline on all
+thirty seeded stores). It is therefore stale whatever this grid reads, and a five-fixture
+figure is not published again until all five are re-measured on one build. What this grid can
+publish is `v3`, in-grid, with its own `claude-mem` cells.
+
+The change is inert where five or more typed records exist, which is every other fixture
+measured (`v4` 10–11, `v5` 7–9, `v6` 11–12, `v7` 8–12) and this repository's own store (792
+active records, zero episode lines in its catalogue). That inertness is checked by
+`store_shape.py` and by reading the live block, not by spending grids on it.
