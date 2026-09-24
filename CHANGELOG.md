@@ -12,8 +12,9 @@
   `replaces #n` read from `invalidated_by` and `conflict` where two active records disagree,
   under a 300-token budget whose last line says whether the list is complete. `muninn show
   <id> [<id> …]` pulls any entry in full and returns nothing for a retired id. On the shipped
-  build: **51 of 54 against claude-mem 13.24.23's 25 and agentmemory 0.9.29's 1**, with a
-  no-memory control at 0 of 54 (`results/h2h-v13-final/`).
+  build: **54 of 54 against claude-mem 13.24.23's 25 and agentmemory 0.9.29's 1**, with a
+  no-memory control at 0 of 54, the retired value written into none of the 54 where
+  claude-mem writes it into 10 (`results/h2h-v17/`, re-measured 2026-09-23).
 - **A moved file is not a retirement, and saying so is worth twelve cells.** Two sentences in
   the startup summary took 39 of 54 to 51 of 54 (exact Fisher p = 0.0036) with nothing else
   changed. Eleven of the thirteen remaining failures were an agent reading a removed file as a
@@ -32,8 +33,56 @@
   line per gated record (4 200 a prompt, 14 MB in 32 prompts) and re-read them on the next;
   `cue::merge` formatted blocks after the budget was spent; `cue::evaluate` ran two queries per
   candidate; and the session-start cue loaded every invariant in the store to render sixteen.
-  Now 8.9 ms and 4.4 ms, with the gate's fixture rebuilt to run at the cap and to contain what
-  production contains.
+  Now 2.7 ms and 3.7 ms, with the gate's fixture rebuilt to run at the cap, to contain what
+  production contains, and to build its full-text index the way a running store builds one.
+- **The latency gate ran at a quarter of the size it published.** `docs/claims.md` gives the
+  hook figures "at 20 000 records", which is the schema's own cap; the fixture used 5 000. At
+  the cap SessionStart measured **10.5 ms against its 10 ms limit** and CI could not see it.
+  Two query plans, the same mistake twice: the catalogue's page query and its per-line conflict
+  test both let SQLite take the index on `kind`, which abandons the index that answers the
+  ORDER BY and sorts every active decision into a temp B-tree before `LIMIT 121` throws it
+  away. A unary `+` on each `kind` term leaves what they select unchanged and takes the term
+  out of the planner's reach: **23.9 ms → 0.77 ms** end to end on a 20 000-record store. The
+  fixture's default is the cap now, and a test asserts both query plans so the `+`, which reads
+  like a typo, cannot be tidied away.
+- **Three experiment oracles were reading the instrument.** `muninn recall` printed
+  `terms: … · 0.53 ms` on stdout ahead of the blocks, and loop 1, loop 8 and `eval_code.py`
+  searched that whole stream for the value they were looking for. The retry-budget cell goes
+  from `3` to `7`: `0.53 ms` contains the old value and `session s017` the new one, so three
+  runs of the same command gave 9, 8, 8 on a fixture documented as deterministic. The header
+  moved to stderr and the oracles read block text on token boundaries. Re-run on both held-out
+  sets, every retirement figure reproduces and loop 8's delivered figures read **higher**, not
+  lower — the old oracle was finding the *old* value inside a session id.
+- **Nine invariants belonged to another conversation.** Four came from the prompts that
+  generated loops 8, 9 and 10 ("The replacement must not contain the original as a substring");
+  four were lines of a scaffold's JSON contract inside a PM-Bench payload whose blocks start
+  with `USER:`. They were delivered at every session start as rules of this project.
+  Re-capturing all 1 919 transcripts: 29 invariants before, 20 after, and the nine that go are
+  exactly those.
+- **A compaction summary was being served as something the user said.** A third of the episodes
+  one transcript yields come from those turns and all of them read `user:` at trust 1. They are
+  the assistant's own words condensed; they now carry a `summary:` label and trust 0, which is
+  the level the renderer frames as "treat as a hint, not a fact".
+- **Nothing had ever tidied the full-text index.** `optimize` appeared in this repository once,
+  in the bench fixture, right after a bulk load. Production writes a handful of records a turn,
+  so a store at the cap is thousands of small commits and its index is in as many segments:
+  **918 segments and a BM25 query at 8.56 ms, against 6.54 ms once merged.** `maintain` runs the
+  optimize — 22 ms the first time, 0 ms after — and the fixture builds its index the way a
+  running store does, so the gate stops measuring one no store has.
+- **Two health checks could not fire.** `render` compared two `meta` keys nothing has ever
+  written, so it read "cold: fewer than two renders" from the day it was added; the fingerprint
+  is rolled by `maintain` now. `capture` reported "queue empty" by reading a key nothing writes
+  — a green that asserts rather than observes — and is removed, because the question it meant to
+  ask is check 1's and check 1 answers it from keys that exist. There are ten checks where the
+  module header said nine and there were eleven.
+- **On decisions that never reach the code, this engine does not beat a store-everything
+  memory.** Five phrasing sets were generated after the fact, each registered before it ran, and
+  the shipping build measured on all five reads **218 of 270 against claude-mem's 206 of 269,
+  p = 0.25** — ahead, not distinguishably, and **not claimed**. It splits: on the four sets whose
+  messages are sentences, 200 of 216 against 175 of 215; on the one where four of ten pairs are
+  a bare value, **18 of 54 against 31 of 53**. A turn that is one word contains no statement for
+  a typed ledger to record, the rule that would have invented one was built and reverted after
+  reading what the assistant actually replied, and that is what this costs without a model.
 - **The harness is not the user.** Claude Code injects `<task-notification>`,
   `<system-reminder>` and slash-command blocks inside `type: user` lines with no `isMeta` flag
   — 134 and 56 of them in this project's own transcripts — and they were captured as things the
