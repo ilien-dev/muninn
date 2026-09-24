@@ -60,8 +60,25 @@ def lock_for(arm: str) -> threading.Lock:
 
 
 def next_port() -> int:
+    """The next port in the range that nothing is already listening on.
+
+    An arm that starts a worker refuses a port that already answers, and it is right to —
+    talking to somebody else's worker would put a cell's memory in another cell's store. But
+    the harness was handing out the numbers blind, so a worker left behind by an interrupted
+    run made the next run fail at `start` with "port 38100 already answers", and the whole
+    seeding job with it. Observed twice in one morning. Skipping a busy port costs one socket
+    call per cell.
+    """
+    import socket
     with _plock:
-        return next(_ports)
+        for _ in range(256):
+            port = next(_ports)
+            with socket.socket() as sk:
+                sk.settimeout(0.2)
+                if sk.connect_ex(("127.0.0.1", port)) != 0:
+                    return port
+            print(f"port {port} is already in use, skipping it", flush=True)
+        raise RuntimeError("no free port in the range")
 
 
 def checkout(dest: Path, seed: bool = False) -> None:
