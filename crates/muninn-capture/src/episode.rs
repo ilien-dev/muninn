@@ -33,12 +33,55 @@ fn strip_tags(s: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// The first line that says something. `object` is the one line of an episode that the
+/// catalogue, `muninn why` and every listing show, and taking the first non-empty line gave
+/// this project's own store three records whose whole object is a code fence and several whose
+/// object is a numbered heading out of a compaction summary — lines that open a block rather
+/// than state anything.
+///
+/// Skipped: everything inside a fence, a line that ends on a colon (which introduces what
+/// follows, the same rule `decision_candidates` applies to a sentence), and a line without two
+/// words in it. If the whole text is that, the first non-empty line is used anyway: an object
+/// is better wrong than missing.
 fn first_line(s: &str, max: usize) -> String {
-    let l = s
-        .lines()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("")
-        .trim();
+    let says_something = |l: &str| {
+        let t = l.trim();
+        let bare = t
+            .trim_start_matches(|c: char| {
+                c == '#' || c == '-' || c == '*' || c == '>' || c == '|' || c.is_ascii_digit()
+            })
+            .trim_start_matches(['.', ')', ' ']);
+        let bare = bare.trim_matches(|c: char| c == '*' || c == '_' || c == '`');
+        if bare.trim_end().ends_with(':') {
+            return false;
+        }
+        let words: Vec<&str> = bare
+            .split_whitespace()
+            .filter(|w| w.chars().any(char::is_alphanumeric))
+            .collect();
+        words.len() >= 2
+            && words
+                .iter()
+                .any(|w| w.chars().filter(|c| c.is_alphabetic()).count() >= 3)
+    };
+    let mut fenced = false;
+    let mut pick: Option<&str> = None;
+    let mut first: Option<&str> = None;
+    for l in s.lines() {
+        let t = l.trim();
+        if t.is_empty() {
+            continue;
+        }
+        first.get_or_insert(t);
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if !fenced && pick.is_none() && says_something(t) {
+            pick = Some(t);
+        }
+    }
+    let l = pick.or(first).unwrap_or("");
     truncate_chars(l, max).to_string()
 }
 
@@ -266,6 +309,32 @@ mod chunk_tests {
 
 #[cfg(test)]
 mod split_word_tests {
+    /// `object` is the one line every listing shows. Taking the first non-empty line gave this
+    /// project's own store three records whose object is a code fence and several whose object
+    /// is a numbered heading out of a compaction summary.
+    #[test]
+    fn an_objects_first_line_is_one_that_says_something() {
+        let cases = [
+            (
+                "```json\n{\n  \"a\": 1\n}\n```\nthe config above is what we ship",
+                "the config above is what we ship",
+            ),
+            (
+                "9. **Optional Next Step:**\nRe-measure the window cost tomorrow",
+                "Re-measure the window cost tomorrow",
+            ),
+            (
+                "continua en donde te quedaste ayer",
+                "continua en donde te quedaste ayer",
+            ),
+            // nothing in it says anything, so the first line is used rather than nothing
+            ("},", "},"),
+        ];
+        for (body, want) in cases {
+            assert_eq!(super::first_line(body, 160), want, "{body:?}");
+        }
+    }
+
     use super::{from_turn_all, head_chars};
     use crate::model::Turn;
 
