@@ -5,16 +5,19 @@ exact-tokens`, `cargo fmt`, `cargo clippy --workspace --all-targets --features e
 -- -D warnings`, `cargo run --release -p muninn-bench -- perf --strict`, and the fault suite
 at 200 repetitions. Nothing is running in the background.
 
-**The v34 grid was launched and is not finished.** It stalled in `claude-mem` seeding after
-two of six runs — two `muninn-base` snapshots exist under `/tmp/muninn-h2h/h2h-v34-v3/` and no
-task cell ran, so `results.jsonl` does not exist. The process and its orphaned competitor
-daemons were killed. Re-running the same command resumes from those snapshots.
+**The v34 grid is running** (launched 2026-09-24, `results/h2h-v34-v3/`), re-pinned to today's
+tree: both arms are master, one `git revert` of the catalogue commit apart, sharing a seed.
 
-The cause is in the harness and is fixed: `claude()` captured a session's output through pipes,
-so an MCP server the session started held the write end open and the 300-second timeout could
-never return — the same failure `arm_cmd` six lines above it already documents from pilot 1. It
-writes to files now, in a process group the timeout can end. **The fix has not been run**, and
-the mechanism is inferred from the state the stall left rather than from a reproduction.
+Yesterday's attempt was read as hung and a cause was published for it. **That cause is
+withdrawn** — the evidence was a seeding log at zero bytes, and the log was buffered. Measured
+instead: a bare session costs 2.8 s, one with the competitor's plugin 2.4 s, and that arm's
+`settle` 8–11 s alone but **61 s under the three-way concurrency the grid runs at**. Six seeding
+jobs of twenty rows is therefore about two hours, which is what was read as a hang.
+
+Three harness fixes stand on their own merits: the seeding log is line-buffered, so a slow job
+can be told from a hung one; `claude()` writes to files in its own process group, so a timeout
+ends the session's children instead of leaving them to be killed by hand; and `next_port` skips
+a port something is already listening on, which failed a run twice in one morning.
 
 ## What is claimed
 
