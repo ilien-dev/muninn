@@ -575,6 +575,19 @@ fn main() {
                                 output::json(
                                     &serde_json::json!({"text": m.text, "ids": m.ids, "tokens": m.tokens, "reasons": m.reasons, "gated": m.gated}),
                                 );
+                            } else if m.text.is_empty() {
+                                // Silence here reads as "nothing is recorded" when it usually
+                                // means the command was given no context to evaluate against.
+                                let empty = ctx.files.is_empty()
+                                    && ctx.symbols.is_empty()
+                                    && ctx.keywords.is_empty();
+                                output::out(if empty {
+                                    "no context to evaluate: pass `--file`, `--symbol` or \
+                                     `--keyword` (the `--event` alone fires only records with \
+                                     an event cue)"
+                                } else {
+                                    "no record has a trigger condition matching that context"
+                                });
                             } else {
                                 output::out(&m.text);
                             }
