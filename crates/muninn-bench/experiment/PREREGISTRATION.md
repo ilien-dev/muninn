@@ -5965,3 +5965,32 @@ Two changes to what Muninn says, both measured on a paired design, have now take
 from 38 of 108 to 68. claude-mem read 32/54 on it in v34 — 59 % against 63 % — and that is a
 comparison across grids that this file does not make. The one that would be made is registered
 next: both, in one grid, on all five fixtures.
+
+---
+
+# Pre-registration — v39: the shipping build against claude-mem, in one grid, on all five fixtures
+
+Registered 2026-09-24, before any cell ran. This is the measurement the five-fixture figure has
+been waiting for since it went stale: one build of each product, in the same grid, on the same
+fixtures, seeded in the same sessions' order.
+
+- **Muninn:** `muninn-whysaid`, `16d29b222af40391`, the binary on `master`.
+- **Competitor:** `claude-mem` 13.24.23, pinned as in every earlier grid.
+- **No `off` arm.** Each fixture's control has already read 0/54 in its own registered grid.
+
+`--share-seed` is **not** used: the two arms are different products and each builds its store
+the way it ships. Five grids, one per fixture, run in sequence — `results/h2h-v39-v3/` through
+`-v7/` — six runs each, `--code` off. A grid voided in part by the account's session limit is
+completed with `--rerun-errors` on the same pinned binaries and seeded snapshots, and no cell is
+dropped.
+
+## Decision rule, fixed before the data
+
+- **Confirmatory:** the five-fixture total, Muninn against claude-mem, exact Fisher, α = 0.05.
+  The plain condition moves out of *Not claimed* only on a significant positive.
+- **Co-primary, failing on its own:** `unsafe` over the same five. A Muninn rate significantly
+  above claude-mem's is published as a loss whatever the pass rate does.
+- **Adverse:** any fixture where Muninn reads significantly below claude-mem at α = 0.05 is
+  published per fixture, beside the total, and is not averaged away.
+- **What is published regardless:** every per-fixture figure, the total, and `unsafe`, whatever
+  they read.
