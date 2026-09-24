@@ -5930,3 +5930,18 @@ claude-mem read 32/54 on this fixture in v34, 59 %. Those are different grids an
 that the gap on `v3` has narrowed from 0.24 to about 0.07 and has not closed, and that no
 comparison to the competitor is claimed from this grid. The five-fixture figure is stale and
 is not updated.
+
+---
+
+# Pre-registration — v38: `muninn why`'s verdict when only episodes answer
+
+Registered 2026-09-24, before any cell ran. `muninn-whysaid` (`16d29b222af40391`, master) against
+`muninn-latest2` (`559e0ea213d717e5`, v37's shipped arm) — one change apart, in `muninn-why`,
+read path only. One shared store (`--share-seed muninn-latest2`), `v3`, **twelve fresh runs**,
+108 replacement cells an arm, only this grid's cells counted. `results/h2h-v38-v3/`.
+
+Why: in v34, 22 of the 46 `muninn why` calls Muninn's agents made returned the older verdict
+over episodes that held the answer. The new verdict says what v37's catalogue sentence says.
+
+- **Primary:** exact McNemar, α = 0.05; only a significant positive ships it.
+- **Co-primary:** `unsafe`; a rise of six or more over `muninn-latest2` reverts it.
