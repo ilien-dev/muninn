@@ -209,7 +209,18 @@ pub fn run(
                     }
                 }
             }
-            let stuck = open.values().filter(|at| now - **at > 120_000).count();
+            // Older than two minutes and younger than an hour. A hook the harness killed
+            // leaves a `start` with no `finish` for ever, and counting those without an upper
+            // bound makes this a tally that only grows: this project's own store sat RED on
+            // thirteen orphans from `claude -p` cells that had been dead for hours, with
+            // nothing wrong and no way back to green. What the check is for is a hook that is
+            // hanging *now*.
+            const STUCK_FLOOR_MS: i64 = 120_000;
+            const STUCK_CEILING_MS: i64 = 3_600_000;
+            let stuck = open
+                .values()
+                .filter(|at| (STUCK_FLOOR_MS..STUCK_CEILING_MS).contains(&(now - **at)))
+                .count();
             let worst = fails.iter().max_by_key(|(_, (n, _))| *n);
             match worst {
                 Some((hook, (n, err))) if *n >= 3 => {
@@ -732,6 +743,39 @@ mod tests {
     /// A repeated hook failure used to report only its count, and point at the command
     /// that produced the report: the reader was sent back to where they already were.
     /// The error the hook recorded is what names the cause, so it is in the RED line.
+    /// A hook the harness killed leaves a `start` with no `finish` for ever. Counting those
+    /// with no upper bound made this a tally that only grows: this store sat RED on thirteen
+    /// orphans hours dead, with nothing wrong and no way back to green.
+    #[test]
+    fn an_orphan_from_hours_ago_is_not_a_hook_that_is_hanging_now() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        std::fs::create_dir_all(paths.muninn_dir.clone()).unwrap();
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        let log = paths.heartbeat_log();
+        std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+        let now = crate::db::now_ms();
+        let line = |at: i64, s: &str| {
+            format!(r#"{{"ev":"start","hook":"Stop","session":"{s}","at":{at},"pid":1}}"#) + "\n"
+        };
+        // one dead for four hours, one hanging for five minutes
+        std::fs::write(
+            &log,
+            line(now - 4 * 3_600_000, "old") + &line(now - 300_000, "now"),
+        )
+        .unwrap();
+        let r = run(&paths, Some(&db), None, false);
+        let c = r.checks.iter().find(|c| c.id == 2).unwrap();
+        assert_eq!(c.status, Status::Red);
+        assert!(c.detail.starts_with("1 hook run"), "{}", c.detail);
+
+        // with only the old one, nothing is hanging
+        std::fs::write(&log, line(now - 4 * 3_600_000, "old")).unwrap();
+        let r = run(&paths, Some(&db), None, false);
+        let c = r.checks.iter().find(|c| c.id == 2).unwrap();
+        assert_eq!(c.status, Status::Green, "{}", c.detail);
+    }
+
     #[test]
     fn repeated_failure_carries_the_error_and_a_remedy() {
         let tmp = tempfile::tempdir().unwrap();
