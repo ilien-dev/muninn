@@ -5683,10 +5683,15 @@ a grid sit for an hour should not go looking for a deadlock.
 
 # Pre-registration — v35: a value with a reason, recorded as what was written
 
-Registered 2026-09-24, before any cell ran. `muninn-said`, master at `502e9a54`; the arm against
-it is `muninn-shown`, master at `0a1976ad` — one capture change apart, plus the day's earlier
-capture work, which is stated here rather than hidden: **this is not a one-commit comparison**
-and the confounding is named before the data.
+Registered 2026-09-24, before any cell ran. `muninn-said`, sha256 prefix `e7d024d00cfc87c1`, is
+master. The arm against it is `muninn-shown`, `ae6c9b931e6065de`.
+
+This registration first said those were a day of capture work apart and named the confounding.
+**They are not**: building master with commit `502e9a54` reverted and nothing else produces
+`ae6c9b931e6065de` byte for byte — the same binary already pinned as `muninn-shown` for v34,
+because every commit between them changed documents or the harness and not the engine. So this
+is a one-commit comparison after all, checked by the build rather than assumed from the log, and
+the same pinned binary serves as the head of one grid and the base of the next.
 
 ## The change
 
