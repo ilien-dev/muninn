@@ -5764,3 +5764,47 @@ the episode is still what the query reaches.
 That is worth keeping on record because it says where the remaining fifteen live. They are not
 a missing rule in capture; they are a retrieval question, and the words to answer it with do
 not exist in the record the answer is in.
+
+## Result of v34, 2026-09-24 — the sparse catalogue does nothing, and is reverted
+
+Six runs, 54 replacement cells an arm, both Muninn arms on one shared store. The account hit its
+session limit during run 5 and voided 29 cells across all four arms; they were re-run with
+`--rerun-errors` after the reset, on the same pinned binaries and the same seeded snapshots, and
+no cell is missing from the table.
+
+| arm | pass | `unsafe` |
+|---|---|---|
+| `muninn-shown` (episodes listed) | 15/54 | 1/54 |
+| `muninn-base` | 14/54 | 1/54 |
+| `claude-mem` 13.24.23 | **32/54** | 0/54 |
+| `off` | 0/54 | 0/54 |
+
+**Primary: 15 against 14, one discordant cell, exact McNemar p = 1.0.** The registered rule says a
+non-significant primary reverts the change, and it is reverted. The paired design worked as
+intended — 53 of 54 cells agree, because both arms read the same store — and what it shows is
+that listing the values in the catalogue changes almost nothing an agent does with them.
+
+**Reported: Muninn 14/54 against claude-mem 32/54, discordant 0 / 18, p < 10⁻⁴.** In-grid, on
+the same seeding, and the same strict subset `v21-heldout` showed: no cell where Muninn answers
+and claude-mem does not.
+
+### Why, read from the cells rather than guessed
+
+The agent's own reports say what happened. On the TLS task, run 0:
+
+> Muninn has no decision entry that picks a TLS library. Its only mentions of one are two session
+> excerpts: "openssl for TLS", then "rustls. better defaults". Those are unclassified excerpts,
+> not decisions, so I didn't treat either as current.
+
+On async-runtime and password-hashing, every run read the same way: the episodes were found, in
+order, and **refused** as "unpromoted, low-trust session excerpts". The agent had the answer in
+front of it and wrote "no decision is currently recorded".
+
+What it refused them on is what the catalogue now says. Since `b760ba75` it closes with "That is
+every decision, rule and correction on record. Earlier sessions are kept too, as episodes, and
+they are not listed here" — true, and read as a ranking in which an episode is not something you
+act on. That commit replaced a sentence that was false ("a subject missing from this list has
+nothing on record"), and on this evidence it cost cells: the v31 build read async-runtime 2/6,
+password-hashing 1/6 and TLS 3/6 on this fixture; today's reads 0 on all three, and the reports
+name the reason. That comparison is across grids and within the twelve-cell drift, so it is
+stated as what the reports say and not as a measured regression; v36 below measures it.
