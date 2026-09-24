@@ -2,6 +2,23 @@
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **An agent handed the answer in an episode now uses it: 56 of 108 against 38 on the
+  bare-value fixture** (v37, exact McNemar p = 7.6 × 10⁻⁶, 18 discordant cells and all one
+  way, `unsafe` 2 against 0). The agents' own reports showed the failure: they found the
+  values, in order, and declined them as "not decisions". The catalogue now says what is true
+  about episodes — the person's own words, kept word for word, and the newest one about a
+  subject is the latest word on it. A first run at 54 cells read 23 against 18, p = 0.0625, and
+  was reverted by its rule; the powered run was registered before it ran and counted alone.
+- **Capture reads more of what the assistant says when it acknowledges a change**, measured
+  offline with a new instrument (`store_answers.py`) over thirty seeded stores: scenarios whose
+  store holds the new value and not the old 175 → 264 of 270, the old value still typed 25 → 4.
+  A pronoun had been retiring the current decision (`it` was missing from the stop list, with
+  seventeen other function words); an episode the reply names is now retired when no decision
+  holds the value. Precision on this project's own 12 695 records: unchanged, not one
+  retirement added.
+- **The catalogue shows the clause that carries the value**, so eleven entries fit where nine
+  did, and the new value reaches the session in 265 of 270 scenarios instead of 257.
+
 - **A person who types the value and nothing else was being ignored by three separate rules.**
   The object of an episode was the first line with two words in it, so `zstd`, `msgpack`,
   `calver`, `semver` and `Apache-2.0` were skipped and whatever followed became the object

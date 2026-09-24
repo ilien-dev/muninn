@@ -5,8 +5,12 @@ exact-tokens`, `cargo fmt`, `cargo clippy --workspace --all-targets --features e
 -- -D warnings`, `cargo run --release -p muninn-bench -- perf --strict`, and the fault suite
 at 200 repetitions. Nothing is running in the background.
 
-**The v34 grid is running** (launched 2026-09-24, `results/h2h-v34-v3/`), re-pinned to today's
-tree: both arms are master, one `git revert` of the catalogue commit apart, sharing a seed.
+**Grids run on 2026-09-24, all on `v3` and all with both Muninn arms on one shared store:**
+v34 — listing episodes in the catalogue does nothing (15 vs 14), reverted. v36 — a new closing
+sentence for the catalogue, 23 vs 18, p = 0.0625, reverted by its rule. v37 — the same sentence,
+twelve fresh runs counted alone, **56 vs 38 of 108, p = 7.6 × 10⁻⁶: ships.** The binary on
+`master` is byte-identical to the one v37 measured. v36 also withdrew a claim of the morning:
+the sentence the agents blamed for their refusals cost nothing (18 vs 18, all 54 cells agree).
 
 Yesterday's attempt was read as hung and a cause was published for it. **That cause is
 withdrawn** — the evidence was a seeding log at zero bytes, and the log was buffered. Measured
@@ -122,7 +126,8 @@ its own fixture — `v3`, 27/54 against 18/54, p = 0.118 — and not on the rule
    article after `instead of`; an adjective between `earlier` and the noun; a quoted phrase
    where the typing gate wanted a noun; and one function answering two questions, which is why
    `ack_states_replacement` now exists beside `ack_replacement`.
-3. **`--share-seed` exists and no grid has used it.** Each arm seeding its own store is the
+3. **`--share-seed` is now the default design for a read-path change** — v34, v36 and v37 used
+   it, and 49–53 of 54 paired cells agreeing is what let v37 resolve an effect v36 could not. Each arm seeding its own store is the
    remaining structural source of the drift above; pairing on the task was tried on all six
    grids that hold both arms and recovers nothing (McNemar and Fisher agree to within 0.05),
    so the analysis side is closed and the store side is not.
