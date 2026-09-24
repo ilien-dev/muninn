@@ -6014,3 +6014,44 @@ count: every claude-mem seeding in v34 settled 20 of 20.
 
 v39 is re-run as registered when the account has the headroom for it. Nothing about the
 registration changes.
+
+---
+
+# v39 withdrawn for cost; pre-registration — v40: the shipping build on all five fixtures, Muninn cells only
+
+Registered 2026-09-24, before any cell ran. v39 is withdrawn before any cell of it ran, at the
+user's request, for cost: re-seeding the competitor spends the account's quota twice over — its
+seeding sessions and its observer — and ran into the account's usage window once already.
+
+**What changes.** Only the Muninn arm is run. The competitor's cells are the ones already on
+record for each fixture, all from claude-mem 13.24.23, pinned the same way throughout, and every
+one of those grids has 120 of 120 seeding sessions settled — checked before this registration,
+so the comparator is claude-mem working as it ships:
+
+| fixture | claude-mem cells used | claude-mem pass |
+|---|---|---|
+| `v3` | `h2h-v21-heldout` + `h2h-v34-v3` (every valid cell on record) | 31/53 + 32/54 |
+| `v4` | `h2h-v22-heldout` | 38/54 |
+| `v5` | `h2h-v24-heldout` | 41/54 |
+| `v6` | `h2h-v27-heldout` | 50/54 |
+| `v7` | `h2h-v30-heldout` | 46/54 |
+
+Errored cells are excluded (one, in `v21`). The choice of grids is fixed here: every claude-mem
+grid on record whose seeding matches the fixture's phrasings, nothing selected by result.
+
+**What that costs, said before the data.** The comparison is across grids. The audit of
+2026-09-23 measured the drift between two grids of one build at about twelve cells in 216. The
+confirmatory test below cannot remove that, and the write-up carries it beside every figure.
+
+## The grid
+
+`muninn-whysaid` (`16d29b222af40391`, the binary on `master`), six runs per fixture, `--code`
+off, `results/h2h-v40-v3/` through `-v7/`.
+
+## Decision rule
+
+- **Confirmatory:** the five-fixture total, Muninn against those claude-mem cells, exact Fisher,
+  α = 0.05. A significant positive moves the plain condition out of *Not claimed*, **with the
+  cross-grid caveat attached to the claim itself** rather than to a footnote.
+- **Co-primary:** `unsafe` over the five, the same test.
+- **Adverse:** any fixture significantly below claude-mem is published per fixture.
