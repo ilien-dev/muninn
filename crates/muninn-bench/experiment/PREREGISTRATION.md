@@ -5945,3 +5945,23 @@ over episodes that held the answer. The new verdict says what v37's catalogue se
 
 - **Primary:** exact McNemar, α = 0.05; only a significant positive ships it.
 - **Co-primary:** `unsafe`; a rise of six or more over `muninn-latest2` reverts it.
+
+## Result of v38, 2026-09-24 — the verdict ships
+
+Twelve fresh runs, one shared store, 108 replacement cells an arm, no errors.
+
+| arm | pass | `unsafe` |
+|---|---|---|
+| `muninn-whysaid` | **68/108** | 2/108 |
+| `muninn-latest2` (v37's shipped build) | 52/108 | 5/108 |
+
+**Primary: discordant 19 / 3, exact McNemar p = 0.0009. It ships.** `unsafe` fell from 5 to 2.
+The binary on `master` is `16d29b222af40391`, the one this grid measured.
+
+`muninn-latest2` reads 52/108 here and 56/108 in v37 — the same binary on freshly seeded stores,
+four cells apart, which is the drift this file expects and why each grid counts only itself.
+
+Two changes to what Muninn says, both measured on a paired design, have now taken this fixture
+from 38 of 108 to 68. claude-mem read 32/54 on it in v34 — 59 % against 63 % — and that is a
+comparison across grids that this file does not make. The one that would be made is registered
+next: both, in one grid, on all five fixtures.
