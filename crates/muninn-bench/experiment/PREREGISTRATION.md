@@ -5435,3 +5435,21 @@ Output `results/h2h-v33-v3/`.
 - **If it reads below 18/54**, it is reverted and the published figure stays exactly 218/270.
 - Nothing here can move the plain condition out of *Not claimed*: `v3` at its best was 31/53
   for the competitor and this engine would have to double to reach it.
+
+## Result of v33, 2026-09-23 — the fallback fix ships and buys nothing
+
+`v3` reads **18/54, `unsafe` 0/54** — the same cell count as v31's build, which did not have
+it. By the rule, at or above 18 it ships and the published five-fixture total stays **218/270**.
+
+**And that settles the attribution v32 left open: `v3`'s 18 → 27 was the catalogue change, all
+of it, and that change is reverted.** The fallback fix moves no cell.
+
+It ships on its own terms rather than on a number: answering "the transport compression codec"
+with four episodes about bcrypt, TTLs and HTTPS because `the` was the only word of the question
+the store held is indefensible whatever a fixture makes of it, and a test pins it.
+
+**A context comparison was attempted and is not reported as a result.** Median injected
+characters read 3 485 with the fix and 3 616 without, while the median of the per-cell ratios
+reads 1.034 the other way — the two disagree because each grid re-seeds live and the stores are
+not the same store. A paired figure would need both arms in one grid, and the honest thing is
+to say the measurement does not exist rather than to quote whichever aggregation flatters it.
