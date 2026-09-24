@@ -1318,14 +1318,31 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
             .find(|l| !l.trim().is_empty())
             .unwrap_or("")
             .trim();
-        let names = name_tokens(line);
-        let opens_on_a_value = names.first().is_some_and(|first| {
-            line.split_whitespace().next().is_some_and(|w| {
-                w.trim_matches(|c: char| !c.is_alphanumeric())
-                    .eq_ignore_ascii_case(first)
-            })
-        });
-        if (8..=120).contains(&line.chars().count()) && opens_on_a_value && compares(line) {
+        // What opens the line has to be a value, and `name_tokens` is too strict to be the
+        // only way of saying so: it wants an inner capital, a digit, a dot or a hyphen, or a
+        // slot after `use`/`with`/`to`, and a line that *starts* with the value has no slot in
+        // front of it. `semver gives users much clearer signals` opens on a value and matches
+        // none of those. So a plain word counts, provided it is one somebody could be settling
+        // on — three characters or more, not a function word, and not the comparison itself,
+        // because "better tooling matters here" opens on the comparison and not on a value.
+        let first_word = line
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .trim_matches(|c: char| !c.is_alphanumeric());
+        let low = first_word.to_lowercase();
+        let opens_on_a_value = !low.is_empty()
+            && (name_tokens(line)
+                .first()
+                .is_some_and(|n| n.eq_ignore_ascii_case(first_word))
+                || (low.chars().count() >= 3
+                    && !STOP.contains(&low.as_str())
+                    && !compares(first_word)));
+        if (8..=120).contains(&line.chars().count())
+            && line.split_whitespace().count() <= 14
+            && opens_on_a_value
+            && compares(line)
+        {
             let words = topic_words(line);
             if !words.is_empty() {
                 out.push(Candidate {
@@ -2422,4 +2439,3 @@ mod correction_tests {
         ));
     }
 }
-
