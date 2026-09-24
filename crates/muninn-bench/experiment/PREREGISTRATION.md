@@ -5543,3 +5543,39 @@ through that noise. **Before the next grid decides anything at this size, the ar
 a seeding snapshot**, so that a read-path comparison is paired on the store and only the agent
 remains stochastic. Until that exists, no decision rule in this file may turn on a margin
 smaller than the twelve cells measured above, and the ones that already did are listed here.
+
+---
+
+# Post-hoc audit, 2026-09-23 — pairing on the task buys nothing, which says where the noise is
+
+The audit above ends by saying the arms have to share a seeding snapshot. Before spending a
+grid on that, the cheaper half of the same idea was tested on grids that already exist: both
+arms of a grid answer the same task in the same run, and every analyzer in this directory throws
+that pairing away and tests the two totals as if they were independent samples.
+
+`h2h/analyze_paired.py` keeps it, and reports both the exact McNemar on the discordant cells and
+the exact Fisher on the totals. Every grid holding a Muninn arm and `claude-mem` together, raw
+output in `results/paired-2026-09-23/`:
+
+| grid | arms | agree | discordant | McNemar | Fisher |
+|---|---|---|---|---|---|
+| `v21-heldout` | 11 vs 31 | 34/54 | 0 / 20 | 0.0000 | 0.0001 |
+| `v22-heldout` | 38 vs 38 | 34/54 | 10 / 10 | 1.0000 | 1.0000 |
+| `v24-heldout` | 35 vs 41 | 32/54 | 8 / 14 | 0.2863 | 0.2920 |
+| `v27-heldout` | 50 vs 50 | 48/54 | 3 / 3 | 1.0000 | 1.0000 |
+| `v30-heldout` | 49 vs 46 | 41/54 | 8 / 5 | 0.5811 | 0.5558 |
+| `v10-plain` | 39 vs 33 | 34/54 | 13 / 7 | 0.2632 | 0.3075 |
+
+**The two tests agree everywhere, to within 0.05.** Pairing on the task recovers nothing, which
+means task difficulty is not where the variance is: given the arm, the cells behave close to
+independently. So the twelve-cell drift the audit above measured is not something a better test
+can remove, and the remaining structural source is the one `--share-seed` addresses — each arm
+building its own store from its own live sessions.
+
+This is a negative result and it closes a route: no future registration should expect a paired
+analysis to sharpen a decision on these grids.
+
+**One row is not about the test at all.** `v21-heldout` is the bare-value fixture, and its
+discordant split is **0 / 20**: there is no cell in that grid where this engine answered and the
+competitor did not. Every cell Muninn wins there, claude-mem wins too. A strict subset is not
+what noise looks like — it is one cause, and `[Z5]` already names it.
