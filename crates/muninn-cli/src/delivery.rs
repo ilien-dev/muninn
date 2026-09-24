@@ -169,10 +169,29 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
                  ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 [&hash],
             )?;
-            tx.execute(
-                "INSERT INTO meta(key,value) VALUES('records_changed_since_render','0') \
-                 ON CONFLICT(key) DO UPDATE SET value='0'",
+            // The pool this render was drawn from, pinned to the hash above: what the
+            // event cue can serve at session start is the active invariants and
+            // corrections, and nothing else. Check 6 calls a render frozen when the hash
+            // has not moved while this number has, which is the only reading under which
+            // "the same invariants every session while new ones arrive" is true.
+            //
+            // It cannot be the key the check first read, `records_changed_since_render` —
+            // the projection trigger, renamed here to `records_changed_since_project` after
+            // its name talked a check into reading it. Every ingest, every anchor retirement and
+            // every import sets it, and a commit decision sets it exactly as an invariant
+            // does — so on a healthy store, where invariants are stable and commits keep
+            // arriving, the check read RED. Measured on this repository's own store: three
+            // session-start deliveries of the same six invariants, flag at 1, check RED
+            // with nothing frozen about it.
+            let pool: i64 = tx.query_row(
+                "SELECT count(*) FROM served_record WHERE kind IN ('invariant','correction')",
                 [],
+                |r| r.get(0),
+            )?;
+            tx.execute(
+                "INSERT INTO meta(key,value) VALUES('last_render_pool',?1) \
+                 ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                [pool.to_string()],
             )?;
         } else {
             // identical to the last one: keep both, which is what check 6 reads as frozen
@@ -180,6 +199,20 @@ pub fn fold_into_db(paths: &ProjectPaths, db: &Db) -> Result<usize> {
                 "INSERT INTO meta(key,value) VALUES('prev_render_hash',?1) \
                  ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 [&hash],
+            )?;
+            // `DO NOTHING`, so the number keeps belonging to the render that first produced
+            // this hash. A store whose hash was already standing still when the pool key was
+            // introduced would otherwise carry none, and check 6 has no floor to compare
+            // against: it would read green for as long as the freeze lasted.
+            let pool: i64 = tx.query_row(
+                "SELECT count(*) FROM served_record WHERE kind IN ('invariant','correction')",
+                [],
+                |r| r.get(0),
+            )?;
+            tx.execute(
+                "INSERT INTO meta(key,value) VALUES('last_render_pool',?1) \
+                 ON CONFLICT(key) DO NOTHING",
+                [pool.to_string()],
             )?;
         }
     }
@@ -281,6 +314,9 @@ mod render_tests {
         fold_into_db(&paths, &db).unwrap();
         assert_eq!(get("prev_render_hash").as_deref(), Some(first.as_str()));
         assert_ne!(get("last_render_hash").as_deref(), Some(first.as_str()));
-        assert_eq!(get("records_changed_since_render").as_deref(), Some("0"));
+        assert!(
+            get("last_render_pool").is_some(),
+            "a new render pins the pool it was drawn from"
+        );
     }
 }

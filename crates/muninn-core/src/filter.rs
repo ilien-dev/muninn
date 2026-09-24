@@ -70,7 +70,7 @@ pub fn validate_anchors(paths: &ProjectPaths, db: &Db) -> Result<usize> {
     }
     tx.commit()?;
     if retired > 0 {
-        db.meta_set("records_changed_since_render", "1")?;
+        db.meta_set("records_changed_since_project", "1")?;
     }
     db.meta_set("anchors_checked_ms", &now_ms().to_string())?;
     Ok(retired)
@@ -88,7 +88,7 @@ pub fn revoke(db: &Db, id: i64, reason: &str) -> Result<bool> {
             &format!("revoked:{id}"),
             &format!("{}|{}", now_ms(), reason),
         )?;
-        db.meta_set("records_changed_since_render", "1")?;
+        db.meta_set("records_changed_since_project", "1")?;
     }
     Ok(n == 1)
 }

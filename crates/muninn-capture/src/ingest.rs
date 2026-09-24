@@ -692,7 +692,7 @@ pub fn ingest_transcript_with(
     }
     db.meta_set(&key, &session.end_offset.to_string())?;
     db.meta_set("ingest_watermark_ms", &now.to_string())?;
-    db.meta_set("records_changed_since_render", "1")?;
+    db.meta_set("records_changed_since_project", "1")?;
     db.meta_set("last_transcript_path", &transcript.to_string_lossy())?;
     if let Some(p) = paths {
         if !stats.new_ids.is_empty() || stats.superseded > 0 || stats.archived > 0 {
