@@ -5453,3 +5453,11 @@ characters read 3 485 with the fix and 3 616 without, while the median of the pe
 reads 1.034 the other way — the two disagree because each grid re-seeds live and the stores are
 not the same store. A paired figure would need both arms in one grid, and the honest thing is
 to say the measurement does not exist rather than to quote whichever aggregation flatters it.
+
+## The object-line change does not touch any published figure, checked rather than assumed
+
+`first_line` picks a different line only when the body has more than one. Every seeding message
+in every fixture is a single line, so the store a grid builds is unchanged: rebuilt from v30's
+own seeding with the binary before and after, all 32 records identical in kind, object and
+validity. The published 218/270 stands without re-running anything, and this paragraph exists
+because "it cannot have changed anything" is the kind of claim that should cost one command.
