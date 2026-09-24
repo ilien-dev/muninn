@@ -2,6 +2,34 @@
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **A person who types the value and nothing else was being ignored by three separate rules.**
+  The object of an episode was the first line with two words in it, so `zstd`, `msgpack`,
+  `calver`, `semver` and `Apache-2.0` were skipped and whatever followed became the object
+  instead; the rule that reads the assistant's reply for a stated replacement could not read
+  `note` as the noun an assistant reaches for, nor enter a quoted value like
+  `the earlier "We're using bcrypt" note`; and the rule that types such a message as a decision
+  shared an eight-character floor with the rule beside it, which `zstd`, `cbor`, `gzip` and
+  `tokio` are all under. Measured on thirty seeded stores rebuilt offline: typed records
+  15 → 17 on the bare-value fixture, retired records 9 → 10, 34 → 36 and 44 → 46 on three
+  others. Cells are not re-measured — the harness cannot resolve an effect this size.
+- **`[muninn:catalog]` told an agent a subject had nothing on record while episodes held it.**
+  The complete-list sentence claimed the list was everything; the list is decisions, rules and
+  corrections, and every store that has captured a session also holds episodes. It now says
+  what it is and names `muninn why` as the way into the rest.
+- **Health check 6 could not fire, and the day it could it went red on a healthy store.** It
+  compared two `meta` keys nothing ever wrote; given a fingerprint to compare, it then read the
+  projection trigger — a key every commit sets — and called a render frozen because commits
+  kept arriving. It now compares the render against the count of invariants and corrections it
+  was drawn from, which is the only reading under which "the same invariants every session
+  while new ones arrive" is true.
+- **The experiment harness has a drift figure, and it is the size of the effects it was
+  deciding.** `h2h/store_shape.py` rebuilds each fixture's store offline and counts what the
+  read path branches on. The change reverted in v32 fires only under five typed records, and
+  the three fixtures its adverse rule fired on hold seven to twelve — the code never ran there.
+  Those four fixtures are one build against itself in different grids: pooled 200/216 against
+  188/216, p = 0.079. Pairing the cells on the task recovers nothing, so `run_h2h.py` gained
+  `--share-seed`, which makes one arm seed and hands its store to the others.
+
 - **The agent is shown what is on record, not only what a query returned.** Six builds
   delivered the current decision in 27 head-to-head cells out of 27 and the agent acted on it
   in 4 to 9, writing "no current recorded decision" with the decision in front of it; five of
