@@ -1207,11 +1207,14 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
         }
         out.push(Candidate {
             kind: "decision",
-            ack: if change {
-                t.assistant_text.clone()
-            } else {
-                String::new()
-            },
+            // Every decision carries the reply, not only one with a change marker. The only
+            // reader of this field is `supersede_via_ack`, and it acts only when the reply
+            // names the pair outright; a sentence without a change marker was simply never
+            // shown the reply. v40 found what that costs: "Going with LRU with a 300-second
+            // TTL" is a statement, not a change, so the assistant's "(this replaces the earlier
+            // LFU choice)" was never read, the LFU episode stayed active, the question about
+            // the cache eviction policy reached it, and three of six cells wrote LFU.
+            ack: t.assistant_text.clone(),
             // the supersession key is the content-word set; the flag rides in the subject
             subject: format!(
                 "said:{}:{}",
