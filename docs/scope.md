@@ -6,6 +6,7 @@ omission. The table mirrors `design/ENGINE.md` §12.
 | Not in Muninn | Why |
 |---|---|
 | Consolidation, reflection, LLM summaries of memory | Consolidated memory scores below no memory [C1] [K10]; the products that do it name it as their weakest part [P3] [X4] |
+| A model on the write path that judges which record a message replaces | Measured end to end [Z11]: the best CPU model (Qwen3.5-9B) finds the right record but also marks related ones, and on the separated English and Spanish grids it reads 46/54 against 48/54 without it (p = 0.78). v41's delivery, newest word first, already gets the agent to the current value; a 6 GB runtime buys nothing measurable |
 | Vectors in the hook read path | 35–106 ms model load per process [I2]; dense+HNSW answers differ between runs on 80 % of queries [V4]. Closed from both sides in-repo: skipping the model load costs 6.71 ms of tokenizer parse, still ~2x the whole hook [Z1], and on non-degenerate queries in a 440-record haystack the lexical branch already reaches the target 10/10, the dense one 4/10 [Z2]. The sidecar exists, on the write path, for `muninn why` only |
 | A knowledge graph | Eight months of an operational log never failed on expressiveness [G3] |
 | Fine-grained bi-temporal ledger, "unprovable" states, evidence strength | With a render-matched control the fine mechanism is indistinguishable from zero; coarse invalidation is what pays [X1] |

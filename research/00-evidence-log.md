@@ -2112,3 +2112,35 @@ con el mismo modelo, las mismas veinte frases y sin instrumentar a nadie.
   => Peso: la primera fila es una medición nuestra en nuestra contra y está en `docs/claims.md`
      como tal. La segunda está pre-registrada y leída después de escribir el lector. La tercera
      es una observación con su reserva y no se cita como afirmación.
+
+[Z11] **Un modelo en la ruta de escritura, medido de principio a fin: entiende la relación, no
+paga en la rejilla.** `[Z5]` dejó como única vía restante un modelo en la ruta de escritura.
+Esa vía se midió en cinco pasos, todos pre-registrados en `experiment/PREREGISTRATION.md`
+(judge-v1 a v42), solo en CPU y sin modelos solo-inglés. Kev-4B quedó fuera por eso: su tarjeta
+declara `language: en`.
+  => **judge-v1 (sí/no por par, 9 810 pares, cinco idiomas).**
+     - Qwen3.5-4B y Gemma 4 E4B separan reemplazos de trampas con AUC 0,993 y 1,000 en 60
+       pares escritos para atrapar errores: preguntas, hipótesis, negaciones, otro equipo.
+     - mDeBERTa-NLI, laya-multilingual y Qwen3.5-2B quedan en 0,60–0,80.
+     - Ninguno rescata nada con cero retiros falsos: "let's use Unleash instead" puntúa ~1
+       contra *cualquier* registro. El par solo no dice a qué se refiere "instead"; es la
+       pregunta de `[Z3]` otra vez.
+  => **judge-v2 (elegir entre todos los candidatos).**
+     - Resuelve el "cuál": acierta el registro en 155/189 (en) y 88/105 (es).
+     - El fallo se mueve a otro sitio: lee "trata del mismo tema" como "lo reemplaza".
+  => **judge-v3 (elegir y confirmar, con la respuesta del asistente, set nuevo).**
+     - Qwen3.5-9B en modo *preguntar* (marca `conflict`, no retira) rescata todo lo que las
+       reglas perdían en en, es, fr y de, con precisión 17/20 y 8 s p95 por mensaje.
+     - En modo retirar deja un falso.
+  => **v42 (el h2h, siembra separada, inglés y español).**
+     - Con respuestas reales el juez marca más pares falsos que verdaderos en inglés (42/24).
+     - En español, donde las reglas solo retiran 4–7 registros por store, la rejilla lee **46/54
+       con juez contra 48/54 sin él** (p = 0,78).
+     - La build de v41, sin modelo, ya lista lo dicho de más nuevo a más viejo y el agente
+       toma el valor vigente aunque no se retire nada.
+  => **Cerrado para este benchmark.** El techo de retiro de `[Z5]` es real, pero la entrega de
+     v41 lo vuelve irrelevante en celdas, y el modelo añade marcas falsas y un runtime de 6 GB.
+     El código se retiró; la evidencia y el arnés quedan en `experiment/judge/`. Reabrirlo
+     exige una medición nueva donde la entrega sola no baste.
+  => Queda como herramienta: `run_h2h.py --seed-order separated` y el fixture `v8es`, que
+     miden el caso que las reglas no alcanzan.
