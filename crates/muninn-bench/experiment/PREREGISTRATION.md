@@ -6495,3 +6495,47 @@ h2h against `master` without the model, on `v3` and `v6`.
 
 **Limit:** the test set is small, with 20 en/es changes of which A0 misses 9, so these gates
 are coarse. v42 is the confirmation.
+
+## Result of judge-v3, 2026-09-25 — Qwen3.5-9B in ask mode wins; no arm is eligible to retire on its own
+
+`judge/v3_score.py`; raw rows in `results/judge-v3/`. The run was interrupted after C1 and C2's
+main rows. C2's latency and rerun and all of C1n were run on resume, with the same code and
+files.
+
+| arm | mode | `tc` / `tp` (dev) | rescued en · es · fr · de (test) | `added_false` en · es · fr · de | ask precision on records A0 left active | full-prompt pick+confirm p50 / p95 | rerun |
+|---|---|---|---|---|---|---|---|
+| C1 Qwen3.5-4B | retire | 0.91 / 0.51 | 1/4 · 0/5 · 0/4 · 0/4 | 0 · 1 · 0 · 0 | — | 2,344 / 3,156 ms | 30/30 |
+| C1 | ask | 0.41 / 0.48 | 2/4 · 3/5 · 2/4 · 3/4 | 0 · 1 · 0 · 0 | 10/11 | | |
+| **C2 Qwen3.5-9B** | retire | 0.94 / 0.30 | **4/4 · 4/5 · 4/4 · 4/4** | 1 · 0 · 0 · 0 | — | 4,519 / 7,960 ms | 30/30 |
+| **C2** | **ask** | 0.28 / 0.08 | **4/4 · 5/5 · 4/4 · 4/4** | 1 · 2 · 0 · 0 | **17/20** | | |
+| C1n (4B, no replies; ablation) | retire | 0.91 / 0.52 | 0/4 · 2/5 · 1/4 · 0/4 | 0 · 0 · 0 · 0 | — | | |
+| C1n | ask | 0.41 / 0.48 | 2/4 · 3/5 · 2/4 · 2/4 | 1 · 2 · 0 · 1 | 10/14 | | |
+
+The rules on the same test set, in their most favourable order, retire en 6/10, es 5/10, fr 0/4
+and de 0/4.
+
+**By the registered rule:**
+
+| arm | retire mode | ask mode |
+|---|---|---|
+| C1 | fails: one false in es | passes: precision 0.91, rescued en 50%, es 60%, p95 3.2 s, rerun identical |
+| C2 | fails: one false in en | passes: precision 0.85, rescued en 100%, es 100%, p95 8.0 s, rerun identical |
+
+**Winner: C2 in ask mode.** It goes to v42.
+
+**What it gets wrong:**
+- Retire mode: "the chi middleware order is wrong, fix it", taken against "backend in Go with
+  the chi router". A follow-up: pick 0.99, confirm 0.36.
+- Ask mode adds two Spanish traps:
+  - a negated change, "no cambiamos de base de datos, Postgres se queda" (confirm 0.21);
+  - a one-off exception, "hoy desactivé los reintentos para depurar…" (confirm 0.15).
+
+All three were picked with probability ≥ 0.98 and **confirmed below 0.4**. The confirm step does
+separate them; the dev fit set `tp` low because dev had few such traps. That is a reading for
+the next registration, not a refit of this one.
+
+**Ablation:** without the replies, the 4B model in ask mode is about as good at rescuing and
+worse at precision (10/14 against 10/11).
+
+**Limit:** 20 en/es changes on test, 9 of them missed by the rules. The gates are coarse, and
+v42 is the confirmation.
