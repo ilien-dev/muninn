@@ -6412,3 +6412,86 @@ Gate 1 would fail. The composite is the first reading in this repository to resc
 what the rules miss, in five languages, and its remaining errors are world-knowledge gaps of a
 4B model or context the pair does not carry (which name is a tool for what, what came just
 before).
+
+---
+
+# Pre-registration — judge-v3: pick, then confirm, with the assistant's reply beside every record, on a fresh set
+
+Registered 2026-09-24, after judge-v2's result and before any judge-v3 model call ran. judge-v2
+answered "which record"; judge-v1 answered "does it replace it" (probe AUC 0.993). Read post
+hoc, the two chained rescued about half of what the rules miss, with 7 false retirements: five
+were bare names a 4B model could not place, the rest context the pair did not carry. judge-v3
+registers that chain as it is and gives it the one piece of context Muninn stores since v41
+and the earlier judges never saw: **the assistant's reply** to each record and to the new
+message.
+
+## Calls (`judge/v3.py`, sha256 prefix `bd1898af0ec0f722`)
+
+**fresh** — `judge/fresh_v3.json`, sha256 prefix `4dcec0b1b3ac3819`:
+- Seven projects written by `claude-opus-5-5` before any judge-v3 call ran; no model was run on
+  them.
+  - en and es: 12 records each, 10 changes, 10 non-changes.
+  - pt, fr, de: 8 records each, 4 changes, 4 non-changes.
+- Each record and message carries a reply. The replies rotate: the value alone, the value and
+  its domain, or a plain acknowledgement.
+- `bare_name_generic_reply` calls give neither the domain nor the value's role anywhere.
+- **dev** = en-A, es-A, pt. **test** = en-B, es-B, fr, de: 28 changes and 28 non-changes.
+
+**old (dev only, no replies):**
+- judge-v2's change calls (b_i) and loop 10's pairs.
+- The third-language set.
+- The 60 probe pairs.
+- The loop sets' c messages are dropped, because judge-v2 found some of them presuppose the
+  change they follow.
+
+## Arms
+
+| arm | model | replies | purpose |
+|---|---|---|---|
+| **C1** | Qwen3.5-4B Q4_K_M | shown | the chain as registered |
+| **C2** | Qwen3.5-9B Q4_K_M (bartowski, sha256 in its meta) | shown | more world knowledge, for the bare names |
+| **C1n** | Qwen3.5-4B Q4_K_M | withheld | ablation: what the reply adds; it does not gate and cannot win |
+
+- The prompts are `PICK_HEAD`, `PICK_TAIL` and `CONFIRM` in `v3.py`.
+- 16 threads, and the same runtime as judge-v1 and judge-v2.
+
+## Scoring (`judge/v3_score.py`, sha256 prefix `2967d8218235d35a`)
+
+A call acts on its picked record when the pick is not "none", the pick's probability is ≥ `tc`
+and the confirm step's P(yes) is ≥ `tp`. Both thresholds are fitted on dev, on the 0.01 grid:
+- **retire tier:** the most dev hits among the pairs with 0 dev false retirements.
+- **ask tier:** the most dev hits among the pairs with dev precision ≥ 0.9. It flags the record
+  as `conflict`, so the agent asks, and retires nothing.
+
+On test, per language, the readings are measured against A0:
+- `rescued`
+- `added_false`
+- `acted` and `acted_ok`
+
+**A0 on the fresh set** is the shipped rules (`7649a6e0942bac19`), one store per message, with
+the records and their replies in order and the target moved last (the adjacent order). It was
+run while this registration was being written; it has no model and no threshold. Test: en 6/10,
+es 5/10, fr 0/4, de 0/4; one false retirement in en (en-B-m15).
+
+Latency is pick + confirm with no cached prefix, on 30 calls. A rerun of the same 30 calls must
+give identical rows.
+
+## Decision rule
+
+**Retire mode** is eligible if all of these hold:
+- `added_false` = 0 on test in every language;
+- `rescued` ≥ 25% of A0's misses in en and in es;
+- p95 ≤ 10 s;
+- the rerun is identical on all 30 calls.
+
+**Ask mode** is eligible if:
+- `acted_ok` / `acted`, among calls acting on a record A0 left active, is ≥ 0.8 on test;
+- `rescued` ≥ 40% of A0's misses in en and in es;
+- the same latency and rerun gates hold.
+
+**Winner:** retire-mode eligibility ranks above ask-mode eligibility. Ties go to the higher mean
+en/es `rescued`, then to the lower p95. The winner, in its mode, goes to **v42**: a registered
+h2h against `master` without the model, on `v3` and `v6`.
+
+**Limit:** the test set is small, with 20 en/es changes of which A0 misses 9, so these gates
+are coarse. v42 is the confirmation.
