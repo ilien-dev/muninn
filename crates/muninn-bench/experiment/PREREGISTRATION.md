@@ -6243,3 +6243,58 @@ order). Reported per arm: `added_false` and `rescued` by language and by probe. 
 confirmatory for judge-v1's winner:
 - A trap that the winner retires and A0 does not is a failure of gate 1. It is published as
   such, and it blocks v42 until a new registration addresses it.
+
+## Result of judge-v1 and judge-v1b, 2026-09-24 — no arm is eligible; the models read the relation, the pair does not carry which record
+
+`judge/score.py` and `judge/score_v1b.py`; raw rows in `results/judge-v1/` and `results/judge-v1b/`.
+
+**judge-v1, by the registered rule: nothing ships.**
+
+| arm | `theta_hi` (dev) | rescued en / es (test) | `added_false` en / es | AUC en / es / pt / fr / ja | full-prompt p50 / p95 | rerun same p |
+|---|---|---|---|---|---|---|
+| A1 Qwen3.5-4B | 1.00 | 0/66 · 0/29 | 8 · 0 | 0.918 / 0.949 / 0.985 / 0.953 / 0.978 | 715 / 897 ms | 100/100 |
+| A2 Qwen3.5-2B | 0.35 | 0/66 · 1/29 | 7 · 0 | 0.692 / 0.630 / 0.551 / 0.577 / 0.628 | 313 / 371 ms | 100/100 |
+| A3 Gemma 4 E4B | 1.01 | 0/66 · 0/29 | 0 · 0 | 0.937 / 0.952 / 0.990 / 0.967 / 0.988 | 678 / 852 ms | 100/100 |
+| A4 mDeBERTa NLI | 1.01 | 0/66 · 0/29 | 0 · 0 | 0.676 / 0.686 / 0.669 / 0.866 / 0.540 | 18 / 27 ms | 100/100 |
+| A5 laya-multilingual | 1.01 | 0/66 · 0/29 | 0 · 0 | 0.584 / 0.671 / 0.453 / 0.651 / 0.718 | 40 / 49 ms | 100/100 |
+
+- A1 and A2 fail gate 1: they add false retirements on test.
+- A3, A4 and A5 pass gate 1 only because the fitted threshold is above 1.00, so they can never
+  fire and rescue nothing.
+- On the pairs `maintain` would actually judge, A1's and A3's rounded p agree between the
+  cached-prefix and the full-prompt path on 45% and 80% of pairs. The rerun gate compares like
+  with like and holds at 100/100.
+
+**Why the threshold went to 1.00.** The dev negatives at the top are all one shape: `neg_cross`
+pairs whose later message names no subject.
+- Examples: "Actually, I've changed my mind. Let's use Unleash instead" and "use Unleash
+  instead", scored against the markdown renderer, the ORM or the job queue.
+- A3 scores seven of them at 1.0000, and A1's top eight run from 0.9867 to 0.9948.
+- Read alone, such a pair does not say which record "instead" refers to. This is `[Z3]`'s
+  "which one" question again, now asked of a model, and the pairwise framing cannot answer it.
+
+**judge-v1b (60 probe pairs, v1 thresholds, no refit): rescued 0 and `added_false` 0 for every
+arm.** The thresholds carried over from v1 cannot fire. Threshold-free, on pairs where the later
+message is unambiguously about the earlier one:
+
+| arm | AUC | lowest retirement | highest trap |
+|---|---|---|---|
+| A3 | **1.000** | 1.00 | en13 1.00, en14 1.00 (saturated: 28/28 retirements and 6/32 traps at ≥ 0.96) |
+| A1 | **0.993** | es08 0.47 | fr03 0.58 |
+| A4 | 0.797 | | |
+| A5 | 0.672 | | |
+| A2 | 0.603 | | |
+
+A1's 32 traps all sit at or below 0.58 and 23 of its 28 retirements at or above 0.59.
+
+**The rules on the probe set (A0):** 5 of 28 retirements. Three of 32 traps retired:
+- es19, a negated change: "no vamos a cambiar a React Native"
+- es26, a change verb on another object: "cambia el botón de enviar a color azul"
+- en20, a rejected proposal
+
+**Reading (exploratory, not a registered claim).** A1 and A3 understand whether one message
+replaces another, in five languages, on the traps built to catch them. What they cannot do is
+say *which* record a subjectless change belongs to. The next registration should ask the model
+that question directly: a `choice` over the store's candidate records plus "none", instead of a
+yes/no per pair. `[Z5]` and `[Z3]` ruled that question out for words and vectors; this reading
+does not yet rule it out for a model.
