@@ -158,11 +158,31 @@ pub fn conflicts_of(db: &Db, id: i64) -> Result<Vec<i64>> {
         "SELECT o.id FROM record r JOIN record o ON o.subject = r.subject AND o.relation = r.relation AND o.kind = r.kind \
          WHERE r.id = ?1 AND o.id <> r.id AND o.invalid = 0 AND o.object <> r.object AND r.kind <> 'episode' ORDER BY o.id",
     )?;
-    let ids: Vec<i64> = stmt
+    let mut ids: Vec<i64> = stmt
         .query_map([id], |r| r.get(0))?
         .filter_map(|r| r.ok())
         .collect();
+    ids.extend(judged_conflicts_of(db, id));
+    ids.sort_unstable();
+    ids.dedup();
     Ok(ids)
+}
+
+/// Active records the write-path judge paired with `id`, in either direction
+/// (`judged_conflict`). A store written before the table existed, opened `query_only` by a
+/// read hook, has no such table: that reads as no pairs, never as an error.
+pub fn judged_conflicts_of(db: &Db, id: i64) -> Vec<i64> {
+    let Ok(mut stmt) = db.conn.prepare_cached(
+        "SELECT j.new_id FROM judged_conflict j JOIN record o ON o.id = j.new_id \
+          WHERE j.old_id = ?1 AND o.invalid = 0 \
+         UNION SELECT j.old_id FROM judged_conflict j JOIN record o ON o.id = j.old_id \
+          WHERE j.new_id = ?1 AND o.invalid = 0",
+    ) else {
+        return Vec::new();
+    };
+    stmt.query_map([id], |r| r.get(0))
+        .map(|it| it.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -179,6 +199,35 @@ mod tests {
             )
             .unwrap();
         db.conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn a_judged_pair_is_a_conflict_both_ways_until_one_side_is_retired() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        // different subjects: the key-based check alone sees no conflict
+        let old = ins(&db, "decision", "queue", "RabbitMQ", None);
+        let new = ins(&db, "decision", "bus", "NATS", None);
+        assert!(conflicts_of(&db, old).unwrap().is_empty());
+        db.conn
+            .execute(
+                "INSERT INTO judged_conflict(old_id,new_id,p_pick,p_confirm,model,created_at) VALUES(?1,?2,0.9,0.9,'m',1)",
+                [old, new],
+            )
+            .unwrap();
+        assert_eq!(conflicts_of(&db, old).unwrap(), vec![new]);
+        assert_eq!(conflicts_of(&db, new).unwrap(), vec![old]);
+        db.conn
+            .execute("UPDATE record SET invalid = 1 WHERE id = ?1", [new])
+            .unwrap();
+        assert!(conflicts_of(&db, old).unwrap().is_empty());
+        // a store from before the table: no pairs, no error
+        db.conn.execute_batch("DROP TABLE judged_conflict").unwrap();
+        assert!(judged_conflicts_of(&db, old).is_empty());
     }
 
     #[test]
@@ -242,6 +291,10 @@ mod tests {
             "derive_missing: ids of active records, no body",
         ),
         ("muninn-core/src/recall.rs", "the IDF denominator: a count"),
+        (
+            "muninn-judge/src/lib.rs",
+            "write path (maintain): reads active rows by id and time to judge them, filters invalid itself",
+        ),
         (
             "muninn-embed/src/lib.rs",
             "write path: backfill, dedup and variant retirement",

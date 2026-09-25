@@ -761,7 +761,8 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             cut += 1;
             continue;
         }
-        let clashes = clash_q.query_row([id], |r| r.get::<_, i64>(0)).unwrap_or(0) != 0;
+        let clashes = clash_q.query_row([id], |r| r.get::<_, i64>(0)).unwrap_or(0) != 0
+            || !crate::filter::judged_conflicts_of(db, *id).is_empty();
         let line = if clashes {
             format!("#{id} {kind} \u{b7} {one}{repl}{CLASH}\n")
         } else {
