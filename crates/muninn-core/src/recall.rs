@@ -590,10 +590,53 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
          ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
         PAGE + 1
     ))?;
-    let rows: Vec<CatalogRow> = stmt
+    let mut rows: Vec<CatalogRow> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .filter_map(|r| r.ok())
         .collect();
+    // A store can hold almost nothing this list is made of. Where a person types the value and
+    // nothing else — `gzip`, then later `zstd` — no sentence carries a decision verb, capture
+    // types nothing unless the reply states the replacement, and the one channel that tells an
+    // agent what is on record shows two lines while twenty episodes hold every value the
+    // questions are about. That fixture is the condition this engine loses.
+    //
+    // This was built once before and reverted (v32), and the reason it bought nothing is now
+    // visible: at that time `first_line` skipped a one-word line, so eight of those twenty
+    // episodes carried the harness's own trailing instruction as their object and the list it
+    // produced was the same sentence over and over. With the object being the value, the list
+    // is `zstd` above `gzip`, `cbor` above `msgpack`, `semver` above `calver` — the values
+    // themselves, newest first, which is the ordering the question turns on.
+    //
+    // Only where there is almost nothing typed. A store with a working page of decisions keeps
+    // the list that won the code condition, undiluted: the budget is spent before the episodes
+    // are reached, and the threshold is what stops this being a change to every store in
+    // exchange for one fixture.
+    const SPARSE: usize = 5;
+    let typed = rows.len();
+    if typed < SPARSE {
+        let mut ep = db.conn.prepare(&format!(
+            "SELECT r.id, r.kind, r.object, NULL AS anchored FROM served_record r \
+             WHERE +r.kind = 'episode' AND length(r.object) <= 120 \
+             ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
+            PAGE + 1
+        ))?;
+        // Two episodes with the same object say the same thing once. Before `first_line` read a
+        // one-word line this was most of them; it is kept because the list is short and a
+        // repeated line spends the budget that the next distinct value needs.
+        let mut seen: std::collections::HashSet<String> = rows
+            .iter()
+            .map(|(_, _, o, _): &CatalogRow| o.trim().to_lowercase())
+            .collect();
+        let extra: Vec<CatalogRow> = ep
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        for row in extra {
+            if seen.insert(row.2.trim().to_lowercase()) {
+                rows.push(row);
+            }
+        }
+    }
     // The `+` on `kind` is not decoration. Without it SQLite takes the equality on
     // `record_kind`, cannot then satisfy the ORDER BY from an index, and sorts every active
     // decision in a temp B-tree before the LIMIT throws almost all of it away: 23 ms of a
@@ -637,6 +680,7 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     )?;
     let mut text = String::new();
     let mut ids = Vec::new();
+    let mut listed_episodes = false;
     let cap = budget * 3;
     let mut cut = 0usize;
     for (id, kind, object, anchored) in rows.iter().take(PAGE) {
@@ -725,6 +769,7 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         };
         text.push_str(&line);
         ids.push(*id);
+        listed_episodes |= kind == "episode";
     }
     if text.is_empty() {
         return Ok(Delivery {
@@ -745,6 +790,16 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let more = if truncated {
         "\u{2026} and more, not listed \u{2014} a subject missing from this list may still be on \
          record; ask `muninn why \"<question>\"`. "
+            .to_string()
+    } else if listed_episodes {
+        // The list holds the episodes themselves, so what an absence from it means is the
+        // same as for any other line. What is worth saying is the one thing the lines carry
+        // that a decision does not: they are in time order. That is a fact about the list,
+        // not a reading of it — nothing here tells an agent that a later line retires an
+        // earlier one, because nothing in the store says so and this block does not guess.
+        "That is all of it. The lines marked `episode` are what was said, word for word, newest \
+         first; where no decision covers a subject, the newest thing said about it is the latest \
+         word on it. "
             .to_string()
     } else if db
         .conn
@@ -778,9 +833,15 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     } else {
         "That is all of it: a subject missing from this list has nothing on record. ".to_string()
     };
-    let text = format!(
+    let head = if listed_episodes {
         "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
-         corrections\n{text}{more}Ask for any of them by id: `muninn show <id> [<id> \u{2026}]`.\n"
+         corrections, then what was said"
+    } else {
+        "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
+         corrections"
+    };
+    let text = format!(
+        "{head}\n{text}{more}Ask for any of them by id: `muninn show <id> [<id> \u{2026}]`.\n"
     );
     let tokens = text.len() / 3;
     Ok(Delivery { text, ids, tokens })
@@ -1274,9 +1335,17 @@ mod tests {
             "and the retired record's own text is not in it:\n{}",
             c.text
         );
+        // This store holds fewer than five typed records, which is the case where the list
+        // would otherwise be three lines while the episodes hold everything the questions are
+        // about, so what was said is listed after them.
         assert!(
-            !c.text.contains("some conversation"),
-            "an episode is not a catalogue entry:\n{}",
+            c.text.contains("some conversation"),
+            "a catalogue with almost nothing typed lists what was said:\n{}",
+            c.text
+        );
+        assert!(
+            c.text.contains("then what was said") && c.text.contains("newest first"),
+            "and says so, and that the order is time order:\n{}",
             c.text
         );
 
@@ -1410,8 +1479,8 @@ mod tests {
             c3.text
         );
         assert!(
-            c3.text.contains("as episodes") && c3.text.contains("muninn why"),
-            "it names what else is there and how to reach it:\n{}",
+            c3.text.contains("zstd") && c3.text.contains("what was said"),
+            "with one decision on it, what was said is listed and named:\n{}",
             c3.text
         );
         // …and says how to read it. v34's agents found the values in the episodes and refused
@@ -1422,10 +1491,28 @@ mod tests {
             "it says an episode is what was said and that the newest is the latest word:\n{}",
             c3.text
         );
+
+        // …and a store with a working page of typed records keeps the list that won the code
+        // condition, undiluted. Five is the threshold, so four more decisions reach it.
+        for i in 0..4 {
+            db2.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,3)",
+                    rusqlite::params![format!("said:state:d{i}"), format!("decision {i}")],
+                )
+                .unwrap();
+        }
+        let c4 = catalog(&db2, 300).unwrap();
         assert!(
-            !c3.text.contains("zstd"),
-            "and still does not list the episode itself:\n{}",
-            c3.text
+            !c4.text.contains("zstd"),
+            "a catalogue with five typed records does not list episodes:\n{}",
+            c4.text
+        );
+        assert!(
+            c4.text.contains("as episodes") && c4.text.contains("muninn why"),
+            "it names what else is there and how to reach it instead:\n{}",
+            c4.text
         );
         assert!(
             c2.text.contains("the only decision"),
