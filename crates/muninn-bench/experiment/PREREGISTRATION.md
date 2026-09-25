@@ -6298,3 +6298,71 @@ say *which* record a subjectless change belongs to. The next registration should
 that question directly: a `choice` over the store's candidate records plus "none", instead of a
 yes/no per pair. `[Z5]` and `[Z3]` ruled that question out for words and vectors; this reading
 does not yet rule it out for a model.
+
+---
+
+# Pre-registration — judge-v2: the model picks which record a message replaces, from the store's candidates
+
+Registered 2026-09-24, after judge-v1's result and before any judge-v2 call ran. judge-v1 found
+that Qwen3.5-4B and Gemma 4 E4B read *whether* a message replaces a record (probe AUC 0.993 and
+1.000), but a yes/no per pair cannot say *which* record a subjectless change such as "let's use
+Unleash instead" belongs to. judge-v2 asks that question directly: one call per later message,
+every candidate record of its group listed at once, and one letter back.
+
+## Arms (`judge/choice.py`, sha256 prefix `3d234cc1242c3836`)
+
+- **B1**: Qwen3.5-4B Q4_K_M.
+- **B3**: Gemma 4 E4B-it Q4_K_M.
+- Both are the GGUF files pinned in judge-v1, on the same runtime and with 16 threads.
+- The prompt is the constants `HEAD` and `TAIL`; changing a word is a new arm.
+- The options are "A) none of them", then B, C, and so on, one letter per record. The
+  distribution is a softmax over the valid letters only.
+- Qwen3.5-2B, mDeBERTa and laya-multilingual are not carried forward. Their judge-v1 AUC was
+  0.54–0.87.
+
+## Calls — 930
+
+- **Groups:** the judge-v1 groups, with the candidates in set order and the scenario's own
+  record not moved next to its change. That is the order where the rules read 16/180 in
+  English.
+- **Target:** b_i → a_i; c_i → none.
+- **Single-candidate calls:** loop 10's pairs and the third-language negatives, target none.
+- **judge-v1b's 60 probe pairs:** one group per language; label 1 → its own record, label 0 →
+  none.
+- **Split:** the same as judge-v1 (dev = loop 1, loop 12, `loop10/pairs.json`; everything else
+  is test). The probe set is test.
+  - Its rows were read in judge-v1b before this design, and it is kept as a test set because
+    nothing here was fitted to it.
+  - It carries that exposure as a limit.
+
+## Scoring (`judge/choice_score.py`, sha256 prefix `4e0794c3e66fdf43`)
+
+The pick is the most probable letter. It retires the picked record when it is not "none" and
+its probability is ≥ `theta`. `theta` is the smallest value on the 0.01 grid at which no dev
+call retires a record other than its target.
+
+Readings on test, per language and per probe, against A0 (adjacent order, judge-v1 and
+judge-v1b's rows):
+- `rescued`
+- `added_false`: a retirement that is not the target and that A0 did not make
+- `combined`
+- A0 in the separated order beside them
+- latency per call, with no cached prefix, on 50 calls
+- a rerun of 100 calls
+- the same 100 calls with the candidates in reverse order, a position-bias check
+
+## Decision rule
+
+An arm is **eligible** only if all four hold:
+1. `added_false` = 0 on test in every language.
+2. es `rescued` rate ≥ en `rescued` rate − 10 points, and the model's own hit rate in each of
+   pt, fr and ja is at least half its en rate.
+3. Full-call p95 ≤ 10 s. One call covers up to 20 candidates, which `maintain` would otherwise
+   judge one pair at a time.
+4. The rerun gives an identical distribution on at least 99 of 100 calls.
+
+**Winner:** the eligible arm with the highest mean of the en and es `rescued` rates; a tie goes
+to the lower p95. The reverse-order agreement is reported and does not gate.
+
+A winner goes to v42, a registered h2h against `master` without the model, on `v3` and `v6`.
+If no arm is eligible, nothing ships and the result is published as it came out.
