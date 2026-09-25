@@ -6366,3 +6366,49 @@ to the lower p95. The reverse-order agreement is reported and does not gate.
 
 A winner goes to v42, a registered h2h against `master` without the model, on `v3` and `v6`.
 If no arm is eligible, nothing ships and the result is published as it came out.
+
+## Result of judge-v2, 2026-09-24 — the model finds which record, and still mistakes "about" for "replaces"
+
+`judge/choice_score.py`; raw rows in `results/judge-v2/`.
+
+| arm | `theta` (dev) | rescued en / es | `added_false` (all languages) | full-call p50 / p95 | rerun | reversed order, same decision |
+|---|---|---|---|---|---|---|
+| B1 Qwen3.5-4B | 0.99 | 0/74 · 1/40 | 0 | 1,352 / 2,344 ms | 100/100 | 99/100 |
+| B3 Gemma 4 E4B | 1.00 | 0/74 · 1/40 | 0 | 1,222 / 2,423 ms | 100/100 | 100/100 |
+
+**By the letter of the rule, both arms are eligible and B1 wins on the p95 tie-break.** Its
+effect is one rescue in the 114 test targets the rules missed. No h2h could detect that, so
+**v42 is not run on it**. This is a deviation from "a winner goes to v42", made for cost and
+recorded here.
+
+**What the threshold hides (threshold-free, test).**
+- **Which record:** the argmax picks the target in 155/189 (B1) and 147/189 (B3) English calls,
+  and in 88/105 and 73/105 Spanish ones. It picks the wrong record in 32 and 30 English calls.
+  The "which one" question that closed `[Z3]` is largely answered.
+- **The failure moved:** on calls whose target is none, the argmax still picks a record in
+  191/211 English calls (B1) and 86/211 (B3). The model reads "on the same subject" as
+  "replaces it".
+- **Where `theta` got pinned:** the dev calls behind it are follow-ups of this kind, all at
+  0.92–0.99 against their subject's record:
+  - "The pool config is done."
+  - "As long as we're redoing the DB layer, let's also review our connection…"
+  - "As we're moving to Rollbar, we should also…"
+  - Some c messages presuppose the change they follow, so a c scored against the old record is
+    not a clean negative. That is a limit of the loop sets, not only of the models.
+
+**Exploratory, post hoc (designed after reading both test sets, so not a claim).** v2 picks the
+record, v1's yes/no on that pair confirms it, and both thresholds are fitted on dev for 0 false
+retirements there. With B1 + A1 (θ 0.61, 0.55), test reads:
+- **rescued:** en 32/74, es 23/40, pt 4/11, fr 1/10, ja 4/10;
+- **7 false retirements.** Five are a bare new name the model cannot place:
+  - "switch to sonic" matched to Pinecone
+  - "switch to Redpanda" matched to PgBouncer, in English and in Spanish
+  - "on passe à Pa11y" matched to PgBouncer
+  - "cambiar a chi" matched to gRPC
+- One is a group holding two records for the same slot (Handlebars and Pug), and one is a
+  same-topic follow-up.
+
+Gate 1 would fail. The composite is the first reading in this repository to rescue half of
+what the rules miss, in five languages, and its remaining errors are world-knowledge gaps of a
+4B model or context the pair does not carry (which name is a tool for what, what came just
+before).
