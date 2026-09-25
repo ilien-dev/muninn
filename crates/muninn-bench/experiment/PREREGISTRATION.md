@@ -6654,3 +6654,37 @@ it no longer costs cells.
 committed at `182d4e84` and are off by default. By the registered rule they do not ship. The
 work that led here (judge-v1 through judge-v3, and this grid) stays in `experiment/` as the
 measurement that closes the question for this benchmark.
+
+---
+
+# Pre-registration — v43: v39 run as registered, on the build `master` ships since v41
+
+Registered 2026-09-25, before any cell ran. The user asked for the definitive comparison after
+v41. v39 was withdrawn for cost; this runs v39's registration unchanged except for the Muninn
+build:
+
+- **Muninn:** `muninn-listed`, `7649a6e0942bac19`, v41's winner. `master`'s product code is
+  identical to it: v42's judge was added and retired, a net change of zero.
+- **Competitor:** `claude-mem` 13.24.23, pinned as in every earlier grid.
+- **No `off` arm.**
+- **No `--share-seed`:** each product builds its own store from its own live sessions.
+- Five grids, one per fixture, run in sequence — `results/h2h-v43-v3/` through `-v7/`. Six
+  runs each, adjacent seed order (the fixtures as shipped), `--code` off, `--jobs 3`.
+- A seeding the harness refuses (more than half of its sessions unsettled, for example because
+  claude-mem's observer ran into the account's usage window) is re-run once the account
+  recovers. A grid interrupted part-way is completed with `--rerun-errors` on the same pinned
+  binaries and snapshots. No cell is dropped.
+
+## Decision rule — v39's, word for word
+
+- **Confirmatory:** the five-fixture total, Muninn against claude-mem, exact Fisher, α = 0.05.
+  The plain condition moves out of *Not claimed* only on a significant positive.
+- **Co-primary, failing on its own:** `unsafe` over the same five. A Muninn rate significantly
+  above claude-mem's is published as a loss whatever the pass rate does.
+- **Adverse:** any fixture where Muninn reads significantly below claude-mem at α = 0.05 is
+  published per fixture, beside the total, and is not averaged away.
+- **What is published regardless:** every per-fixture figure, the total, and `unsafe`,
+  whatever they read.
+
+**Cost, estimated before the run, not measured:** about $80–100 of agent sessions across both
+arms' seeding and cells, plus claude-mem's observer on the account's quota.
