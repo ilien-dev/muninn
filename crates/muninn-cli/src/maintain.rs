@@ -22,8 +22,6 @@ pub struct MaintainStats {
     pub variants_retired: usize,
     /// Records retired because the repository stopped holding the value they named.
     pub values_retired: usize,
-    /// Pairs the write-path judge marked as a conflict (`judge` feature only).
-    pub judged_conflicts: usize,
     pub ms: u128,
 }
 
@@ -705,16 +703,6 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
                 st.variants_retired = s.variants_retired;
             }
             Err(e) => output::err(&format!("muninn maintain: embed: {e}")),
-        }
-    }
-    // the judge, like the sidecar: write path only, cold without its model
-    #[cfg(feature = "judge")]
-    if muninn_judge::has_pending(&db) {
-        if let Ok(judge) = muninn_judge::Judge::load_default() {
-            match muninn_judge::judge_pending(&db, &judge) {
-                Ok(s) => st.judged_conflicts = s.conflicts,
-                Err(e) => output::err(&format!("muninn maintain: judge: {e}")),
-            }
         }
     }
     let _ = db.record_quick_check(3_600_000);

@@ -193,18 +193,3 @@ CREATE TABLE IF NOT EXISTS turn_context (
     seen_at    INTEGER NOT NULL,
     PRIMARY KEY (session_id, kind, key)
 );
-
--- A pair of active records the write-path judge read as the newer replacing the older
--- (muninn-judge, PREREGISTRATION.md judge-v3 / v42). Served as a conflict for the agent to ask
--- about, like two records that share a key and disagree; nothing is retired on it. Empty
--- unless a build with the `judge` feature and its model ran `maintain`.
-CREATE TABLE IF NOT EXISTS judged_conflict (
-    old_id     INTEGER NOT NULL REFERENCES record(id),
-    new_id     INTEGER NOT NULL REFERENCES record(id),
-    p_pick     REAL    NOT NULL,
-    p_confirm  REAL    NOT NULL,
-    model      TEXT    NOT NULL,
-    created_at INTEGER NOT NULL,
-    PRIMARY KEY (old_id, new_id)
-);
-CREATE INDEX IF NOT EXISTS judged_conflict_new ON judged_conflict(new_id);
