@@ -6220,3 +6220,26 @@ encoder on Muninn's own cases) is a new registration. A set of pairs written by 
 them in Spanish and at least 20 of them false-retirement traps (`judge/user_pairs.json`), is a
 confirmatory reading of the winner under the same thresholds, registered as judge-v1b before it
 runs. Every phrasing set in this repository so far was written by `claude-haiku-4-5`.
+
+## Addendum to judge-v1, 2026-09-24 — the confirmatory set is written by a model, not the user
+
+Registered while judge-v1's model arms were running and before any of their rows was read.
+The user asked not to write the confirmatory pairs. `judge/user_pairs_v1b.json` (60 pairs,
+written by `claude-opus-5-5`) replaces `judge/user_pairs.json`, and the template is removed.
+
+- **Composition:** 30 es, 20 en, 4 pt, 3 fr, 3 de. 28 retire, 32 do not.
+- **Probes:** each pair names the one failure it is built to catch.
+  - Retirements: `no_shared_word`, `withdrawal`, `quantity_bare`, `reason_only`,
+    `code_switching`, `invariant_reversal`, `revert`, and others.
+  - Traps: `question`, `hypothetical`, `negated_change`, `other_scope`, `other_team`,
+    `one_off_exception`, `trial_on_branch`, `additive`, `rejected_proposal`,
+    `same_number_other_subject`, `change_verb_other_object`, and others.
+- **Limit of the reading:** a second model family's phrasing beside haiku's, not a person's.
+
+**judge-v1b** runs every arm on these 60 pairs, under the thresholds each arm fitted on
+judge-v1's dev split, with no refit. A0 gets one store per language holding every distinct
+earlier message of that language, with the pair's own earlier message last (the adjacent
+order). Reported per arm: `added_false` and `rescued` by language and by probe. It is
+confirmatory for judge-v1's winner:
+- A trap that the winner retires and A0 does not is a failure of gate 1. It is published as
+  such, and it blocks v42 until a new registration addresses it.
