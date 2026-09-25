@@ -6055,3 +6055,59 @@ off, `results/h2h-v40-v3/` through `-v7/`.
   cross-grid caveat attached to the claim itself** rather than to a footnote.
 - **Co-primary:** `unsafe` over the five, the same test.
 - **Adverse:** any fixture significantly below claude-mem is published per fixture.
+
+## Result of v40, 2026-09-24 — ahead on three fixtures, behind on two, not significant overall
+
+`muninn-whysaid` (`16d29b222af40391`), six runs per fixture, no errors, against the claude-mem
+cells on record for each fixture — **across grids**, with the audit's twelve-cells-in-216 drift
+beside every figure.
+
+| fixture | Muninn | claude-mem | exact Fisher | `unsafe` Muninn / claude-mem |
+|---|---|---|---|---|
+| `v3` bare values | 24/54 | 63/107 | 0.095 | 1 / 0 |
+| `v4` | 45/54 | 38/54 | 0.170 | 0 / 2 |
+| `v5` comparative | **51/54** | 41/54 | **0.013** | 0 / 0 |
+| `v6` verb-heavy | 42/54 | 50/54 | 0.055 | 1 / 0 |
+| `v7` | 51/54 | 46/54 | 0.202 | 0 / 2 |
+| **total** | **213/270** (78.9 %) | **238/323** (73.7 %) | **0.148** | **2 / 4** |
+
+**Confirmatory: not significant, so the plain condition stays under *Not claimed*.** No fixture
+reads significantly below claude-mem, so the adverse rule publishes nothing beyond this table;
+`v6` at p = 0.055 is the nearest, and it is where the cells were read.
+
+**`v6` is a regression against this build's own history** — 53/54 on the v31 build, 42 here —
+and the cells say why. Three of the twelve failures are the agent writing LFU for cache
+eviction: the assistant's reply had said "(this replaces the earlier LFU choice)", but the
+user's sentence was a statement and not a change, and statements were never shown the reply,
+so nothing retired the LFU episode and the question reached it. Another two are the agent
+reporting a file it never wrote (empty diff) — not memory. The first is fixed and measured in
+v41 below.
+
+**`v3` reads 24/54 on the same binary that read 68/108 in v38**, where the store was seeded by a
+different arm. On v40's own seedings the new value reaches the session in only 26 of 54
+scenarios: the catalogue does not list episodes, so what v37 and v38 taught the agent to use is
+not in front of it. v41 measures listing them again, now with v37's sentence beside them.
+
+---
+
+# Pre-registration — v41: the reply on every decision, and the episodes listed with v37's sentence
+
+Registered 2026-09-24, before any cell ran. `muninn-listed` (`7649a6e0942bac19`, `master`) against
+`muninn-whysaid` (`16d29b222af40391`, v40's build), which differ in two things, each inert on
+the other's fixture — checked offline on v40's own seedings before this registration:
+
+- **every decision carries its reply** (capture) — moves `v6` (trap 8 → 3), nothing on `v3`;
+- **a sparse catalogue lists the episodes with v37's sentence** (read path) — moves `v3`
+  (the new value reaching the session 26 → 45 of 54), nothing on `v6`, whose stores hold eleven
+  or more typed records and never reach the branch.
+
+So `v3` measures the listing and `v6` measures the reply, and each result is attributable.
+Both arms in one grid per fixture, six runs, `--code` off, **no `--share-seed`** (one change is
+in capture), `results/h2h-v41-v3/` and `-v6/`. Muninn cells only.
+
+## Decision rule
+
+- **Primary, per fixture:** `muninn-listed` against `muninn-whysaid`, exact Fisher, α = 0.05.
+  A change ships only if its own fixture reads a significant positive.
+- **Co-primary:** `unsafe`; a rise of three or more on either fixture reverts the change that
+  fixture measures.
