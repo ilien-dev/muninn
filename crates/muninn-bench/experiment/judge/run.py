@@ -291,10 +291,11 @@ def main():
     ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--full-prompt-sample", type=int, default=100)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--set", default="v1", choices=["v1", "v1b"])
     ap.add_argument("--order", default="adjacent", choices=["adjacent", "separated"],
                     help="A0 only: where the scenario's own decision sits among the group's")
     args = ap.parse_args()
-    items = sets.items()
+    items = sets.probe_items() if args.set == "v1b" else sets.items()
     if args.limit:
         items = items[:: max(1, len(items) // args.limit)][: args.limit]
     run = {"A0": run_a0, "A1": run_letters, "A2": run_letters, "A3": run_letters,

@@ -82,3 +82,15 @@ if __name__ == "__main__":
     print(len(xs))
     for k, v in sorted(Counter((x["split"], x["lang"], x["kind"]) for x in xs).items()):
         print(k, v)
+
+
+def probe_items():
+    """judge-v1b: the 60 probe pairs (user_pairs_v1b.json). One group per language, so A0's
+    store holds every earlier message of that language; the pair is its own later message."""
+    out = []
+    for r in json.load(open(HERE / "user_pairs_v1b.json"))["pairs"]:
+        out.append({"set": "v1b", "split": "test", "lang": r["lang"], "group": f"v1b/{r['lang']}",
+                    "id": f"{r['key']}|{r['key']}|v1b", "probe": r["probe"],
+                    "kind": "positive" if r["label"] else "neg_probe", "label": int(r["label"]),
+                    "a": r["a"], "b": r["b"]})
+    return out
