@@ -6111,3 +6111,112 @@ in capture), `results/h2h-v41-v3/` and `-v6/`. Muninn cells only.
   A change ships only if its own fixture reads a significant positive.
 - **Co-primary:** `unsafe`; a rise of three or more on either fixture reverts the change that
   fixture measures.
+
+## Result of v41, 2026-09-24 — both changes read a significant positive on their own fixture
+
+`muninn-listed` (`7649a6e0942bac19`) against `muninn-whysaid` (`16d29b222af40391`), six runs per
+fixture, one grid per fixture, no errors. `h2h/analyze_h2h.py`; exact two-sided Fisher on
+replacement pass.
+
+| fixture | measures | `muninn-listed` | `muninn-whysaid` | exact Fisher | `unsafe` listed / whysaid |
+|---|---|---|---|---|---|
+| `v3` bare values | the episodes listed with v37's sentence | **45/54** | 27/54 | **0.0004** | 0 / 5 |
+| `v6` verb-heavy | the reply on every decision | **52/54** | 41/54 | **0.004** | 1 / 3 |
+
+Revocation scenarios: 6/6 and 6/6 on `v3`, 6/6 and 5/6 on `v6`. **Both changes ship** by the
+rule registered above: each reads a significant positive on its own fixture, and `unsafe` fell
+on both. `7649a6e0` is `master`, so `master` is the baseline for what follows. No comparison
+with claude-mem is made here; none was registered for v41.
+
+---
+
+# Pre-registration — judge-v1: a CPU model that answers "does this retire that?", offline
+
+Registered 2026-09-24, before any model arm ran. The question is the one `[Z5]` left open: 23
+of 30 held-out replacements share no content word with what they replace, and neither the
+words (`[Z5]`) nor static vectors (`[Z3]`, loop 12: 3/42) pair them. `[Z5]` named a model on
+the write path as what remains and excluded it by `docs/scope.md`, citing `[C1]` `[K10]`; those
+measure LLM *consolidation* (rewriting memories), not a model that answers a closed question
+about two literal records. This registration measures the second. Nothing ships from it: a
+winner goes to a registered h2h (v42) against `master` without the model.
+
+**Scope, fixed by the user's constraints:** CPU only; **no English-only model** (Kev-4B is out:
+its card declares `language: en` and all ten of its training sets are English); several
+multilingual candidates compared on the same pairs.
+
+## Arms (`judge/run.py`, sha256 prefix `dd9a9d366132843b`)
+
+| arm | model | method | runtime |
+|---|---|---|---|
+| A0 | the shipped rules, `target/release/muninn` = `7649a6e0942bac19` | group store, see below | the binary |
+| A1 | Qwen3.5-4B Q4_K_M (bartowski) | letter logits, A vs B (SemIf's method) | llama.cpp via llama-cpp-python |
+| A2 | Qwen3.5-2B Q4_K_M (bartowski) | the same prompt | the same |
+| A3 | Gemma 4 E4B-it Q4_K_M (bartowski) | the same prompt | the same |
+| A4 | mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 (Xenova ONNX, fp32) | P(contradiction), premise = earlier, hypothesis = later | onnxruntime |
+| A5 | laya-multilingual (convaiinnovations) | one `noul` question over `{earlier, later}` | the `laya` package, torch CPU |
+
+The prompts are the constants `QUESTION`, `SUFFIX` and `LAYA_Q` in `run.py`; changing a word is
+a new arm. Instructions are in English and the records stay in their own language. GGUF and
+ONNX files are pinned by sha256 in each arm's `.meta.json`. 16 threads, `AMD Ryzen 9 7950X3D`.
+
+## Items (`judge/sets.py`, sha256 prefix `3f148dbe9ea0299c`) — 9,810 pairs, all already committed except one set
+
+- **positive** (a_i, b_i): the held-out change and the decision it replaces — loops 1–9, 11,
+  loop 12's `dev_phrasings`.
+- **neg_cross** (a_j, b_i), j ≠ i: the change against every other decision of its group (one
+  set, one style). This is the "which one does it replace" question that closed `[Z3]`.
+- **neg_distractor** (a_j, c_i): a later unrelated message against every decision of its group.
+- **neg_shared**: loop 10's pairs, both true, sharing two or more words.
+- **third language** (`judge/third_language.json`, sha256 prefix `16d638c94c582ecb`): 30
+  triples and 15 shared-word negatives in Portuguese, French and Japanese, translated by
+  `claude-opus-5-5` from loop 6, loop 7 and loop 10 before any arm ran. It checks for collapse
+  outside English and Spanish; it is not a quality figure for those languages.
+
+**Split:** dev (thresholds are fitted here and nowhere else) = loop 1, loop 12, `loop10/pairs.json`;
+test = everything else. Test: 180 en + 90 es positives, 3,440 en + 1,720 es negatives, and
+10 positives and 195 negatives in each of pt, fr and ja.
+
+**A0's method.** One store per (group, later message): every earlier message of the group as
+its own session, 30 minutes apart, then the later one, and each earlier message is read as
+retired when it was recorded and nothing of it is still served (loop 10's check). The primary
+order is **adjacent**: the scenario's own decision is the last before its change, the order
+most favourable to the rules, whose anaphora path takes the latest episode. The **separated**
+order (the group in set order) is recorded beside it. A0 was run while the harness was being
+built, before this registration; it has no model and no threshold, and its rows are committed
+as they came out: adjacent, test, en 114/180 retired with 5 false retirements of 3,440; es
+61/90 with 0 of 1,720; separated, en 16/180 with 105 false; es 5/90 with 59 false.
+
+## Scoring (`judge/score.py`)
+
+Thresholds on the 0.01 grid, fitted on dev only:
+
+- `theta_hi`, the smallest grid value above every dev negative: the model retires alone at
+  p ≥ `theta_hi`.
+- `theta_lo`, the largest grid value at or below every dev positive A0 retired: a rule
+  retirement with p < `theta_lo` is vetoed.
+
+Temperature scaling is monotonic, so laya's missing calibration moves `theta_hi` and not the
+ranking. Readings on test, per language: `rescued` (positives A0 missed and the model retires),
+`added_false` (negatives the model retires and A0 did not), `vetoed_true` and `vetoed_false`,
+`combined` recall (A0 or model), threshold-free AUC, and full-prompt latency (no cached
+prefix, which is what `maintain` pays) on a sample of 100 pairs.
+
+## Decision rule
+
+An arm is **eligible** only if all four hold:
+
+1. **`added_false` = 0 on test in every language.** A false retirement costs more than a
+   missed one.
+2. **Language:** es `rescued` rate ≥ en `rescued` rate − 10 points, and AUC ≥ 0.75 in each of
+   pt, fr and ja.
+3. **Latency:** full-prompt p95 ≤ 1,250 ms, so eight candidate pairs fit in 10 s of `maintain`.
+4. **Determinism:** a rerun of 100 pairs gives the same rounded p on at least 99 of them.
+
+**Winner:** the eligible arm with the highest mean of the en and es `rescued` rates; a tie goes
+to the lower p95. The veto ships only if its `vetoed_true` is 0 on test and `vetoed_false` ≥ 1.
+
+If no arm is eligible, nothing ships, and the next step (fine-tuning a small multilingual
+encoder on Muninn's own cases) is a new registration. A set of pairs written by the user, 30 of
+them in Spanish and at least 20 of them false-retirement traps (`judge/user_pairs.json`), is a
+confirmatory reading of the winner under the same thresholds, registered as judge-v1b before it
+runs. Every phrasing set in this repository so far was written by `claude-haiku-4-5`.

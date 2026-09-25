@@ -1,0 +1,7 @@
+{
+ "_how": "Copy to user_pairs.json. One pair per entry: 'a' is an earlier decision or rule, 'b' something said later in the same project. label 1 = b makes a no longer current (replaced, reversed, withdrawn); label 0 = a is still true after b. Write them the way you actually type in a chat. Aim for 60: 30 in Spanish, and at least 20 label-0 traps where b shares words or topic with a but does not replace it. lang is the ISO code of the pair.",
+ "pairs": [
+  {"key": "u01", "lang": "es", "label": 1, "a": "usamos Redis para la caché de sesiones", "b": "mejor dejemos las sesiones en memoria, Redis nos sobra"},
+  {"key": "u02", "lang": "es", "label": 0, "a": "usamos Redis para la caché de sesiones", "b": "la caché de Redis expira a los 15 minutos"}
+ ]
+}
