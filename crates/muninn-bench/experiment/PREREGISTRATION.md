@@ -6539,3 +6539,74 @@ worse at precision (10/14 against 10/11).
 
 **Limit:** 20 en/es changes on test, 9 of them missed by the rules. The gates are coarse, and
 v42 is the confirmation.
+
+---
+
+# Pre-registration — v42: the write-path judge in the head-to-head, where the rules cannot reach
+
+Registered 2026-09-25, before any v42 session ran. judge-v3's winner, Qwen3.5-9B pick-then-confirm
+in ask mode, is built into Muninn at `182d4e84`:
+- It lives in the `muninn-judge` crate, compiled into `muninn` only with `--features judge`.
+- It runs in `maintain` only. It writes pairs to a new table, `judged_conflict`, and never
+  retires a record.
+- The read path marks those pairs as `conflict` exactly like two records that share a key and
+  disagree. The default build reads the table, so an empty table changes nothing:
+  `perf --strict` passes with SessionStart p95 at 2.75 ms, and every CI command passes.
+
+**Parity with judge-v3's Python rows (12 fresh calls):**
+- The pick's argmax matches in 11 of 12 calls. Every pick probability is within 0.003, except
+  one near-tie (es-A-m11) that flips.
+- Confirm P(yes) differs by up to 0.07, from a different llama.cpp build.
+- One call crosses `tp` = 0.08: en-A-m11 reads 0.092 in Python and 0.078 in Rust.
+- v42 measures the Rust build as it is.
+
+**Smoke on a six-message Spanish store:**
+- "Mejor zstd" was paired with "Usamos gzip" (pick 0.83, confirm 0.68), and the catalogue marks
+  both as a conflict.
+- "Cambiamos a argon2id" was paired with the earlier *question* "¿argon2id sería mejor que
+  bcrypt?" instead of with "bcrypt para el hash". This is a known limit and is not fixed here.
+
+## Why these fixtures
+
+On the shipped fixtures each change is sent right after its decision. There `master` already
+reads 45/54 (v3) and 52/54 (v6), and its anaphora path takes the latest episode, which is the
+right one. judge-v1 measured the rules falling to 16/180 when the change is *separated* from
+its decision. v42 therefore adds `--seed-order separated`: every decision is sent first, then
+every change. It runs on two fixtures:
+
+- **`v6`**, English, the v41 phrasings.
+- **`v8es`**, Spanish. `h2h/v8es/seed_phrasings.json` holds the v6 pairs translated by
+  `claude-opus-5-5` before any session ran. The values are kept literal, so the oracles are
+  unchanged.
+
+## Arms and design
+
+- **`muninn-judge`**: binary `84c0261d5e6035b1`, built from `182d4e84` with `--features judge`;
+  model sha256 `d784ce9e…`.
+- **`muninn-listed`**: `7649a6e0942bac19`, v41's winner.
+- **`--share-seed muninn-judge`**:
+  - The judge arm seeds, and `muninn-listed` gets a copy of its store.
+  - This is valid because the judge writes no record, only `judged_conflict`, and the
+    listed binary does not read that table. The two arms hold identical records and differ
+    only in whether the agent sees the conflict marks.
+- Six runs per fixture, `--jobs 3`, `--code` off. Harness sha256 prefixes:
+  - `run_h2h.py` `137308f61d497ea8`
+  - `muninn-judge/arm.sh` `b90505ead62a8bab`
+  - `v8es` `928444936fd51990`
+
+## Two steps, the second conditional
+
+1. **Seed only** (`--only-seed`, about 240 sessions, estimated at about $7 from v40's
+   per-session cost). Per seeded store, count the `judged_conflict` pairs:
+   - *true*: decision k paired with change k;
+   - *false*: any other pair.
+
+   **A fixture's cells are run only if its stores average ≥ 3 true pairs and hold fewer false
+   pairs than true ones.** Otherwise the cells are not run and the seeding result is
+   published as the reading.
+2. **Cells** (120 per fixture). The criteria:
+   - **Primary, per fixture:** `muninn-judge` against `muninn-listed` on replacement pass,
+     exact two-sided Fisher, α = 0.05.
+   - **Co-primary:** `unsafe`. A rise of three or more on either fixture blocks shipping.
+   - **The judge ships, as an opt-in feature,** only if one fixture reads a significant
+     positive and neither reads a significant negative.
