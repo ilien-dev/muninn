@@ -42,6 +42,9 @@ _plock = threading.Lock()
 
 
 PHRASINGS: list = []
+# v42: the order the seed rows are sent in, by index; empty = time order (each change right
+# after its decision). "separated" sends every decision, then every change.
+SEED_ORDER: list = []
 # v4: the decisions are also implemented in the checkout, which is what happens in a real
 # project — the value lives in a file and a commit moves it. Every arm gets the same repository
 # and the same commits; only a memory that reads them can use them. Empty unless --code.
@@ -231,7 +234,8 @@ def seed_arm(arm: str, run: int, out: Path, work: Path, seed_rows: list) -> Path
             # running. Progress a watcher can see is worth one syscall a session.
             unsettled = 0
             with open(log, "w", buffering=1) as fh:
-                for i, r in enumerate(seed_rows):
+                for i in SEED_ORDER or range(len(seed_rows)):
+                    r = seed_rows[i]
                     body = r["body"].strip()
                     body = body[len("user: "):] if body.startswith("user: ") else body
                     if PHRASINGS:   # v2: row 2k is pair k's original decision, row 2k+1 its change
@@ -365,6 +369,10 @@ def main() -> None:
                          "valid ONLY for a change that cannot alter what capture writes; the "
                          "caller asserts that, the harness cannot check it, and the assertion is "
                          "recorded in FROZEN.jsonl.")
+    ap.add_argument("--seed-order", default="adjacent", choices=["adjacent", "separated"],
+                    help="v42: adjacent (row 2k then 2k+1, the default) or separated (every "
+                         "decision first, then every change: the order where the rules' anaphora "
+                         "path, which takes the latest episode, cannot reach the right record)")
     ap.add_argument("--code", action="store_true",
                     help="v4: also implement each decision in the checkout — one tracked file per "
                          "scenario holding its value, and a commit with an uninformative subject "
@@ -378,7 +386,9 @@ def main() -> None:
     cfg = json.loads(Path(a.tasks).read_text())
     seed_rows = sorted((json.loads(l) for l in open(EXP / "revocation" / "seed.jsonl")), key=lambda r: r["created_at"])
     arms = a.arms.split(",")
-    global PHRASINGS, CODE_PAIRS
+    global PHRASINGS, CODE_PAIRS, SEED_ORDER
+    if a.seed_order == "separated":
+        SEED_ORDER = list(range(0, len(seed_rows), 2)) + list(range(1, len(seed_rows), 2))
     if a.code:
         CODE_PAIRS = [{"id": t["id"], "old": t["scenario"]["old"], "new": t["scenario"]["new"]}
                       for t in cfg["tasks"]]
@@ -390,7 +400,7 @@ def main() -> None:
     shared = [x for x in arms if x.startswith("muninn") and x != a.share_seed] if a.share_seed else []
     frozen = {"arms": arms, "runs": a.runs, "code": bool(a.code),
               "share_seed": a.share_seed, "share_seed_receivers": shared, "model": MODEL, "repo": str(REPO), "base_ref": BASE_REF, "ack": ACK,
-              "tasks_file": a.tasks, "seed_phrasings": a.seed_phrasings, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "tasks_file": a.tasks, "seed_phrasings": a.seed_phrasings, "seed_order": a.seed_order, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "harness_sha256": subprocess.run(["sha256sum", __file__], capture_output=True, text=True).stdout[:64],
               "arm_scripts_sha256": {arm: subprocess.run(["sha256sum", str(HERE / "competitors" / arm / "arm.sh")], capture_output=True, text=True).stdout[:64]
                                      for arm in arms if arm != "off"}}

@@ -6,6 +6,7 @@ members = [
     "crates/muninn-capture",
     "crates/muninn-compile",
     "crates/muninn-embed",
+    "crates/muninn-judge",
     "crates/muninn-symbols",
     "crates/muninn-why",
     "crates/muninn-bench",
