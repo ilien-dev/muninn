@@ -6610,3 +6610,47 @@ every change. It runs on two fixtures:
    - **Co-primary:** `unsafe`. A rise of three or more on either fixture blocks shipping.
    - **The judge ships, as an opt-in feature,** only if one fixture reads a significant
      positive and neither reads a significant negative.
+
+## Result of v42, 2026-09-25 — the judge does not ship: v41's delivery already answers the separated and the Spanish fixture
+
+**Step 1: seeding.** `h2h/judged_pairs.py`, `results/h2h-v42-*/judged_pairs.json`. Six stores
+per fixture, `--seed-order separated`, seeded by `muninn-judge`.
+
+| fixture | true pairs, mean per store | true / false in total | records the rules retired, per store | cells run |
+|---|---|---|---|---|
+| `v6` English | 4.0 | 24 / **42** | 10–12 | **no**: more false pairs than true |
+| `v8es` Spanish | 7.0 | 42 / 39 | 4–7 | yes |
+
+**On live replies the judge is far less precise than on judge-v3's fresh set (17/20).**
+- The false pairs are mostly decisions paired with other decisions ("Stick with openssl"
+  against "gzip").
+- Changes are also paired with later, related changes (Rustls against "verification on all
+  builds").
+
+**Step 2: `v8es` cells, 120.**
+
+| arm | replacement pass | `unsafe` | revocation pass | errors | agent cost |
+|---|---|---|---|---|---|
+| `muninn-judge` | 46/54 | 1 | 6/6 | 0 | $4.74 |
+| `muninn-listed` | **48/54** | 0 | 6/6 | 0 | $3.49 |
+
+- **Exact Fisher p = 0.78. No significant positive, so the judge does not ship.**
+- **Where the arms differ:**
+  - `revoke-version-scheme` fails 6/6 in both arms.
+  - The two cells where they differ are `revoke-password-hashing`, runs 4 and 5. In both, the
+    judge arm's agent reports writing a file that is not in its diff. In run 4 its answer
+    names argon2id correctly, cites the conflict mark, and says it read the change as
+    replacing bcrypt. That is the empty-patch failure v40 already recorded, not a stale value
+    served.
+
+**What the fixture says about the rules.** The listed build reads 48/54 in Spanish with every
+change separated from its decision, and the rules retired only 4–7 records per store. v41's
+catalogue lists the episodes newest first, with the sentence that the newest word on a subject
+is the latest. That already lets the agent pick the current value where retirement cannot
+reach, and it needs no model. `[Z5]`'s ceiling is real for retirement, but on this benchmark
+it no longer costs cells.
+
+**Standing of the code.** `muninn-judge`, the `judge` feature and `judged_conflict` are
+committed at `182d4e84` and are off by default. By the registered rule they do not ship. The
+work that led here (judge-v1 through judge-v3, and this grid) stays in `experiment/` as the
+measurement that closes the question for this benchmark.
