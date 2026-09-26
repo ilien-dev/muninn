@@ -6688,3 +6688,36 @@ build:
 
 **Cost, estimated before the run, not measured:** about $80–100 of agent sessions across both
 arms' seeding and cells, plus claude-mem's observer on the account's quota.
+
+## Result of v43, 2026-09-26 — Muninn ahead of claude-mem on the five-fixture total
+
+`h2h/analyze_h2h.py` on `results/h2h-v43-v3/` to `-v7/`; exact two-sided Fisher on replacement
+pass.
+
+| fixture | Muninn | claude-mem | exact Fisher | `unsafe` Muninn / claude-mem |
+|---|---|---|---|---|
+| `v3` bare values | **40/54** | 28/53 | **0.028** | 0 / 0 |
+| `v4` | **54/54** | 32/53 | **3.2 × 10⁻⁸** | 0 / 3 |
+| `v5` comparative | 54/54 | 50/54 | 0.118 | 0 / 1 |
+| `v6` verb-heavy | 52/54 | 47/54 | 0.161 | 2 / 0 |
+| `v7` | 52/54 | 51/54 | 1.0 | 0 / 2 |
+| **total** | **252/270** (93.3 %) | **208/268** (77.6 %) | **1.65 × 10⁻⁷** | **2 / 6** (p = 0.18) |
+
+**Confirmatory: a significant positive.** The plain condition moves out of *Not claimed*.
+
+- **Co-primary:** Muninn's `unsafe` rate is not above claude-mem's.
+- **Adverse:** no fixture reads significantly below claude-mem.
+
+**What happened on the way, all within the registration:**
+- **Reboot.** The machine was shut down during `v6`'s seeding. `v3`, `v4` and `v5` were
+  already complete.
+  - `v6` had run no cell. Its partial seeding is kept under
+    `results/h2h-v43-v6-interrupted-reboot/`, and `v6` was re-seeded from scratch.
+  - The seeded stores lived on a tmpfs `/tmp`, so they were lost. `v6` and `v7` then ran with
+    their work directory on disk.
+- **Excluded cells.** One claude-mem cell errored in `v3` and one in `v4`. They could not be
+  re-run because their snapshots were lost with `/tmp`, so they are excluded; neither is
+  counted as a failure.
+- **`v6` re-seeding.** Three claude-mem seedings in `v6` failed with its worker down
+  (`worker is not running` / `_read_status()`), not with the usage window. They were re-seeded
+  as registered, and all 54 cells ran.

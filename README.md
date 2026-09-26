@@ -276,26 +276,27 @@ still more than the competitor's. Turning the per-prompt block off takes it to 1
 about four answers in fifty, which is why it is not the default.
 
 Where the decisions exist only in the conversation and never reach the code, the build that
-ships reads **218 of 270 against claude-mem's 206 of 269** across five held-out wordings, each
-generated after the fact and each registered before it ran. `p = 0.25`: twelve cells in 270 is
-not a win and **is not claimed as one**.
+ships reads **252 of 270 against claude-mem's 208 of 268** across five held-out wordings, each
+generated after the fact, all ten grids in one run with both products seeding their own stores
+from the same live sessions, and the decision rule registered before any cell ran (v43).
+Exact Fisher **p = 1.7 × 10⁻⁷**.
 
 | how the change was worded | Muninn | claude-mem | Muninn wrote the retired value | claude-mem did |
 |---|---|---|---|---|
-| bare values (`zstd`) | **18 of 54** | **31 of 53** | 0 | 0 |
-| sentences | 53 of 54 | 38 of 54 | 1 | 2 |
-| sentences, comparative | 45 of 54 | 41 of 54 | 0 | 0 |
-| sentences with change verbs | 53 of 54 | 50 of 54 | 0 | 0 |
-| sentences, mixed | 49 of 54 | 46 of 54 | 0 | 2 |
-| **all five** | **218 of 270** | **206 of 269** | **1** | **4** |
+| bare values (`zstd`) | **40 of 54** | 28 of 53 | 0 | 0 |
+| sentences | **54 of 54** | 32 of 53 | 0 | 3 |
+| sentences, comparative | 54 of 54 | 50 of 54 | 0 | 1 |
+| sentences with change verbs | 52 of 54 | 47 of 54 | 2 | 0 |
+| sentences, mixed | 52 of 54 | 51 of 54 | 0 | 2 |
+| **all five** | **252 of 270** | **208 of 268** | **2** | **6** |
 
-The condition splits, and the split is what to read. Where a person writes a sentence — with or
-without a word like "switching" in it — this engine is ahead on all four such sets, 200 of 216
-against 175 of 215. Where a person types the value alone and nothing else, it loses, 18 of 54
-against 31 of 53, and that is the row to look at before installing anything: a turn that is one
-word contains no statement, a typed ledger has nothing to record, and a memory that keeps the
-raw turn does not need one. That is the cost of building this without a language model, and it
-is not going away.
+Two wordings are won outright (bare values, p = 0.028; sentences, p = 3 × 10⁻⁸) and three are
+ties; none is lost. Bare values used to be the loss to look at before installing anything, 18 of
+54 against 31 of 53. They stopped being one without a model: the reply is now read on every
+decision, and the catalogue lists what was said, newest first, as the latest word on a subject.
+A language model on the write path was measured end to end to see whether it would add to that,
+and it does not ([Z11]). Two claude-mem cells errored and could not be re-run because their
+seeded stores were lost to a reboot; they are excluded, not counted as failures.
 
 Where the decision also reaches the code, none of that applies: the value comes from the diff,
 and that is the condition the 54 of 54 above was measured in.
