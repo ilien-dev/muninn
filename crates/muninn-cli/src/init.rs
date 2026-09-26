@@ -12,12 +12,13 @@ pub const BOOT_BLOCK: &str = include_str!("../../../plugin/templates/CLAUDE.muni
 pub const BOOT_HOOK: &str = include_str!("../../../plugin/templates/BOOT.hook.md");
 const BEGIN: &str = "<!-- muninn:begin -->";
 const END: &str = "<!-- muninn:end -->";
-const GITIGNORE_LINES: [&str; 4] = [
-    ".muninn/muninn.db*",
-    ".muninn/log/",
-    ".muninn/compact/",
-    ".muninn/init.json",
-];
+/// The whole store stays out of version control. Muninn is a personal memory: each person's store
+/// is built from their own sessions, so nothing in it is meant to travel with the repository.
+/// Earlier versions ignored only the database, logs and state, which left the Markdown mirror
+/// (`records/`, `index.md`) and `compiled/` to be committed by a `git add .`: every record's
+/// words, retired ones included, published with the code, and a merge conflict on every
+/// numbered file two people wrote.
+const GITIGNORE_LINES: [&str; 1] = [".muninn/"];
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct InitState {
@@ -546,10 +547,32 @@ mod tests {
             let after = std::fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
             assert_eq!(after, before, "{rule}");
         }
-        // a file that does not cover the store still gets the four lines, once
+        // a file that does not cover the store gets the one line, once
         std::fs::write(tmp.path().join(".gitignore"), "/target\n").unwrap();
-        assert_eq!(ensure_gitignore(tmp.path()).unwrap().len(), 4);
+        assert_eq!(
+            ensure_gitignore(tmp.path()).unwrap(),
+            vec![".muninn/".to_string()]
+        );
         assert!(ensure_gitignore(tmp.path()).unwrap().is_empty());
+    }
+
+    /// A project set up by an earlier version holds the four narrow lines, which leave the
+    /// Markdown mirror committable. Running `init` again (every upgrade does) must close that.
+    #[test]
+    fn an_upgrade_ignores_the_whole_store_where_the_old_lines_did_not() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = ".muninn/muninn.db*\n.muninn/log/\n.muninn/compact/\n.muninn/init.json\n";
+        std::fs::write(tmp.path().join(".gitignore"), old).unwrap();
+        assert_eq!(
+            ensure_gitignore(tmp.path()).unwrap(),
+            vec![".muninn/".to_string()]
+        );
+        let after = std::fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
+        assert!(covers_store(&after), "{after}");
+        assert!(
+            after.starts_with(old),
+            "the project's existing lines are kept: {after}"
+        );
     }
 
     /// `init` is run again on every upgrade. It may not rewrite a file it is not
