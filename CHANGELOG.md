@@ -6,6 +6,11 @@ they are not releases. Releases are the numbered headings, such as 0.2.0. See
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **`muninn init` keeps the whole `.muninn/` folder out of version control.** It used to ignore
+  only the database, logs and state, which left the Markdown mirror (`records/`, `index.md`)
+  and `compiled/` exposed to a `git add .`: every record's words, retired ones included,
+  published with the code, and a merge conflict on each numbered file two people wrote. Running
+  `init` again on an existing project adds the line.
 - **`muninn why` says what the episodes under an `insufficient` verdict are**, in the words the
   catalogue already uses: 68 of 108 against 52 on the bare-value fixture (v38, p = 0.0009),
   with `unsafe` falling from 5 to 2.

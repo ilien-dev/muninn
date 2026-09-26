@@ -359,6 +359,18 @@ against plain keyword search, that made no difference we can distinguish from ze
 (+0.08, and the range around it runs from −0.08 to +0.25). It ships turned off, and what you get
 is keyword search.
 
+Muninn is a personal memory, and nothing about teams has been measured. Each person's store is
+built from their own session transcripts, which live on their own machine, and `muninn init`
+keeps the whole `.muninn/` folder out of version control. Two people on one repository therefore
+have two memories, and neither sees what the other decided in conversation. The one channel they
+do share is git history: a teammate's commit that takes a value out of the code retires the
+decision that named it in your store too, and `docs/threat-model.md` §6 spells out that anyone
+who can land a commit can retire a record. A shared store is deliberately left out: it would
+need signed provenance and a way to admit writes, because a memory several people write to is a
+documented attack surface `[C5]`. Versions before this one ignored only the database, logs and
+state, so a `git add .` could commit the Markdown mirror: every record's words, retired ones
+included, published with the code.
+
 Retired records stay on disk in plain sight. Muninn mirrors every record to `.muninn/records/` as
 Markdown, retired ones included and labelled as retired. Nothing hands them to the assistant, but
 an assistant that greps the folder will find them. `MUNINN_NO_PROJECT` turns the mirror off.

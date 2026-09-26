@@ -79,6 +79,9 @@ change first and does nothing until you say yes.
   while a reply that is just the word "zstd" is harder, though Muninn now wins that case too.
 - Languages don't mix well. If you ask in English about something you decided in Spanish,
   Muninn may not find it.
+- It is a personal memory. On a team, each person gets their own, built from their own
+  conversations, and a `git push` does not share it with anyone. Muninn keeps its folder out of
+  your repository, so your conversations are not published along with your code.
 - It works with Claude Code and Codex only, for now. Other assistants are planned for later.
 
 ## Install
