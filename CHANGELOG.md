@@ -1,5 +1,9 @@
 # Changelog
 
+Names like v17 or v38 in these entries are test runs, numbered in the order they were registered;
+they are not releases. Releases are the numbered headings, such as 0.2.0. See
+[how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
+
 ## 1.0.0 — prepared, not yet tagged
 
 - **`muninn why` says what the episodes under an `insufficient` verdict are**, in the words the
