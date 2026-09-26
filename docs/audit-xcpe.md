@@ -36,7 +36,7 @@ opens the store for writing. Evidence ids refer to `research/00-evidence-log.md`
 | every other hook (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `PostCompact`) | ReadOnly (`query_only=1`) | they append to `.muninn/log/` only |
 
 Write transactions take the lock up front (`BEGIN IMMEDIATE`); a read hook that finds
-the store busy gives up after ~93 ms and stays silent rather than blocking the agent.
+the store busy gives up after ~93 ms and stays silent, so it never blocks the agent.
 
 ## Not covered
 

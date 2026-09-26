@@ -9,7 +9,7 @@
   bare-value fixture** (v37, exact McNemar p = 7.6 × 10⁻⁶, 18 discordant cells and all one
   way, `unsafe` 2 against 0). The agents' own reports showed the failure: they found the
   values, in order, and declined them as "not decisions". The catalogue now says what is true
-  about episodes — the person's own words, kept word for word, and the newest one about a
+  about episodes: the person's own words, kept word for word, and the newest one about a
   subject is the latest word on it. A first run at 54 cells read 23 against 18, p = 0.0625, and
   was reverted by its rule; the powered run was registered before it ran and counted alone.
 - **Capture reads more of what the assistant says when it acknowledges a change**, measured
@@ -31,21 +31,21 @@
   shared an eight-character floor with the rule beside it, which `zstd`, `cbor`, `gzip` and
   `tokio` are all under. Measured on thirty seeded stores rebuilt offline: typed records
   15 → 17 on the bare-value fixture, retired records 9 → 10, 34 → 36 and 44 → 46 on three
-  others. Cells are not re-measured — the harness cannot resolve an effect this size.
+  others. Cells are not re-measured, because the harness cannot resolve an effect this size.
 - **`[muninn:catalog]` told an agent a subject had nothing on record while episodes held it.**
   The complete-list sentence claimed the list was everything; the list is decisions, rules and
   corrections, and every store that has captured a session also holds episodes. It now says
   what it is and names `muninn why` as the way into the rest.
 - **Health check 6 could not fire, and the day it could it went red on a healthy store.** It
   compared two `meta` keys nothing ever wrote; given a fingerprint to compare, it then read the
-  projection trigger — a key every commit sets — and called a render frozen because commits
+  projection trigger, a key every commit sets, and called a render frozen because commits
   kept arriving. It now compares the render against the count of invariants and corrections it
   was drawn from, which is the only reading under which "the same invariants every session
   while new ones arrive" is true.
 - **The experiment harness has a drift figure, and it is the size of the effects it was
   deciding.** `h2h/store_shape.py` rebuilds each fixture's store offline and counts what the
   read path branches on. The change reverted in v32 fires only under five typed records, and
-  the three fixtures its adverse rule fired on hold seven to twelve — the code never ran there.
+  the three fixtures its adverse rule fired on hold seven to twelve, so the code never ran there.
   Those four fixtures are one build against itself in different grids: pooled 200/216 against
   188/216, p = 0.079. Pairing the cells on the task recovers nothing, so `run_h2h.py` gained
   `--share-seed`, which makes one arm seed and hands its store to the others.
@@ -56,7 +56,7 @@
   those builds changed what Muninn *tells* the agent and none of them moved it. Reading the
   competitor's own cells showed why: it delivers an index of every decision once per session
   and the agent asks for what it wants by id. `[muninn:catalog]` now does the same with no
-  model — one line per active decision, standing rule and correction, newest first, with
+  model: one line per active decision, standing rule and correction, newest first, with
   `replaces #n` read from `invalidated_by` and `conflict` where two active records disagree,
   under a 300-token budget whose last line says whether the list is complete. `muninn show
   <id> [<id> …]` pulls any entry in full and returns nothing for a retired id. On the shipped
@@ -70,8 +70,8 @@
   what Muninn says and the first that worked; the six before it are published too.
 - **Deleting a file used to delete the memory of it.** Every `-` line of a diff fed the
   retirement rule, a deleted file's included, so one commit that moved a config directory
-  retired the current decision *and its source episode* for six topics with no heir — active
-  decisions 21 → 16 on the grid that found it. A value that disappears with its file is not
+  retired the current decision *and its source episode* for six topics with no heir. Active
+  decisions went 21 → 16 on the grid that found it. A value that disappears with its file is not
   evidence that the decision changed. Costs nothing: retirement 27/30 and false retirement
   0/30 with the guard and without it.
 - **The hooks were 7 to 16 times over contract on a store at the schema's own cap**, and the
@@ -100,7 +100,7 @@
   runs of the same command gave 9, 8, 8 on a fixture documented as deterministic. The header
   moved to stderr and the oracles read block text on token boundaries. Re-run on both held-out
   sets, every retirement figure reproduces and loop 8's delivered figures read **higher**, not
-  lower — the old oracle was finding the *old* value inside a session id.
+  lower. The old oracle was finding the *old* value inside a session id.
 - **Nine invariants belonged to another conversation.** Four came from the prompts that
   generated loops 8, 9 and 10 ("The replacement must not contain the original as a substring");
   four were lines of a scaffold's JSON contract inside a PM-Bench payload whose blocks start
@@ -115,12 +115,12 @@
   in the bench fixture, right after a bulk load. Production writes a handful of records a turn,
   so a store at the cap is thousands of small commits and its index is in as many segments:
   **918 segments and a BM25 query at 8.56 ms, against 6.54 ms once merged.** `maintain` runs the
-  optimize — 22 ms the first time, 0 ms after — and the fixture builds its index the way a
+  optimize, 22 ms the first time and 0 ms after, and the fixture builds its index the way a
   running store does, so the gate stops measuring one no store has.
 - **Two health checks could not fire.** `render` compared two `meta` keys nothing has ever
   written, so it read "cold: fewer than two renders" from the day it was added; the fingerprint
-  is rolled by `maintain` now. `capture` reported "queue empty" by reading a key nothing writes
-  — a green that asserts rather than observes — and is removed, because the question it meant to
+  is rolled by `maintain` now. `capture` reported "queue empty" by reading a key nothing writes,
+  a green that asserts rather than observes, and is removed, because the question it meant to
   ask is check 1's and check 1 answers it from keys that exist. There are ten checks where the
   module header said nine and there were eleven.
 - **On decisions that never reach the code, this engine does not beat a store-everything
@@ -132,12 +132,12 @@
   a typed ledger to record, the rule that would have invented one was built and reverted after
   reading what the assistant actually replied, and that is what this costs without a model.
 - **The harness is not the user.** Claude Code injects `<task-notification>`,
-  `<system-reminder>` and slash-command blocks inside `type: user` lines with no `isMeta` flag
-  — 134 and 56 of them in this project's own transcripts — and they were captured as things the
+  `<system-reminder>` and slash-command blocks inside `type: user` lines with no `isMeta` flag:
+  134 and 56 of them in this project's own transcripts. They were captured as things the
   user said, at trust 3. With the sentinel lines it writes on the user's behalf, that was 40 %
   of the turns this project's own memory held. Both transcript parsers strip them now.
 - **What you paste is not what you decided.** Fenced blocks and blockquotes no longer feed the
-  typed extraction — one "decision of this project" was a line of claude-mem's output pasted
+  typed extraction. One "decision of this project" was a line of claude-mem's output pasted
   into the chat. A denied change (`No cambié nada`) is no longer a change, a sentence ending in
   a colon is no longer a statement, `ahora` alone is no longer a Spanish change marker, and an
   abbreviation's full stop no longer ends a sentence (`CHECKOUT debe llamarse igual (p` was the
@@ -147,7 +147,7 @@
   backend from openssl to rustls" identifies what a replacement replaced where no lexical test
   can, which is the `[Z5]` ceiling. Its reach is measured and small: 27 % of recorded change
   replies in sessions where Muninn was injecting the earlier decision, 10 % with claude-mem,
-  and 0 of 45 with no memory in the loop — delivery of the stale record is what makes its
+  and 0 of 45 with no memory in the loop. Delivery of the stale record is what makes its
   retirement possible.
 - **A block stops when the matches stop.** A hit scoring worse than half the first hit's bm25
   is not served, and a trust-3 record is never cut. It moved no cell and took the window cost
@@ -171,16 +171,16 @@
   the question that reached the old answer reaches the new one. Nothing is invented from a
   diff: a removed word only counts if a record already named it, and a swap that retires
   nothing writes nothing. Measured on two held-out sets generated after the engine was frozen,
-  with the commit subject deliberately uninformative — retirement 17/30 → 29-30/30, and 5-6/30
+  with the commit subject deliberately uninformative: retirement 17/30 → 29-30/30, and 5-6/30
   → 29/30 when the revision is not adjacent to the decision; the current answer delivered
   8-11/30 → 19-25/30, and 21-29/30 where the conversation never names the new value at all.
   False retirement 0/30 in all eight conditions (`experiment/loop8/`, `loop9/`).
 - **Three defects the loop-8 grid found before it could be trusted.** git parses `--since=@0`
   as *now*, not as the epoch, so a fresh store was told its repository had no history and
-  captured nothing until its second `maintain` — every new install has been missing its own
+  captured nothing until its second `maintain`, so every new install has been missing its own
   past. Topic inheritance restated the retired value on the `topic:` line whenever the value
   was lowercase, because the filter was `name_tokens`, which knows `PgBouncer` and not
-  `sequelize` — an F1 leak worth six held-out cells. And a commit hash is part of an indexed
+  `sequelize`. That was an F1 leak worth six held-out cells. And a commit hash is part of an indexed
   record's text, so a grid that commits with wall-clock dates is not deterministic: one cell in
   thirty flipped between runs.
 - **An accented query matched nothing.** `fts_term` dropped the accented letter instead of
@@ -189,7 +189,7 @@
   1 after.
 - **What Muninn tells the assistant about itself was wrong in three places, and one of them
   argued against using the memory at all.** The injected startup note said "Do not … paste
-  blocks into files" — it meant do not copy a block's header and evidence line, and an
+  blocks into files". It meant do not copy a block's header and evidence line, and an
   assistant asked to write a decision into a document read it as forbidding that. It listed
   six kinds of block, of which three (`no-rebuild`, `stale`, `lineage`) the engine never
   emits, while the four it does emit most (`decision`, `invariant`, `deadend`, `correction`)
@@ -205,12 +205,12 @@
   returned three commits and no PgBouncer. Under `--all` the words are now taken as typed.
 - **The migration that would have emptied every existing index.** Schema 2 rebuilds the
   full-text index once, and the guard that decided whether to rebuild asked
-  `SELECT count(*) FROM record_fts` — which, on an external-content FTS5 table, is answered
+  `SELECT count(*) FROM record_fts`, which, on an external-content FTS5 table, is answered
   from the content table. It was never zero, so the rebuild never ran and every store
   upgrading from a v1 binary would have come up with no index at all. Found by writing the
   upgrade test, fixed, and checked end to end against a store written by the previous build.
 - **A value that is a number is read from the diff too.** A number is invisible to a diff read
-  for words — the unit is on both lines and the number is not a word — so `10 connections` →
+  for words: the unit is on both lines and the number is not a word, so `10 connections` →
   `25 connections` left nothing that went away. The hunk's two lines are now read as quantity
   slots, which is the rule the conversation already used: on a held-out set of ten measured
   values, retired 10/30 → 19/30 and delivered 9/30 → 18/30, with false retirement still 0/30.
@@ -218,8 +218,8 @@
   `migrating`, and `\bcambi` matched `los cambios fueron…`, so any later sentence containing
   one of those nouns could retire a decision it shared two words with. On a held-out set built
   to contain that shape, **3 of 15** true decisions survived; now 12 of 15, with recall
-  unchanged in every cell of loops 8 and 9. The gap was found by running on a real store —
-  this project's own transcripts — where three of four sampled retirements were wrong.
+  unchanged in every cell of loops 8 and 9. The gap was found by running on a real store,
+  this project's own transcripts, where three of four sampled retirements were wrong.
 - **A word the repository uses everywhere is not a value.** The same real store retired a
   record about `delivered` because a commit changed a line containing the word. A word living
   in more than three tracked files is no longer read as a value unless the record spells it
@@ -237,10 +237,10 @@
   `muninn-bench enforce` builds a throwaway project for each hand-labelled tool call, runs
   `compile` → `apply --yes`, and feeds a harness-shaped payload to the real `hook PreToolUse`;
   every call is labelled from **the rule's own words**, so a control broader than its rule is a
-  failure rather than a silence. Run 1 (set A, 84 cases): **FAIL** — the controls fired, and one
+  failure rather than a silence. Run 1 (set A, 84 cases): **FAIL**: the controls fired, and one
   benign call in eight fired with them, every case the same shape (a rule about `main` denying
   every force-push, one about `pkill -f zellij` denying every `kill`, one about `.env` denying
-  `.env.example`). Run 2 (set B, 71 cases): **FAIL** the other way — false blocks down to
+  `.env.example`). Run 2 (set B, 71 cases): **FAIL** the other way, with false blocks down to
   **0/36** on a set the fixes were not fitted to, block rate four cases under the floor, one of
   them an engine bug the run found. Run 3 (set C, 53 cases over 28 rules from 22 files none of
   the others touched): **PASS, 0.920 block / 0.000 false block.** All three runs, their
@@ -254,7 +254,7 @@
   matches inside `.env.example`; an extensionless protected path covers its subtree; `git stash`
   reaches the control that already detected it; the full-suite control knows the runners the
   corpus names. A rule that carves out named paths now compiles to `interpretive_only`, because
-  no control can subtract one path from another — coverage given up on purpose.
+  no control can subtract one path from another. That coverage is given up on purpose.
 - **A `new_file` hook condition judged the wrong file.** It resolved a relative tool path
   against the process's working directory rather than the project root, so `Write README.md`
   was judged by whichever README the caller stood next to. Fixed, with a regression test.
@@ -284,7 +284,7 @@
   leads with the no-Rust path.
 - **Two cue defects.** `muninn init --cues` overwrote `.muninn/config.json` instead of merging
   into it. And `glob` and `cooldown` cues, which the schema accepts but no evaluator checks,
-  counted as satisfied — so a group containing one fired on its other cues alone, having
+  counted as satisfied, so a group containing one fired on its other cues alone, having
   checked a condition nobody evaluated. They are refused on import and the conjunction fails
   closed.
 
