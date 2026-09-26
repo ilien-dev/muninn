@@ -2,8 +2,9 @@
 
 This page collects, in one place, where Muninn is measurably ahead of the other memory tools for
 coding assistants, and where it is not. Each figure below comes from a test with its rules fixed
-before it ran. The raw data is in this repository, and each row names its grid. This page draws
-on [`claims.md`](claims.md). Where the two disagree, `claims.md` wins.
+before it ran. The raw data is in this repository, and each row names its grid. This page draws on [`claims.md`](claims.md). Where the two disagree, `claims.md` wins. Names such
+as v17 or v43 are test runs, numbered in the order they were registered, not versions of Muninn;
+[how to read the test names](technical-overview.md#how-to-read-the-test-names) explains them.
 
 ## The short version
 
@@ -28,7 +29,7 @@ Every competitor row below comes from the same harness and the same tasks: the s
 sessions seeded every tool's memory, each tool captured them through its own shipped hooks, and
 a deterministic check graded what the assistant wrote. No judge model graded anything.
 
-### A decision replaced in conversation only (v43)
+### A decision replaced in conversation only (test run v43)
 
 Both products ran in one grid, and each built its own memory from the same sessions. Six runs,
 54 tasks per phrasing for each tool.
@@ -46,7 +47,7 @@ Both products ran in one grid, and each built its own memory from the same sessi
 Muninn wins two phrasings outright and ties the other three. Source:
 `crates/muninn-bench/experiment/results/h2h-v43-*`.
 
-### A decision replaced in conversation and in the code (v17)
+### A decision replaced in conversation and in the code (test run v17)
 
 | | Muninn | claude-mem 13.24.23 | agentmemory 0.9.29 | no memory |
 |---|---|---|---|---|
