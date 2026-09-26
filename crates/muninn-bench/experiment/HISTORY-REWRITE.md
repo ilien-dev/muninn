@@ -93,3 +93,19 @@ ones only by the edits above. The new hash of every named commit (and of the com
 `rewrite-2026-09-14.txt` and `rewrite-2026-09-17.txt`, which are the same commits) is listed in
 `rewrite-2026-09-17-license.txt` and stamped in `rewrite-2026-09-17-license.txt.ots`, so the
 public history is timestamped from the date of this rewrite.
+
+# History rewrite of 2026-09-26
+
+Before 308 unpublished commits were pushed, the maintainer's e-mail address was removed from
+them. Claude Code writes the account's address into every session's context, and the raw
+head-to-head transcripts committed under `results/*/logs/*.transcript.jsonl` carried it: 5 115
+files. `git filter-repo --replace-text` replaced it with `[account e-mail]`, limited to
+`origin/master..master`, so no published commit changed. Checked before pushing: the published
+history is an ancestor of the new `master`, the 308 commits keep their messages, the tree
+differs from the old one in those 5 115 lines and nothing else, and 0 objects in the pushed range
+contain the address.
+
+305 of the 308 commits have new hashes (the first three held no transcript). The old → new map is
+`history-rewrite-map-2026-09-26.json`. Hashes quoted in `PREREGISTRATION.md` for these
+commits (for example `182d4e84`, `2c2eeafa`, `bf40a75d`) are the old ones and are left as
+recorded. The old objects are kept, private, in a backup bundle (sha256 prefix `88e2465900cf8d3a`).
