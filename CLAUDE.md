@@ -23,6 +23,7 @@ CI runs exactly these; a change is finished when all of them pass.
 - Nothing enters the hot path without a `perf --strict` figure. Records are retired (`invalid=1`), never deleted. Trust derives from `origin`, never from wording.
 - Every number in docs is measured or cited by evidence id; estimates are labelled. Never describe the output of a command that did not run.
 - Experiments: pre-register in `experiment/PREREGISTRATION.md` before any cell runs; cells stay confined to their checkout; raw results are committed under `results/`.
+- Every user-facing file (README, `docs/`, CHANGELOG, release notes, PR descriptions) goes through the `quiron` skill before it is committed — new files and every later edit to them alike, so they stay free of AI-sounding prose. The skill rewrites style only; figures, evidence ids and caveats stay exactly as measured.
 
 ## This repository dogfoods Muninn
 With the Muninn plugin installed, `.muninn/` is a live store. Never edit it by hand or commit its database and logs. `muninn status` is the first diagnostic; run `muninn why "why did we choose X"` before overturning a recorded decision.

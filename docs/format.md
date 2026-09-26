@@ -30,8 +30,8 @@ Review comment accepted on PR #88: "use exponential backoff here, the linear
 one hammers the upstream during incidents". Applied in a1b2c3d.
 ```
 
-The body is literal. It is never rewritten, summarised or merged. Invalidated
-records keep their file; only the frontmatter changes.
+The body is literal and is never rewritten, summarised or merged. An invalidated
+record keeps its file, and only the frontmatter changes.
 
 `kind` ∈ `invariant`, `decision`, `deadend`, `correction`, `claim`, `episode`.
 `origin` ∈ `user_said`, `review_accepted`, `commit_linked`, `tool_observed`,
@@ -53,15 +53,11 @@ with the frontmatter above (including the harness's native topic files, whose
 frontmatter is a subset). Imported records get `origin: imported`, trust 0,
 unless the file carries its own provenance fields.
 
-## Cues, rules, ledger
-
-These are derived or operational and are not projected: cues are rebuilt from
+The rest is derived or operational and is not projected: cues are rebuilt from
 records, rules are recompiled from their source files, and the fire ledger is
 telemetry. `muninn export --all` includes them for reproducibility kits.
 
-## Standards
-
 Fields follow the vocabulary of the W3C Community Group draft on agent memory
 interchange where one exists (`subject`/`relation`/`object`, provenance,
-validity) [Q4]. When that draft stabilises, `muninn export --w3c` will emit it;
-the internal schema does not change.
+validity) [Q4]. When that draft stabilises, `muninn export --w3c` will emit it,
+and the internal schema does not change.

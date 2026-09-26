@@ -53,7 +53,7 @@ pattern that is insecure, is served as if current.
 
 **Defence.**
 - Coarse invalidation: `invalid=1` rows are retained and never served (F1).
-- Anchor hashes: a fact tied to a file is retired when the file changes; the
+- Anchor hashes: a fact anchored to a file is retired when the file changes; the
   new value is never guessed [K11].
 - Conflicts are served as conflicts, never resolved by ranking [N4].
 - Revoked-policy grid (Phase 4 gate) measures "revoked fact served" and must be 0.
@@ -85,17 +85,17 @@ assistant forget a decision it should have kept.
 
 **What bounds it.** Retirement is not deletion and never was: the record stays on disk, leaves
 the index, and `muninn why --all` shows it with `invalidated_by` pointing at the record the
-commit corroborated. Nothing is created from a diff — a removed word only matters when an
-active record already named it, and the replacement is always a record that already exists —
+commit corroborated. Nothing is created from a diff. A removed word only matters when an
+active record already named it, and the replacement is always a record that already exists,
 so a commit cannot *insert* a belief, only withdraw one. The write path runs outside every
 hook, and no read hook executes git.
 
 **What does not bound it.** There is no signature check and no notion of a trusted author:
 `git log` is read as the repository presents it. A repository whose commits you do not control
 is a repository whose memory you do not fully control either. That is the same trust boundary
-as the code itself — an attacker who can land a commit can change what the code does, which is
-strictly worse than changing what the memory serves — and it is stated here rather than
-defended, because nothing in the MVP defends it.
+as the code itself: an attacker who can land a commit can change what the code does, which is
+strictly worse than changing what the memory serves. The boundary is only stated here, because nothing in
+the MVP defends it.
 
 ## Out of scope for the MVP
 

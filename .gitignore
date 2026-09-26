@@ -9,3 +9,4 @@ crates/muninn-bench/experiment/run-gate2.log
 
 # a probe checkout, not part of the repository
 crates/muninn-bench/experiment/results/native-probe/proj/
+*.quiron.json

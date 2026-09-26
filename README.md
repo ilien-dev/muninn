@@ -9,6 +9,24 @@
 
 Muninn gives AI coding assistants (Claude Code and Codex) a memory that drops what you replaced.
 
+**Measured against other memory tools, on the same harness and the same tasks:**
+
+- **It follows your latest decision.** On a decision replaced in conversation, phrased five
+  different ways: **252/270 against claude-mem's 208/268** (p = 1.7 × 10⁻⁷). With the change
+  also in the code: **54/54**, against claude-mem's 25/54 and agentmemory's 1/54.
+- **What you replaced never comes back.** A retired decision cannot reach the assistant, by
+  construction, and CI tests that on every commit. It wrote a replaced value in 0 of 54 tasks;
+  claude-mem did in 10.
+- **Local, fast, deterministic.** No server, no account, no model on the read path, about 3 ms a
+  hook at 20 000 records. The same conversation gives the same memory; claude-mem's stored text
+  did not overlap between two runs.
+- **Rules the tool enforces.** A written rule can become a control the tool obeys. With the rule
+  hidden from the model, violations fell from 8 in 24 to 0.
+
+Every figure comes from a test registered before it ran, with its raw data in this repository.
+The full comparison, what it does not cover, and the tools not yet measured (Mem0, Zep, Letta,
+the built-in memory) are in [`docs/why-muninn.md`](docs/why-muninn.md).
+
 Most memory tools search by resemblance. You ask a question, they return the notes that look most
 like it. A decision you changed your mind about looks just as relevant as the one that replaced
 it, so the assistant gets both and picks one.
@@ -111,8 +129,8 @@ particular product.
 | a rule was revoked | the revoked rule is still text in the store, and still retrievable | revoked cards cannot reach the assistant; you see them when you ask |
 | what a turn costs you | a retrieval step whose size you do not control | a few thousandths of a second, no model call, capped at 700 tokens |
 
-Two findings from the published literature. These are other people's measurements, not ours, and
-the evidence ids point into [`research/00-evidence-log.md`](research/00-evidence-log.md):
+Two findings from the published literature. These are other people's measurements, not ours. The
+evidence ids point into [`research/00-evidence-log.md`](research/00-evidence-log.md):
 
 - On questions of the form "is this still true?", "is this the complete set?" and "what did we
   decide against?", a production vector memory tool answered 6–27 % correctly, against 98–100 %
@@ -136,8 +154,8 @@ The first claim is not a score. A retired decision is never handed to the assist
 queries that feed it read from a filtered view of the database and the type that carries a card
 into its context cannot be built from anything else. A test drives the real hooks 200 times per
 run, including with the database corrupted, the schema version set to one the binary refuses, and
-the clock moved backwards, and fails if a retired value appears in the output. It was checked the other way round
-as well: undo the filter and the test goes red naming the value that leaked.
+the clock moved backwards, and fails if a retired value appears in the output. It was checked
+the other way round as well: undo the filter and the test goes red naming the value that leaked.
 
 The rest are measurements:
 
@@ -152,32 +170,31 @@ The rest are measurements:
 A refusal is not yet a better outcome, so that was measured too, and the first answer was a
 flat no. Given the same eight rules written in `CLAUDE.md`, turning them into enforced settings
 changed nothing across 48 runs: the assistant broke none of the rules either way. It had read
-them and worked around them on its own — committing one file instead of everything, fixing a
+them and worked around them on its own: it committed one file instead of everything and fixed a
 directory's permissions instead of reaching for `sudo`. On a model that already does what your
 file says, the setting has nothing left to do.
 
 What it is for is the case where that does not happen. With the rule taken out of the
 assistant's view and only the setting left in place, the forbidden action happened in 8 of 24
-runs without it and 0 of 24 with it. That is the difference between a rule the assistant can be
-talked out of and one it cannot reach past. Both numbers, and the two bugs this test found in
+runs without it and 0 of 24 with it. Both numbers, and the two bugs this test found in
 our own code, are in [`docs/claims.md`](docs/claims.md).
 
 The last two rows took three tries. The first two attempts failed, and they are in the
 repository with the reasons: the first because the settings Muninn wrote were broader than
-the rules they came from — a rule about `main` refused every force-push, a rule about
-`pkill -f zellij` refused every `kill` — and the second because four rules it should have
+the rules they came from (a rule about `main` refused every force-push, a rule about
+`pkill -f zellij` refused every `kill`), and the second because four rules it should have
 caught were not caught, one of them because of a bug in Muninn itself. Both were fixed, and
 the numbers above come from a third set of rules neither attempt had seen.
 
 Noticing that a decision was replaced used to be the weak half, and the reason was measured:
 of 30 held-out cases, 23 have no word in common between the old decision and the message
-replacing it, so no amount of word-matching reaches them. That is still true. What changed is
-where else Muninn looks.
+replacing it, so no amount of word-matching reaches them. That is still true. Muninn now looks
+somewhere else as well.
 
 When a decision reaches the code, the code says when it stops being true. Muninn reads the
-diffs of your commits: a value that a commit took out and that no tracked file holds any more
-is a value the project has stopped using — and so is one that a single line of a commit
-replaced with another — and the decision that named it is retired. What the line became is
+diffs of your commits. A value that a commit took out and that no tracked file holds any more
+is a value the project has stopped using. So is one that a single line of a commit replaced
+with another. The decision that named it is retired. What the line became is
 recorded too, with the commit behind it, so the question that reached the old answer reaches
 the new one. Nothing is guessed: a removed word only counts if a record already named it, a
 word your repository uses in more than three files is not treated as a value at all, and a
@@ -194,25 +211,25 @@ deliberately uninformative ("update dependencies") so the commit contributes onl
 | …when ten other decisions were taken in between | 0 and 1 of 30 | 17 and 25 of 30 | 21 and 29 of 30 |
 | a commit that changes something unrelated retires a decision | — | 0 of 30, every condition | 0 of 30 |
 
-The third column is the one worth reading twice: it is the arm where the user states a
-decision **once and never mentions it again**, and where the commit subject says only "update
-dependencies". Everything the memory knows about the change, it read from the diff.
+In the third column the user states a decision **once and never mentions it again**, and the
+commit subject says only "update dependencies". Everything the memory knows about the change, it
+read from the diff.
 
-The second row is the point. Every word-matching rule needs the two messages to be near each
-other, because that is the only thing relating them when they share no words; a commit relates
-them by value, and does not care how long ago you said it.
+The second row is where the commits matter most. Every word-matching rule needs the two messages
+to be near each other, because that is the only thing relating them when they share no words; a
+commit relates them by value, and does not care how long ago you said it.
 
-The limits travel with it. A decision that never reaches a file leaves nothing to read, and
-there the first column is all you get. A word your repository uses everywhere is not treated
-as a value at all — the first real store this was run against, built from this project's own
-transcripts, retired one record wrongly because a commit touched a line containing the word
-"delivered", and the rule now ignores any word living in more than three tracked files unless
-the record spells it like a name. Where the old value still appears somewhere in the
-repository, nothing is retired — deliberately. And in the Spanish half of those sets the
-retirement is 10 of 10 while the answer is delivered 2 of 10, because the question is in
-English and the record is in Spanish; that gap is retrieval, not detection, and it is not fixed.
+This has limits. A decision that never reaches a file leaves nothing to read, and there the
+first column is all you get. A word your repository uses everywhere is not treated as a value at
+all. The first real store this was run against, built from this project's own transcripts,
+retired one record wrongly because a commit touched a line containing the word "delivered", and
+the rule now ignores any word living in more than three tracked files unless the record spells
+it like a name. Where the old value still appears somewhere in the repository, nothing is
+retired. That is deliberate. And in the Spanish half of those sets the retirement is 10 of 10
+while the answer is delivered 2 of 10. That gap is in retrieval, and "Where it is weak" explains
+it.
 
-Not retiring things is the other half of the job, and it was never measured until a real
+Not retiring things is the other half of the job. It was never measured until a real
 store made it obvious: run on six of this project's own transcripts, three of four sampled
 retirements were wrong. One retired a note about gzip and zstd because a later message
 described *running a test* on gzip and zstd.
@@ -221,7 +238,7 @@ The cause was a handful of words that are both a verb and a noun. "Migrations", 
 "swap", "switch" read as announcements of a change, so any later sentence containing one of
 them could retire an earlier decision it happened to share two words with. On fifteen pairs
 built to contain exactly that shape, three of fifteen true decisions survived. After the fix,
-twelve — and of the three that still fail, two look like genuine changes that the test set
+twelve did. Of the three that still fail, two look like genuine changes that the test set
 called unrelated. On two other held-out sets of pairs that are simply about different things,
 fifteen of fifteen survive, before and after.
 
@@ -237,12 +254,12 @@ Five of those builds changed what Muninn *tells* the assistant. None of them mov
 
 Two fixtures were withdrawn along the way, and one of those withdrawals did not save the
 result. The first was withdrawn because nineteen of twenty-one failing cells reasoned from
-commits Muninn cited that did not exist in the checkout they were standing in — the grid seeded
+commits Muninn cited that did not exist in the checkout they were standing in: the grid seeded
 in one repository and ran the cells in another, which penalises exactly the checkable
 provenance Muninn is built on. The fixture was fixed so every cited commit resolves, and
 **Muninn still lost, 4 of 27 against 13 of 27.** That run was then voided too, for a defect it
-found: the commit that removed a config directory made Muninn retire six current decisions and
-the conversations behind them. Renaming a file wiped the memory of them.
+found: the commit that removed a config directory (a rename) made Muninn retire six current
+decisions and the conversations behind them.
 
 What finally moved it was not better retrieval. Reading the competitor's own cells showed that
 claude-mem does not deliver the decision at all — it delivers an index of every decision on
@@ -271,7 +288,7 @@ into 7 of them.
 
 It cost context: Muninn occupies about 2.4 times claude-mem's share of the window, the worst
 figure it publishes, and that is measured the way least favourable to us. Against the previous
-build, on the same cells and one instrument, it is 0.876 [0.826, 0.891] — less than it was, and
+build, on the same cells and one instrument, it is 0.876 [0.826, 0.891]: less than it was and
 still more than the competitor's. Turning the per-prompt block off takes it to 1.8 and costs
 about four answers in fifty, which is why it is not the default.
 
@@ -308,13 +325,13 @@ new wording that no version had seen: it got 17 of 27, claude-mem 14 of 27 and a
 That difference is too small to call Muninn better, so it counts as a tie with both. Muninn's
 answers also mentioned the replaced value more often (11 of 27 against 2 of 27 for claude-mem).
 
-"Too small to call" is worth saying precisely, because it is a limit of the test and not a
-finding about the tools. A second run of the same comparison, done later for another reason,
-came out 23 of 27 against 19 of 27 — the same direction, the same four-answer gap. Put the two
-together and it is 40 of 54 against 33 of 54, which is still inside what chance produces about
-one time in five. To tell a difference that size from nothing you would need about 204 cells per
-tool instead of 27, which is roughly eight times the work. So: a tie, with the honest footnote
-that the test was never big enough to find a difference this small, in either direction.
+"Too small to call" is a limit of the test, not a finding about the tools. A second run of the
+same comparison, done later for another reason, came out 23 of 27 against 19 of 27: the same
+direction and the same four-answer gap. Put the two together and it is 40 of 54 against 33 of
+54, which is still inside what chance produces about one time in five. To tell a difference that
+size from nothing you would need about 204 cells per tool instead of 27, which is roughly eight
+times the work. So it is a tie. The test was never big enough to find a difference this small in
+either direction.
 
 ## Where it is weak
 
@@ -322,25 +339,25 @@ Turning a written rule into an enforced one covers a minority of what you write.
 public `CLAUDE.md` and `AGENTS.md` files, about 93 % of the rules people write cannot be
 enforced at the tool boundary at all: they are about style, judgement or process, and nothing
 but the assistant reading them can honour them. Muninn tells you which of your rules are in
-which half, and that is the honest limit of the feature.
+which half, and that is the limit of the feature.
 
-Noticing that you changed your mind used to be the weak half of the job, and for a decision
-that never reaches a file it still is. Everything above about retired decisions assumes the
-decision got marked as retired in the first place. Where the decision is in the code, the code
-now says when it stopped being true. Where it is not — a release cadence, a review policy — the
-marking is a set of rules over the words you typed, and on wording no version of Muninn had
-seen those rules caught 17 of 27 replacements against claude-mem's 14, which is a tie.
+For a decision that never reaches a file, noticing that you changed your mind is still the weak
+half. Everything above about retired decisions assumes the decision got marked as retired in the
+first place. Where the decision is in the code, the code now says when it stopped being true.
+Where it is not (a release cadence, a review policy), the marking is a set of rules over the
+words you typed, and on wording no version of Muninn had seen those rules caught 17 of 27
+replacements against claude-mem's 14, which is a tie.
 
-Inside the words, that gap is closed as far as it goes. Of 30 held-out cases, 23 have no word
-in common between the old decision and the message replacing it — "HashiCorp Vault for
-production secrets" and "moving to AWS Secrets Manager" share nothing a program can match on.
-Comparing meaning instead of words does not work either. Measured on the product names alone
-over 42 development pairs it picked the right pair **3 times**, where chance on a 42-way
-choice is one; an earlier six-pair reading said 5 of 6 and did not survive the larger one.
-Both halves of that route — whole sentences and names — are now measured and both are shut.
-The way past it was to stop reading sentences and read the commits, which is the table above —
-and that only helps for decisions that reach the code. For a decision that never does, the
-marking is still a set of rules over the words you typed, and they still miss.
+Word rules cannot close that gap: in 23 of the 30 held-out cases the old decision and the
+message replacing it share no word. "HashiCorp Vault for production secrets" and "moving to AWS
+Secrets Manager" share nothing a program can match on. Comparing meaning instead of words does
+not work either. Measured on the product names alone over 42 development pairs it picked the
+right pair **3 times**, where chance on a 42-way choice is one; an earlier six-pair reading said
+5 of 6 and did not survive the larger one. Comparing whole sentences and comparing names alone
+have both been measured, and neither works. The way past it was to stop reading sentences and
+read the commits, which is the table above. That only helps for decisions that reach the code.
+For a decision that never does, the marking is still a set of rules over the words you typed,
+and they still miss.
 
 The fact-recall numbers come from tasks we wrote, about this repository. 19 of 25 against 2 of 25
 follows a rule written before the run, and it is still a measurement of our own tasks on our own
@@ -357,18 +374,17 @@ Retired records stay on disk in plain sight. Muninn mirrors every record to `.mu
 Markdown, retired ones included and labelled as retired. Nothing hands them to the assistant, but
 an assistant that greps the folder will find them. `MUNINN_NO_PROJECT` turns the mirror off.
 
-Muninn takes more of your context window than the tools it was measured against, and the
-catalogue made that worse. On the part that is certainly the assistant's context it is now
-**2.6 times claude-mem's room**, the worst figure this project publishes, against 1.6 to 2.1
-before the catalogue existed. Two things follow from the design: memory arrives when you ask
-something and not only at the start, and the session now opens with a list of everything on
-record. Turning the per-prompt half off — `muninn config prompt-delivery off` — takes it to
-1.8 and costs about four answers in fifty, both measured, which is why it is a switch and not
-the default. Cutting the startup text instead was measured too and cost six answers in
-fifty-four, so that door is shut. The
-first version of this measurement said the opposite, and it was wrong: it counted our own
-injection twice, because Muninn returns its context on standard output and the hook record
-repeats it.
+Muninn takes more of your context window than the tools it was measured against. The catalogue
+made that worse. On the part that is certainly the assistant's context it is now **2.6 times
+claude-mem's room**, the worst figure this project publishes, against 1.6 to 2.1 before the
+catalogue existed. Two things follow from the design: memory arrives when you ask something and
+not only at the start, and the session now opens with a list of everything on record. Turning
+the per-prompt half off (`muninn config prompt-delivery off`) takes it to 1.8 and costs about
+four answers in fifty, both measured, which is why it is a switch and not the default. Cutting
+the startup text instead was measured too and cost six answers in fifty-four, so the startup
+text stays. The first version of this measurement said the opposite, and it was wrong: it
+counted our own injection twice, because Muninn returns its context on standard output and the
+hook record repeats it.
 
 A question in one language does not reach a record in another. On the Spanish half of the
 held-out sets the replaced decision is retired 10 times out of 10 and the new answer is
@@ -382,15 +398,14 @@ regression fails the build, but the figures are not a promise about your hardwar
 There is no head-to-head against Mem0, Zep or Letta. Those have not been run on the same
 harness, so there is no comparison to report and none is implied.
 
-The assistant's own built-in memory could not be run either, and the reason is worth stating
-because it cuts both ways. Every cell of that comparison is a scripted, non-interactive session,
-and Claude Code's automatic memory does not operate in one: asked whether it has a memory
-directory the assistant answers "no memory", and a session told to remember something writes no
-file. Publishing a score for it would have been publishing a measurement of the session type
-rather than of the memory. What that does say, narrowly, is that Muninn works where the built-in
-memory is not there — which is a statement about scripted sessions on one version of the tool,
-not a claim that one memory is better than the other. The check is one command and is in the
-repository, so a later version can be re-tested.
+The assistant's own built-in memory could not be run either, and the reason cuts both ways.
+Every cell of that comparison is a scripted, non-interactive session, and Claude Code's
+automatic memory does not operate in one: asked whether it has a memory directory the assistant
+answers "no memory", and a session told to remember something writes no file. A score for it
+would have measured the session type, not the memory. What that does say, narrowly, is that
+Muninn works where the built-in memory is not there. That is a statement about scripted sessions
+on one version of the tool, not a claim that one memory is better than the other. The check is
+one command and is in the repository, so a later version can be re-tested.
 
 The full list of what is claimed, what is not, and the limits of each result is in
 [`docs/claims.md`](docs/claims.md). What Muninn deliberately does not do is in
@@ -496,8 +511,8 @@ to tell him what they saw. Huginn is thought; Muninn is memory. In the *Grímnis
 poems of the Poetic Edda, Odin says he fears Huginn may not come back, and that he fears more for
 Muninn.
 
-That always struck me as the right way round. Thought can be done again. A memory that does not
-come back is simply gone.
+That always struck me as the right way round: a thought can be had again, and a memory that does
+not come back is gone.
 
 A coding assistant is Huginn. It thinks fast, it ranges wide, and every morning it starts from
 nothing. Muninn is the one that comes back carrying what you decided.

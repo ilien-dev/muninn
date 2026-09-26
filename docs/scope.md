@@ -20,8 +20,8 @@ omission. The table mirrors `design/ENGINE.md` §12.
 | Review-comment capture | Needs an API; deferred [K14] |
 | Other harnesses (OpenCode, Pi, Cline) | The MVP covers Claude Code and Codex; an in-process addon is a v1.1 decision |
 | Retiring a decision on an uncommitted edit | The working tree is not evidence: an edit can be reverted in a minute and there is no revalidation path that could put the record back. Only a commit counts, and only where its hunk or the tree says the value is gone |
-| Trusting a commit's author | `git log` is read as the repository presents it; anyone who can land a commit can retire a record. Not defended — see `docs/threat-model.md` §6 — and strictly less powerful than what that person can already do to the code |
-| Tree-sitter grammars beyond Rust, TypeScript/TSX, JavaScript/JSX, Python, Go | Each grammar adds to the binary; others are added on measured demand — a crate, two `.scm` files, a fixture and a test |
+| Trusting a commit's author | `git log` is read as the repository presents it; anyone who can land a commit can retire a record. Not defended (see `docs/threat-model.md` §6), and strictly less powerful than what that person can already do to the code |
+| Tree-sitter grammars beyond Rust, TypeScript/TSX, JavaScript/JSX, Python, Go | Each grammar adds to the binary; others are added on measured demand: a crate, two `.scm` files, a fixture and a test |
 
 What it does, with numbers, is in `README.md` and the gate reports under
 `crates/muninn-bench/experiment/`.

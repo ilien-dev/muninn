@@ -27,6 +27,6 @@ cargo run --release -p muninn-cli --features exact-tokens -- init --check-budget
 ```
 
 The design is fixed by [`research/CONCLUSION.md`](research/CONCLUSION.md) and
-[`design/ENGINE.md`](design/ENGINE.md). A change that overturns a recorded
+[`design/ENGINE.md`](design/ENGINE.md), and a change that overturns a recorded
 decision needs a new measurement. Every number in the documentation is
 measured or cited by evidence id.
