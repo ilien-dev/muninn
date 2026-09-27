@@ -8,6 +8,14 @@ as v17 or v43 are test runs, numbered in the order they were registered, not ver
 
 ## The short version
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/motion/results-dark.gif">
+    <img src="../assets/motion/results-light.gif" width="760"
+         alt="Bar chart. Changed in conversation: Muninn 252 of 270, claude-mem 208 of 268. Change also in the code: Muninn 54 of 54, claude-mem 25 of 54, agentmemory 1 of 54. Old value written back: Muninn 0 of 54, claude-mem 10 of 54.">
+  </picture>
+</p>
+
 - **When you change your mind, the assistant follows the new decision.** Across five different
   ways of phrasing a change, Muninn got the assistant to the current answer in **252 of 270**
   tasks, and claude-mem in **208 of 268** (p = 1.7 × 10⁻⁷). When the change also reached the
