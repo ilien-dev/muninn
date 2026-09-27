@@ -411,11 +411,14 @@ fn s11_store_dir_deleted_midsession() {
     for _ in 0..reps() {
         let p = init_project();
         let _ = hook(p.path(), "SessionStart", serde_json::json!({}));
-        // the detached write path may still be touching the directory: retry briefly
-        for i in 0..50 {
+        // the detached write path may still be touching the directory: retry. Windows
+        // refuses to delete a file another process holds open, so there the wait lasts
+        // until that write path finishes, up to ten seconds.
+        let tries = if cfg!(windows) { 500 } else { 50 };
+        for i in 0..tries {
             match std::fs::remove_dir_all(p.path().join(".muninn")) {
                 Ok(()) => break,
-                Err(e) if i < 49 => {
+                Err(e) if i < tries - 1 => {
                     let _ = e;
                     std::thread::sleep(Duration::from_millis(20));
                 }
