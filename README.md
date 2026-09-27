@@ -14,11 +14,11 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-30363d" alt="License: AGPL-3.0-only"></a>
 </p>
 
-# Muninn
+# Muninn: persistent memory for Claude Code and Codex
 
 **A memory for Claude Code and Codex that keeps up when you change your mind.**
 
-Every time you open a new session, your AI assistant starts from zero, with no idea that last
+Every time you open a new session, Claude Code or Codex starts from zero, with no idea that last
 week you picked a database, agreed on a folder structure, or told it never to touch a certain
 file. So you explain it all again, or it guesses.
 
@@ -31,10 +31,15 @@ Muninn remembers what you decided, and when you change your mind, it puts the ol
 The assistant only sees what is true now. The old one is still in your history if you ever want
 to look.
 
+It also turns the rules in your `CLAUDE.md` or `AGENTS.md` into settings that block the action,
+so "never edit the migrations folder" holds even when the assistant has forgotten it. It runs on
+your computer, with no cloud service and no API key.
+
 <p align="center">
   <a href="#install"><b>Install</b></a> ·
   <a href="#what-happens-in-the-background">How it works</a> ·
-  <a href="#muninn-or-another-memory-tool">Compare</a> ·
+  <a href="#rules-that-block-instead-of-rules-that-get-ignored">Rules</a> ·
+  <a href="#muninn-compared-with-claude-mem-and-agentmemory">Compare</a> ·
   <a href="#questions">Questions</a> ·
   <a href="docs/technical-overview.md">Technical overview</a>
 </p>
@@ -125,10 +130,6 @@ something you never meant. Everything stays on your computer: Muninn has no acco
 service, and it never sends your conversations anywhere. It adds a few thousandths of a second
 to each message.
 
-It can also turn a rule from your project notes, such as "never edit the migrations folder", into
-a setting that blocks the action instead of hoping the assistant remembers. It shows you the
-change first and does nothing until you say yes.
-
 <table>
   <tr>
     <td width="50%" valign="top">
@@ -180,6 +181,20 @@ change first and does nothing until you say yes.
   </tr>
 </table>
 
+## Rules that block instead of rules that get ignored
+
+Claude Code reads `CLAUDE.md` as context, and a rule in it can be lost when a long conversation
+is compacted or simply not followed. Muninn turns a rule such as "never edit the migrations
+folder" from `CLAUDE.md`, `AGENTS.md` or `.claude/rules` into Claude Code permission rules and a
+deny hook, so the edit is refused before it happens. It shows you the proposed settings first
+and changes nothing until you say yes:
+
+```sh
+muninn compile && muninn apply
+```
+
+In Claude Code, `/muninn:apply` does the same.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/motion/local-dark.gif">
@@ -188,7 +203,7 @@ change first and does nothing until you say yes.
   </picture>
 </p>
 
-## Muninn or another memory tool?
+## Muninn compared with claude-mem and agentmemory
 
 Every row below comes from the same test harness: the same live sessions filled each tool's
 memory through its own hooks, and a fixed check graded what the assistant wrote. No AI judge
@@ -341,6 +356,25 @@ muninn status                        # is everything healthy
 ## Questions
 
 <details>
+<summary><b>Why does Claude Code forget everything between sessions?</b></summary>
+
+Each session starts with an empty context: the assistant only knows what is in `CLAUDE.md` and
+what you tell it again. Muninn keeps the decisions, rules, corrections and dead ends from earlier
+sessions and hands the ones that matter back to the assistant when you write a message, capped at
+700 tokens. Codex works the same way, and Muninn covers it with the same memory.
+</details>
+
+<details>
+<summary><b>Why does Claude ignore my CLAUDE.md, and can Muninn stop it?</b></summary>
+
+`CLAUDE.md` is read as context, not as a setting, so a rule can be dropped when the conversation
+is compacted or skipped during a long task. Muninn helps in two ways. Rules come back from its
+store after a compaction, not from the summary (100 of 100 times in our test). And a rule you
+turn into a setting with `muninn compile && muninn apply` blocks the action whether or not the
+assistant remembers it.
+</details>
+
+<details>
 <summary><b>Does it send my conversations anywhere?</b></summary>
 
 No. There is no account, no server and no cloud service. The memory is a folder called
@@ -378,6 +412,15 @@ a paid model.
 
 `init` turns Claude Code's built-in memory off for that project. If you want to keep both, run
 `muninn init --keep-native`.
+</details>
+
+<details>
+<summary><b>Is it an alternative to claude-mem, Mem0 or engram?</b></summary>
+
+It does the same job as claude-mem: memory across sessions, through hooks, for coding assistants.
+The difference is what happens when a decision changes. We tested Muninn against claude-mem and
+agentmemory on that case, and the results are [above](#muninn-compared-with-claude-mem-and-agentmemory).
+Mem0 and engram have not been run on the same test, so there is no figure to compare yet.
 </details>
 
 <details>

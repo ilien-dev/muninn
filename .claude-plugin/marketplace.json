@@ -5,14 +5,14 @@
     "url": "https://github.com/ilien-dev/muninn"
   },
   "metadata": {
-    "description": "Local deterministic memory engine for coding agents",
+    "description": "Persistent memory for Claude Code and Codex",
     "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "muninn",
       "source": "./plugin",
-      "description": "Filters stale facts, compiles CLAUDE.md rules into enforceable controls, delivers cue-anchored memory under a hard token budget. Single-digit-millisecond hooks, no server, no model in the read path.",
+      "description": "Persistent memory for Claude Code and Codex that never serves a replaced decision, and turns CLAUDE.md / AGENTS.md rules into permission rules and deny hooks. Local: one binary, SQLite, no cloud, no model in the read path.",
       "version": "1.0.0",
       "author": {
         "name": "Muninn contributors"
@@ -20,9 +20,19 @@
       "category": "productivity",
       "keywords": [
         "memory",
+        "persistent-memory",
+        "claude-code",
+        "claude-code-plugin",
+        "codex",
+        "codex-cli",
+        "claude-md",
+        "agents-md",
         "hooks",
-        "deterministic",
-        "codex"
+        "permissions",
+        "guardrails",
+        "local-first",
+        "sqlite",
+        "deterministic"
       ]
     }
   ]
