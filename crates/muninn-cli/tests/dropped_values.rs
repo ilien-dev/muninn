@@ -54,28 +54,25 @@ fn decision(root: &Path, text: &str) {
          VALUES('decision','said:state:{t}','user_decision','{text}','user: {text}\n','user_said',3,'s','{t}',1);",
         t = text.replace(' ', "-")
     );
-    let out = Command::new("sqlite3")
-        .arg(&db)
-        .arg(&sql)
-        .output()
-        .expect("sqlite3");
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    // rusqlite, not the sqlite3 command: the bundled SQLite has FTS5, which the store's
+    // triggers need and macOS's system sqlite3 lacks, and Windows has no sqlite3 at all
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute_batch(&sql)
+        .unwrap();
 }
 
 fn active(root: &Path, needle: &str) -> bool {
     let db = root.join(".muninn/muninn.db");
-    let out = Command::new("sqlite3")
-        .arg(&db)
-        .arg(format!(
-            "SELECT count(*) FROM record WHERE invalid=0 AND object LIKE '%{needle}%';"
-        ))
-        .output()
-        .expect("sqlite3");
-    String::from_utf8_lossy(&out.stdout).trim() != "0"
+    let n: i64 = rusqlite::Connection::open(&db)
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM record WHERE invalid=0 AND object LIKE '%' || ?1 || '%'",
+            [needle],
+            |r| r.get(0),
+        )
+        .unwrap();
+    n != 0
 }
 
 #[test]
@@ -298,12 +295,17 @@ fn a_swaps_topic_keeps_no_part_of_the_value_that_left() {
     git(root, &["commit", "-qm", "update dependencies"]);
     run(root, BIN, &["maintain"]);
     let db = root.join(".muninn/muninn.db");
-    let out = Command::new("sqlite3")
-        .arg(&db)
-        .arg("SELECT subject FROM record WHERE origin='commit_linked' AND subject LIKE 'said:change:%';")
-        .output()
-        .expect("sqlite3");
-    let subjects = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let mut q = conn
+        .prepare("SELECT subject FROM record WHERE origin='commit_linked' AND subject LIKE 'said:change:%'")
+        .unwrap();
+    let subjects = q
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_lowercase();
     assert!(
         !subjects.is_empty(),
         "the swap wrote its record: {subjects}"

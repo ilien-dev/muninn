@@ -27,8 +27,19 @@ fi
 # ~/.local/bin pointing at the current version's binary. A regular file there is someone's
 # own install and is left alone.
 link="${MUNINN_BIN_DIR:-$HOME/.local/bin}/muninn"
-if [ -L "$link" ] || [ ! -e "$link" ]; then
-  [ "$(readlink "$link" 2>/dev/null)" = "$bin" ] ||
-    { mkdir -p "$(dirname "$link")" && ln -sf "$bin" "$link"; } 2>/dev/null || true
-fi
+case "$bin" in
+  *.exe)
+    # Git Bash's `ln -s` copies instead of linking, and the next update would leave that
+    # copy stale. Keep a copy marked as ours, refreshed when the plugin's binary is newer;
+    # a muninn.exe there without the mark is someone's own install and is left alone.
+    mark="$link.plugin"
+    if [ ! -e "$link.exe" ] || { [ -e "$mark" ] && [ "$bin" -nt "$link.exe" ]; }; then
+      { mkdir -p "$(dirname "$link")" && cp -f "$bin" "$link.exe" && : > "$mark"; } 2>/dev/null || true
+    fi ;;
+  *)
+    if [ -L "$link" ] || [ ! -e "$link" ]; then
+      [ "$(readlink "$link" 2>/dev/null)" = "$bin" ] ||
+        { mkdir -p "$(dirname "$link")" && ln -sf "$bin" "$link"; } 2>/dev/null || true
+    fi ;;
+esac
 exec "$bin" hook SessionStart

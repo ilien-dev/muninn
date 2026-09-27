@@ -1,0 +1,20 @@
+name: branch-name
+# Contributions reach master only through a pull request from feature/<name>, <name> in
+# lowercase. master's ruleset requires this check; the maintainer can bypass it.
+on:
+  pull_request:
+    branches: [master]
+permissions: {}
+jobs:
+  branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: feature/<lowercase-name> into master
+        env: { HEAD: "${{ github.head_ref }}" }
+        run: |
+          if printf '%s' "$HEAD" | grep -Eq '^feature/[a-z0-9][a-z0-9._-]*$'; then
+            echo "ok: $HEAD"
+          else
+            echo "::error::branch '$HEAD' must be named feature/<name>, in lowercase (letters, digits, '.', '_', '-')"
+            exit 1
+          fi

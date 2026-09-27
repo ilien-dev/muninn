@@ -19,17 +19,23 @@ case "$os-$arch" in
   linux-x86_64)          target=x86_64-unknown-linux-gnu ;;
   linux-aarch64|linux-arm64) target=aarch64-unknown-linux-gnu ;;
   darwin-arm64)          target=aarch64-apple-darwin ;;
-  darwin-x86_64)         echo "only the arm64 macOS build is published, and an Intel Mac cannot run it — build from source: cargo build --release -p muninn-cli" >&2; exit 1 ;;
+  darwin-x86_64)         target=x86_64-apple-darwin ;;
   mingw*-x86_64|msys*-x86_64|cygwin*-x86_64)
                          target=x86_64-pc-windows-msvc; ext=".exe" ;;
   *) echo "unsupported platform $os-$arch — build from source: cargo build --release -p muninn-cli" >&2; exit 1 ;;
 esac
+# sha256sum (Linux, Git Bash) or shasum (macOS). A pipeline's status is its last
+# command's, so `sha256sum f | cut || shasum f | cut` never reaches shasum.
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
 asset="muninn-$target$ext"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "$REPO/$asset" -o "$tmp/muninn$ext"
 curl -fsSL "$REPO/checksums.txt" -o "$tmp/checksums.txt"
-expected=$(grep " $asset\$" "$tmp/checksums.txt" | cut -d' ' -f1)
-actual=$(sha256sum "$tmp/muninn$ext" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$tmp/muninn$ext" | cut -d' ' -f1)
+# `sha256sum` in binary mode, the default on Windows, writes "hash *name"
+expected=$(grep -E " [*]?$asset\$" "$tmp/checksums.txt" | cut -d' ' -f1)
+actual=$(sha256 "$tmp/muninn$ext")
 [ -n "$expected" ] || { echo "no checksum published for $asset" >&2; exit 1; }
 [ "$expected" = "$actual" ] || { echo "checksum mismatch for $asset" >&2; exit 1; }
 # Sigstore bundle: verified when cosign is installed (keyless, GitHub Actions identity)
@@ -51,7 +57,7 @@ if [ "${MUNINN_WITH_MODEL:-0}" = "1" ]; then
   curl -fsSL "$REPO/models.txt" -o "$tmp/models.txt"
   for f in config.json tokenizer.json model.safetensors; do
     want=$(grep " $f " "$tmp/models.txt" | awk '{print $3}')
-    got=$(sha256sum "$mdir/$f" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$mdir/$f" | cut -d' ' -f1)
+    got=$(sha256 "$mdir/$f")
     [ "$want" = "$got" ] || { echo "model file $f checksum mismatch" >&2; rm -f "$mdir/$f"; exit 1; }
   done
   echo "model installed in $mdir"

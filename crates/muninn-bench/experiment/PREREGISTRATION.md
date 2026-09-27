@@ -6022,6 +6022,8 @@ registration changes.
 Registered 2026-09-24, before any cell ran. v39 is withdrawn before any cell of it ran, at the
 user's request, for cost: re-seeding the competitor spends the account's quota twice over — its
 seeding sessions and its observer — and ran into the account's usage window once already.
+The second attempt had seeded two runs of `v3` when it was stopped (2026-09-24 17:24); no cell
+ran. That partial seeding is kept, as it was left, under `results/h2h-v39-v3-withdrawn/`.
 
 **What changes.** Only the Muninn arm is run. The competitor's cells are the ones already on
 record for each fixture, all from claude-mem 13.24.23, pinned the same way throughout, and every

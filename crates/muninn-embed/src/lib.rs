@@ -43,7 +43,7 @@ pub fn model_dir() -> Option<PathBuf> {
     if let Ok(r) = std::env::var("CLAUDE_PLUGIN_ROOT") {
         cands.push(PathBuf::from(r).join("models").join(MODEL_NAME));
     }
-    if let Ok(h) = std::env::var("HOME") {
+    if let Ok(h) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         cands.push(
             PathBuf::from(h)
                 .join(".local/share/muninn/models")
