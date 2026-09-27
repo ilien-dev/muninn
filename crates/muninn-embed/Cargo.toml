@@ -10,7 +10,7 @@ muninn-core = { path = "../muninn-core" }
 serde.workspace = true
 serde_json.workspace = true
 rusqlite.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
 model2vec-rs = { version = "0.2.1", default-features = false, features = ["fancy-regex", "local-only"] }
 
 [dev-dependencies]
