@@ -1,6 +1,7 @@
 name: branch-name
 # Contributions reach master only through a pull request from feature/<name>, <name> in
 # lowercase. master's ruleset requires this check; the maintainer can bypass it.
+# Dependabot's own dependabot/... branches pass when Dependabot opened the pull request.
 on:
   pull_request:
     branches: [master]
@@ -10,8 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: feature/<lowercase-name> into master
-        env: { HEAD: "${{ github.head_ref }}" }
+        env: { HEAD: "${{ github.head_ref }}", AUTHOR: "${{ github.event.pull_request.user.login }}" }
         run: |
+          if [ "$AUTHOR" = "dependabot[bot]" ] && printf '%s' "$HEAD" | grep -Eq '^dependabot/'; then
+            echo "ok: dependency update $HEAD"
+            exit 0
+          fi
           if printf '%s' "$HEAD" | grep -Eq '^feature/[a-z0-9][a-z0-9._-]*$'; then
             echo "ok: $HEAD"
           else

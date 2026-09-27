@@ -57,7 +57,11 @@ pub fn model_dir() -> Option<PathBuf> {
 
 fn sha256_file(p: &Path) -> Result<String> {
     let bytes = std::fs::read(p).map_err(|e| Error::io(p, e))?;
-    Ok(format!("{:x}", Sha256::digest(&bytes)))
+    // Hex by hand: sha2 0.11 digests no longer implement LowerHex.
+    Ok(Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// Verify the three files against the published hashes. Returns the model id
