@@ -4,8 +4,14 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
-## 1.0.0 — prepared, not yet tagged
+## 1.0.0 — 2026-09-27
 
+- **Easier to find.** The README opens with what Muninn is for (persistent memory for Claude Code
+  and Codex), has its own section on turning `CLAUDE.md` rules into settings that block an
+  action, and answers the questions people search for: why Claude Code forgets between sessions,
+  why it ignores `CLAUDE.md`, and how Muninn compares with claude-mem. The plugin manifests carry
+  the same description and more keywords, and `site/` is a landing page for
+  `ilien-dev.github.io/muninn`, published by `pages.yml`.
 - **The README shows what Muninn does, with animations.** The gzip-to-zstd example, the test
   results, what happens in the background and six everyday cases each have a GIF, in a light and
   a dark version. A comparison table and a questions section cover what people ask before
