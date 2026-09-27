@@ -347,7 +347,7 @@ const CARD = [482, 350];                         // resting spot (left, top)
 const CH = 18 * 2.4;                             // chip height at 18 px
 const SPARK = t => bez([CARD[0], CARD[1] + CH / 2], [400, CARD[1] + CH / 2], [334, 300], gapPt(345), t);
 def("hero", {
-  w: 1200, h: 440, dur: 15, poster: 10.4,
+  w: 960, h: 440, dur: 15, poster: 10.4,
   beats: [[.3, "«you said» + decision: let's use gzip, quieta y legible"], [2.5, "La tarjeta se encoge en una chispa y entra por el hueco del anillo; el ojo brilla"], [3.3, "Regla: never edit migrations/"], [6.3, "Callejón sin salida: redis cache lost writes"], [8.2, "El cuervo parpadea"], [9.3, "Decisión: change of plan: zstd"], [12.4, "gzip sale del anillo, tachado: «old plan · retired»"], [14.2, "Se apaga y el bucle vuelve a empezar"]],
   svg(id) {
     const tf = `translate(${HX} ${HY}) scale(${HS})`;
