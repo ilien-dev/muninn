@@ -181,7 +181,9 @@ pub fn discover(root: &Path) -> Vec<PathBuf> {
         for cap in import_re.captures_iter(&content) {
             let rel = &cap[1];
             let target = if let Some(home) = rel.strip_prefix("~/") {
-                std::env::var_os("HOME").map(|h| PathBuf::from(h).join(home))
+                std::env::var_os("HOME")
+                    .or_else(|| std::env::var_os("USERPROFILE"))
+                    .map(|h| PathBuf::from(h).join(home))
             } else {
                 Some(f.parent().unwrap_or(root).join(rel))
             };

@@ -739,7 +739,6 @@ pub fn spawn_detached_throttled(paths: &ProjectPaths, min_age_s: u64) {
 /// Start `muninn maintain` as a detached process (no inherited stdio, own process
 /// group) so a read hook returns at once and the harness never waits on the write path.
 pub fn spawn_detached(paths: &ProjectPaths) {
-    use std::os::unix::process::CommandExt;
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
@@ -749,9 +748,74 @@ pub fn spawn_detached(paths: &ProjectPaths) {
         .arg("maintain")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .process_group(0);
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no console, and a Ctrl+C sent to
+        // the harness does not reach it
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200);
+        // Windows children inherit every inheritable handle, and the hook's own stdin,
+        // stdout and stderr are pipes the harness reads to EOF: the writer would hold them
+        // open and the harness would wait for it, 5.7 s on a locked store in CI. The hook's
+        // handles stop being inheritable for the length of the spawn.
+        let _guard = win::NoInherit::std_handles();
+        let _ = cmd.spawn();
+    }
+    #[cfg(not(windows))]
     let _ = cmd.spawn();
+}
+
+#[cfg(windows)]
+mod win {
+    type Handle = *mut core::ffi::c_void;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetStdHandle(which: u32) -> Handle;
+        fn SetHandleInformation(h: Handle, mask: u32, flags: u32) -> i32;
+    }
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+    // STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE: (DWORD)-10, -11, -12
+    const STD: [u32; 3] = [-10i32 as u32, -11i32 as u32, -12i32 as u32];
+
+    /// Clears the inherit flag on the process's standard handles, and sets it back on drop.
+    pub struct NoInherit(Vec<Handle>);
+
+    impl NoInherit {
+        pub fn std_handles() -> Self {
+            let mut cleared = Vec::new();
+            for which in STD {
+                // SAFETY: plain Win32 calls on this process's own standard handles; a null
+                // or INVALID_HANDLE_VALUE handle is skipped, and a failed call changes nothing
+                unsafe {
+                    let h = GetStdHandle(which);
+                    if !h.is_null()
+                        && h as isize != -1
+                        && SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0) != 0
+                    {
+                        cleared.push(h);
+                    }
+                }
+            }
+            NoInherit(cleared)
+        }
+    }
+
+    impl Drop for NoInherit {
+        fn drop(&mut self) {
+            for &h in &self.0 {
+                // SAFETY: the same handles, restored to how they were
+                unsafe {
+                    SetHandleInformation(h, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

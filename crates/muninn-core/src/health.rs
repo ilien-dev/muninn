@@ -253,9 +253,22 @@ pub fn run(
     }
 
     // 3. integrity
+    // A lock held by the write path (creating or migrating the store while this report
+    // reads it) is not damage, and neither remedy the red checks name would help: fault
+    // suite s10 caught `doctor` in that window on CI and it advised `muninn init`.
+    let busy = |e: &Error| {
+        check(
+            3,
+            "integrity",
+            Status::Cold,
+            format!("store busy, the write path is at work ({e}); ask again in a moment"),
+            None,
+        )
+    };
     checks.push(match db {
         Some(db) if live => match db.quick_check() {
             Ok(()) => check(3, "integrity", Status::Green, "quick_check ok (live)", None),
+            Err(e) if e.is_busy() => busy(&e),
             Err(e) => check(
                 3,
                 "integrity",
@@ -275,6 +288,7 @@ pub fn run(
         Some(db) => {
             // A store that cannot even answer a meta query is broken regardless of what was recorded.
             match db.meta_get("quick_check_result") {
+                Err(e) if e.is_busy() => busy(&e),
                 Err(e) => check(
                     3,
                     "integrity",
@@ -324,15 +338,18 @@ pub fn run(
                 ),
             }
         }
-        None => check(
-            3,
-            "integrity",
-            Status::Red,
-            open_error
-                .map(|e| e.to_string())
-                .unwrap_or_else(|| "database missing".into()),
-            Some("run `muninn init`"),
-        ),
+        None => match open_error {
+            Some(e) if e.is_busy() => busy(e),
+            _ => check(
+                3,
+                "integrity",
+                Status::Red,
+                open_error
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "database missing".into()),
+                Some("run `muninn init`"),
+            ),
+        },
     });
 
     // 4. FTS coherence
@@ -355,7 +372,19 @@ pub fn run(
             } else {
                 f
             };
-            if a == f {
+            if a < 0 && f < 0 {
+                // Neither table could be read: the store is being created or migrated by the
+                // write path at this moment (fault suite s10 caught `doctor` in that window
+                // once in 200 runs). Check 3 owns an unreadable store; this is not a broken
+                // index, and rebuilding it is not the remedy.
+                check(
+                    4,
+                    "fts",
+                    Status::Cold,
+                    "counts not readable yet (store being created or migrated)".to_string(),
+                    None,
+                )
+            } else if a == f {
                 check(
                     4,
                     "fts",

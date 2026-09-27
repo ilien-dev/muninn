@@ -1,0 +1,8 @@
+# `cargo deny check advisories`, run by CI. A vulnerability fails the build; the two
+# notices below are unmaintained crates with no known vulnerability, reached only through
+# tokenizers, which model2vec-rs needs for the optional embedding sidecar (write path only).
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, no vulnerability; via tokenizers" },
+  { id = "RUSTSEC-2025-0119", reason = "number_prefix is unmaintained, no vulnerability; via tokenizers" },
+]

@@ -1,9 +1,9 @@
 {
-  "description": "Muninn memory engine. Exec form only (args array): no shell, no interpolation, pinned binary. Read hooks open the store read-only. SessionStart goes through scripts/session-start, which downloads the binary for this plugin version the first time and then execs it; its 120 s timeout covers that download, and every later session returns in milliseconds.",
+  "description": "Muninn memory engine. Every hook but SessionStart is exec form (args array): no shell, no interpolation, pinned binary; on Windows the spawn resolves bin/muninn to bin/muninn.exe. Read hooks open the store read-only. SessionStart is shell form because it runs scripts/session-start, a shell script, and Windows exec form spawns only real executables; Claude Code runs shell form through sh on macOS and Linux and Git Bash on Windows. The script downloads the binary for this plugin version the first time and then execs it; its 120 s timeout covers that download, and every later session returns in milliseconds.",
   "hooks": {
     "SessionStart": [
       { "matcher": "startup|resume|compact|clear",
-        "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-start", "args": [], "timeout": 120 } ] }
+        "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-start\"", "timeout": 120 } ] }
     ],
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "UserPromptSubmit"], "timeout": 2 } ] }

@@ -303,16 +303,65 @@ fn shell_quote_binary(binary: &Path) -> Result<String> {
     Ok(format!("'{s}'"))
 }
 
+/// Quote the binary path for `commandWindows`, which Codex runs through `cmd.exe /C`.
+/// Double quotes keep spaces and `&|<>^` literal there; a double quote cannot be escaped
+/// inside them and `%` expands even inside them, so both are refused, as are control
+/// characters.
+fn cmd_quote_binary(binary: &Path) -> Result<String> {
+    let s = binary.to_str().with_context(|| {
+        format!(
+            "the muninn binary path is not valid UTF-8: {}",
+            binary.display()
+        )
+    })?;
+    if let Some(bad) = s.chars().find(|c| *c == '"' || *c == '%' || c.is_control()) {
+        bail!(
+            "refusing to write .codex/hooks.json: the muninn binary path contains {bad:?}, \
+             which cannot be quoted safely for cmd.exe ({s}). Install the binary somewhere \
+             without it and re-run `muninn init --codex`."
+        );
+    }
+    Ok(format!("\"{s}\""))
+}
+
 pub fn codex_hooks_json(binary: &Path) -> Result<serde_json::Value> {
     let bin = shell_quote_binary(binary)?;
+    // Codex runs `command` through sh on macOS and Linux and `commandWindows`, when there
+    // is one, through cmd.exe on Windows, where the single quotes above mean nothing.
+    let win = if cfg!(windows) {
+        Some(cmd_quote_binary(binary)?)
+    } else {
+        None
+    };
+    Ok(codex_hooks(&bin, win.as_deref()))
+}
+
+/// The Codex hooks, given the binary already quoted for sh and, optionally, for cmd.exe.
+fn codex_hooks(bin: &str, win: Option<&str>) -> serde_json::Value {
     // The per-turn hooks get 2 seconds and the per-session ones 5, the same split the Claude
     // plugin ships and the same the committed `codex/hooks.json` template describes. This
     // generator gave every synchronous hook 5, so a `muninn init --codex` install let a
     // prompt hook block the user for five seconds where the plugin lets it block for two —
     // and the contracts say these run in under a millisecond.
-    let cmd = |ev: &str, timeout: u32| serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": timeout });
-    let cmd_async = |ev: &str| serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": 30, "async": true });
-    Ok(serde_json::json!({
+    let with_win = |mut h: serde_json::Value, ev: &str| {
+        if let Some(w) = win {
+            h["commandWindows"] = format!("{w} hook {ev}").into();
+        }
+        h
+    };
+    let cmd = |ev: &str, timeout: u32| {
+        with_win(
+            serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": timeout }),
+            ev,
+        )
+    };
+    let cmd_async = |ev: &str| {
+        with_win(
+            serde_json::json!({ "type": "command", "command": format!("{bin} hook {ev}"), "timeout": 30, "async": true }),
+            ev,
+        )
+    };
+    serde_json::json!({
         "description": "Muninn memory engine hooks (Codex). Same binary as the Claude Code plugin.",
         "hooks": {
             "SessionStart":     [{ "matcher": "startup|resume|compact", "hooks": [cmd("SessionStart", 5)] }],
@@ -323,9 +372,9 @@ pub fn codex_hooks_json(binary: &Path) -> Result<serde_json::Value> {
             "PreCompact":       [{ "hooks": [cmd("PreCompact", 5)] }],
             "PostCompact":      [{ "hooks": [cmd("PostCompact", 5)] }],
             "Stop":             [{ "hooks": [cmd_async("Stop")] }],
-            "SessionEnd":       [{ "hooks": [{ "type": "command", "command": format!("{bin} hook SessionEnd"), "timeout": 1 }] }]
+            "SessionEnd":       [{ "hooks": [cmd("SessionEnd", 1)] }]
         }
-    }))
+    })
 }
 
 pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
@@ -559,9 +608,16 @@ mod tests {
     /// SessionStart through the script that downloads the binary on first use.
     #[test]
     fn the_codex_plugin_hooks_match_the_generator() {
-        let mut generated = codex_hooks_json(Path::new("${PLUGIN_ROOT}/bin/muninn")).unwrap();
+        let mut generated = codex_hooks(
+            "'${PLUGIN_ROOT}/bin/muninn'",
+            Some(r#""%PLUGIN_ROOT%\bin\muninn.exe""#),
+        );
+        // Windows has no sh for the script, so PowerShell downloads the binary and cmd.exe
+        // then runs it with the hook's stdin untouched; a failed download still exits 0
         generated["hooks"]["SessionStart"][0]["hooks"][0] = serde_json::json!({
-            "type": "command", "command": "'${PLUGIN_ROOT}/scripts/session-start'", "timeout": 120
+            "type": "command", "command": "'${PLUGIN_ROOT}/scripts/session-start'",
+            "commandWindows": r#"powershell -NoProfile -ExecutionPolicy Bypass -File "%PLUGIN_ROOT%\scripts\session-start.ps1" <NUL && "%PLUGIN_ROOT%\bin\muninn.exe" hook SessionStart || exit /b 0"#,
+            "timeout": 120
         });
         let shipped: serde_json::Value =
             serde_json::from_str(include_str!("../../../plugin/hooks/codex.json")).unwrap();
@@ -736,6 +792,26 @@ mod tests {
                 codex_hooks_json(Path::new(bad)).is_err(),
                 "{bad:?} cannot be quoted safely and must be refused"
             );
+        }
+    }
+
+    /// On Windows Codex runs `commandWindows` through cmd.exe, where single quotes mean
+    /// nothing: the path is double-quoted, and what double quotes cannot hold is refused.
+    #[test]
+    fn codex_windows_path_is_double_quoted_and_cmd_metacharacters_refused() {
+        let q = cmd_quote_binary(Path::new(r"C:\Users\A B\.local\bin\muninn.exe")).unwrap();
+        assert_eq!(q, r#""C:\Users\A B\.local\bin\muninn.exe""#);
+        let h = codex_hooks("'x'", Some(&q));
+        assert_eq!(
+            h["hooks"]["Stop"][0]["hooks"][0]["commandWindows"],
+            format!("{q} hook Stop")
+        );
+        for bad in [
+            r#"C:\a"b\muninn.exe"#,
+            r"C:\%PATH%\muninn.exe",
+            "C:\\a\nb\\muninn.exe",
+        ] {
+            assert!(cmd_quote_binary(Path::new(bad)).is_err(), "{bad:?}");
         }
     }
 }

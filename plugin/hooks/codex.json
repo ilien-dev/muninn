@@ -1,5 +1,5 @@
 {
-  "description": "Muninn memory engine hooks for the Codex plugin. Codex reads this file instead of hooks/hooks.json because .codex-plugin/plugin.json names it: Codex hooks are shell-form and match Codex tool names (apply_patch). Codex substitutes ${PLUGIN_ROOT} before the shell sees the command. SessionStart goes through scripts/session-start, which downloads the binary for this plugin version the first time and then execs it. `the_codex_plugin_hooks_match_the_generator` fails if this file drifts from `muninn init --codex`.",
+  "description": "Muninn memory engine hooks for the Codex plugin. Codex reads this file instead of hooks/hooks.json because .codex-plugin/plugin.json names it: Codex hooks are shell-form and match Codex tool names (apply_patch). On Windows Codex runs `commandWindows` through cmd.exe instead, which has no sh: SessionStart there runs scripts/session-start.ps1 in PowerShell to download the binary, then the binary itself. Codex substitutes ${PLUGIN_ROOT} before the shell sees the command. SessionStart goes through scripts/session-start, which downloads the binary for this plugin version the first time and then execs it. `the_codex_plugin_hooks_match_the_generator` fails if this file drifts from `muninn init --codex`.",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/scripts/session-start'",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%PLUGIN_ROOT%\\scripts\\session-start.ps1\" <NUL && \"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook SessionStart || exit /b 0",
             "timeout": 120
           }
         ]
@@ -19,6 +20,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/bin/muninn' hook UserPromptSubmit",
+            "commandWindows": "\"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook UserPromptSubmit",
             "timeout": 2
           }
         ]
@@ -31,6 +33,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/bin/muninn' hook PreToolUse",
+            "commandWindows": "\"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook PreToolUse",
             "timeout": 2
           }
         ]
@@ -43,6 +46,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/bin/muninn' hook PostToolUse",
+            "commandWindows": "\"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook PostToolUse",
             "timeout": 2
           }
         ]
@@ -54,6 +58,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/bin/muninn' hook PreCompact",
+            "commandWindows": "\"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook PreCompact",
             "timeout": 5
           }
         ]
@@ -65,6 +70,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/bin/muninn' hook PostCompact",
+            "commandWindows": "\"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook PostCompact",
             "timeout": 5
           }
         ]
@@ -76,6 +82,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/bin/muninn' hook Stop",
+            "commandWindows": "\"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook Stop",
             "timeout": 30,
             "async": true
           }
@@ -88,6 +95,7 @@
           {
             "type": "command",
             "command": "'${PLUGIN_ROOT}/bin/muninn' hook SessionEnd",
+            "commandWindows": "\"%PLUGIN_ROOT%\\bin\\muninn.exe\" hook SessionEnd",
             "timeout": 1
           }
         ]

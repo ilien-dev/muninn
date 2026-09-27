@@ -31,6 +31,32 @@ impl Error {
             source,
         }
     }
+
+    /// Another connection holds the lock: the write path is at work, nothing is broken.
+    pub fn is_busy(&self) -> bool {
+        match self {
+            Error::Busy { .. } => true,
+            Error::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => matches!(
+                e.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            ),
+            _ => false,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_held_lock_is_busy_and_damage_is_not() {
+        let locked = super::Error::Sqlite(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            None,
+        ));
+        assert!(locked.is_busy());
+        assert!(super::Error::Busy { attempts: 6 }.is_busy());
+        assert!(!super::Error::Integrity("page 3".into()).is_busy());
+    }
+}

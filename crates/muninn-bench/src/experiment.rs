@@ -803,6 +803,7 @@ fn run_cell(
             // dir/symbol cues off (GATE4.md)
             cmd.env("MUNINN_CUES", "1");
         }
+        #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             cmd.process_group(0);
