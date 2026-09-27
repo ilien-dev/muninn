@@ -8,8 +8,10 @@
 // Each scene is a function of time, so a frame is drawn by setting t and taking
 // a screenshot; nothing depends on the machine's speed. The GIF starts at the
 // scene's poster frame, so a reader with autoplay off still sees a frame that
-// tells the story. Needs ffmpeg on PATH. CHROME_PATH picks a local Chromium
-// when Playwright's own browser is not installed.
+// tells the story. Frames are flat colours, so the GIF uses a full 256-colour
+// palette and no dithering, which would only add a dot pattern. Needs ffmpeg on
+// PATH. CHROME_PATH picks a local Chromium when Playwright's own browser is not
+// installed.
 import { chromium } from "playwright";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, statSync } from "node:fs";
@@ -19,6 +21,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "..");
 const FPS = Number(process.env.FPS || 15);
+// Rendered at twice the canvas size so text stays sharp on high-density screens and
+// is scaled down cleanly on the rest.
+const SCALE = Number(process.env.SCALE || 2);
+// The long flow diagram at 2x weighs about 7.5 MB; 1.5x keeps it near 5 MB.
+const SCENE_SCALE = { flow: 1.5 };
 
 // scene id in scenes.html → file name in assets/motion/
 const SCENES = {
@@ -31,9 +38,9 @@ const wanted = process.argv.slice(2);
 const ids = Object.keys(SCENES).filter(id => !wanted.length || wanted.includes(id) || wanted.includes(SCENES[id]));
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
-const page = await browser.newPage();
-
 for (const id of ids) {
+  const scale = process.env.SCALE ? SCALE : SCENE_SCALE[id] || SCALE;
+  const page = await browser.newPage({ deviceScaleFactor: scale });
   for (const v of ["dark", "light"]) {
     await page.goto(pathToFileURL(join(here, "scenes.html")).href, { waitUntil: "networkidle" });
     await page.evaluate(() => document.fonts.ready);
@@ -53,9 +60,10 @@ for (const id of ids) {
 
     const gif = join(out, `${SCENES[id]}-${v}.gif`);
     execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", String(FPS), "-i", join(dir, "%04d.png"),
-      "-vf", "split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
+      "-vf", "split[a][b];[a]palettegen=max_colors=256:stats_mode=full[p];[b][p]paletteuse=dither=none:diff_mode=rectangle",
       "-loop", "0", gif]);
-    console.log(`${SCENES[id]}-${v}.gif  ${s.w}×${s.h}  ${n} frames  ${(statSync(gif).size / 1024).toFixed(0)} KB`);
+    console.log(`${SCENES[id]}-${v}.gif  ${s.w * scale}×${s.h * scale}  ${n} frames  ${(statSync(gif).size / 1024).toFixed(0)} KB`);
   }
+  await page.close();
 }
 await browser.close();
