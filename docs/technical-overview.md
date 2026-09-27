@@ -441,6 +441,16 @@ off for that session and is retried at the next one. The script also keeps a lin
 in Codex. Claude Code already puts the plugin's `bin/` on its own `PATH`. If `~/.local/bin/muninn`
 is a regular file, it is someone's own install, and the script leaves it alone.
 
+On Windows the same hook works in two ways. Claude Code runs SessionStart, the one shell-form
+hook, through Git Bash, so the script above runs as it does elsewhere. Git Bash's `ln -s`
+copies instead of linking, so the script keeps a copy at `~/.local/bin/muninn.exe` with a
+`muninn.plugin` marker beside it, and refreshes the copy when the plugin's binary is newer.
+Codex on Windows runs each hook's `commandWindows` through `cmd.exe`: SessionStart there runs
+[`plugin/scripts/session-start.ps1`](../plugin/scripts/session-start.ps1) in PowerShell, which
+downloads and checks the binary and keeps the same marked copy, and then `cmd.exe` runs the
+binary. CI runs both paths on a Windows runner (`scripts/ci-install-smoke.sh`,
+`scripts/ci-windows-hooks.py`).
+
 Each assistant reads its own manifest: Claude Code reads `plugin/.claude-plugin/plugin.json` and
 `plugin/hooks/hooks.json`, and Codex reads `plugin/.codex-plugin/plugin.json`, which points at
 `plugin/hooks/codex.json`. Codex hooks are shell commands and name Codex's tools (`apply_patch`),

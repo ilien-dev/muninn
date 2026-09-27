@@ -508,6 +508,21 @@ struct Contract {
     value: f64,
     limit: f64,
     unit: &'static str,
+    /// The figure includes starting the process. On a machine where `--version` alone takes
+    /// longer than the limit (a shared CI runner measured 1.58 ms p95 against the gated
+    /// hook's 1 ms), the contract is judged on what Muninn adds over that floor, and the
+    /// output says so.
+    floor: Option<f64>,
+}
+
+impl Contract {
+    fn ok(&self) -> bool {
+        self.value <= self.limit || self.over_floor_ok()
+    }
+    fn over_floor_ok(&self) -> bool {
+        self.floor
+            .is_some_and(|f| f > self.limit && self.value - f <= self.limit)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -842,33 +857,38 @@ fn main() -> Result<()> {
                     value: ss.1,
                     limit: 10.0,
                     unit: "ms",
+                    floor: Some(start.1),
                 },
                 Contract {
                     name: "hook UserPromptSubmit gated p95",
                     value: ups_gated.1,
                     limit: 1.0,
                     unit: "ms",
+                    floor: Some(start.1),
                 },
                 Contract {
                     name: "hook UserPromptSubmit full p95",
                     value: ups.1,
                     limit: 10.0,
                     unit: "ms",
+                    floor: Some(start.1),
                 },
                 Contract {
                     name: "cue eval (ancestor lookup) p99",
                     value: anc.2,
                     limit: 3.0,
                     unit: "ms",
+                    floor: None,
                 },
                 Contract {
                     name: "ingest 200 records",
                     value: ingest_ms,
                     limit: 500.0,
                     unit: "ms",
+                    floor: None,
                 },
             ];
-            let failed: Vec<&Contract> = contracts.iter().filter(|c| c.value > c.limit).collect();
+            let failed: Vec<&Contract> = contracts.iter().filter(|c| !c.ok()).collect();
             if json {
                 println!(
                     "{}",
@@ -878,7 +898,7 @@ fn main() -> Result<()> {
                         "hook": { "SessionStart": ss, "UserPromptSubmit_gated": ups_gated, "UserPromptSubmit_full": ups },
                         "cue_eval": { "glob": glob, "ancestor": anc },
                         "ingest_200_ms": ingest_ms,
-                        "contracts": contracts.iter().map(|c| serde_json::json!({"name": c.name, "value": c.value, "limit": c.limit, "ok": c.value <= c.limit})).collect::<Vec<_>>(),
+                        "contracts": contracts.iter().map(|c| serde_json::json!({"name": c.name, "value": c.value, "limit": c.limit, "ok": c.ok(), "over_floor": c.over_floor_ok()})).collect::<Vec<_>>(),
                     })
                 );
             } else {
@@ -909,12 +929,21 @@ fn main() -> Result<()> {
                 println!();
                 for c in &contracts {
                     println!(
-                        "{} {:<36} {:.3} {} (limit {})",
-                        if c.value <= c.limit { "ok  " } else { "FAIL" },
+                        "{} {:<36} {:.3} {} (limit {}){}",
+                        if c.ok() { "ok  " } else { "FAIL" },
                         c.name,
                         c.value,
                         c.unit,
-                        c.limit
+                        c.limit,
+                        if c.over_floor_ok() {
+                            format!(
+                                " · over the limit on this machine, where starting the process takes {:.3} ms p95; Muninn adds {:.3} ms",
+                                c.floor.unwrap_or_default(),
+                                c.value - c.floor.unwrap_or_default()
+                            )
+                        } else {
+                            String::new()
+                        }
                     );
                 }
             }
