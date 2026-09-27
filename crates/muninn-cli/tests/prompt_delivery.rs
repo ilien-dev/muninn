@@ -51,10 +51,9 @@ fn prompt_delivery_is_on_by_default_and_can_be_switched_off() {
         .unwrap();
 
     let prompt = |sid: &str| {
-        format!(
-            "{{\"session_id\":\"{sid}\",\"cwd\":\"{}\",\"prompt\":\"which cache layer do we use\",\"hook_event_name\":\"UserPromptSubmit\"}}",
-            root.display()
-        )
+        // serde_json, not format!: a Windows path's backslashes must be escaped in JSON
+        serde_json::json!({"session_id": sid, "cwd": root, "prompt": "which cache layer do we use", "hook_event_name": "UserPromptSubmit"})
+            .to_string()
     };
 
     let on = run(root, &["hook", "UserPromptSubmit"], &prompt("a"));
@@ -102,10 +101,8 @@ fn a_fold_does_not_reopen_what_the_session_already_saw() {
         .execute_batch(sql)
         .unwrap();
 
-    let start = format!(
-        "{{\"session_id\":\"S\",\"cwd\":\"{}\",\"source\":\"startup\",\"hook_event_name\":\"SessionStart\"}}",
-        root.display()
-    );
+    let start = serde_json::json!({"session_id": "S", "cwd": root, "source": "startup", "hook_event_name": "SessionStart"})
+        .to_string();
     let catalogue = run(root, &["hook", "SessionStart"], &start);
     assert!(
         catalogue.contains("redis"),
@@ -116,10 +113,9 @@ fn a_fold_does_not_reopen_what_the_session_already_saw() {
     run(root, &["maintain"], "");
 
     let prompt = |sid: &str| {
-        format!(
-            "{{\"session_id\":\"{sid}\",\"cwd\":\"{}\",\"prompt\":\"which cache layer do we use\",\"hook_event_name\":\"UserPromptSubmit\"}}",
-            root.display()
-        )
+        // serde_json, not format!: a Windows path's backslashes must be escaped in JSON
+        serde_json::json!({"session_id": sid, "cwd": root, "prompt": "which cache layer do we use", "hook_event_name": "UserPromptSubmit"})
+            .to_string()
     };
     let same = run(root, &["hook", "UserPromptSubmit"], &prompt("S"));
     assert!(

@@ -17,6 +17,9 @@ they are not releases. Releases are the numbered headings, such as 0.2.0. See
 - **Codex on Windows gets its own hook commands** (`commandWindows`, run by `cmd.exe`). The
   first session downloads the binary with a PowerShell script, `plugin/scripts/session-start.ps1`,
   which checks the checksum the same way. `muninn init --codex` on Windows writes the same.
+- **On Windows a hook would have waited for the background writer.** The writer inherited the
+  hook's input and output, which the assistant reads to the end, so a hook took as long as the
+  writer: 5.7 s on a locked store in CI. The writer no longer inherits them.
 - **On a Mac without `sha256sum`, every install failed with "checksum mismatch".** The fallback
   to `shasum` sat behind a pipe whose exit status was always zero, so it never ran.
 - **Intel Macs get a binary**, and the Linux x86_64 binary is built on Ubuntu 22.04 so it runs on
@@ -25,6 +28,10 @@ they are not releases. Releases are the numbered headings, such as 0.2.0. See
   until it passes. CI also checks dependencies against the RustSec advisory database
   (`deny.toml`), and Dependabot watches them weekly.
 - **`SECURITY.md`** says how to report a vulnerability privately.
+- **`perf --strict` reads the machine it runs on.** On a CI runner, starting the process alone
+  took 1.04 and 1.58 ms p95, over the gated hook's 1 ms limit before Muninn does anything. When
+  that happens, the hook contracts are judged on what Muninn adds, and the output says so. The
+  limits are unchanged.
 - **CI was red on `master` for four commits** because a grammar test's time limit, meant for
   optimised builds, ran on a debug build on a shared runner (99.9 ms against 50). The limit now
   applies to optimised builds only. Tests that wrote to the store through the `sqlite3` command,

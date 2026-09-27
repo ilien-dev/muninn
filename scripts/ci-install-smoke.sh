@@ -11,7 +11,8 @@ set -euo pipefail
 built="$1"
 repo=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# the write path Muninn starts in the background may still hold the store open on Windows
+trap 'rm -rf "$work" 2>/dev/null || true' EXIT
 target=$(rustc -vV | sed -n 's/^host: //p')
 ext=""; case "$built" in *.exe) ext=".exe";; esac
 

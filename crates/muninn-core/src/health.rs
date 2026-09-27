@@ -355,7 +355,19 @@ pub fn run(
             } else {
                 f
             };
-            if a == f {
+            if a < 0 && f < 0 {
+                // Neither table could be read: the store is being created or migrated by the
+                // write path at this moment (fault suite s10 caught `doctor` in that window
+                // once in 200 runs). Check 3 owns an unreadable store; this is not a broken
+                // index, and rebuilding it is not the remedy.
+                check(
+                    4,
+                    "fts",
+                    Status::Cold,
+                    "counts not readable yet (store being created or migrated)".to_string(),
+                    None,
+                )
+            } else if a == f {
                 check(
                     4,
                     "fts",
