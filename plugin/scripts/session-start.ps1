@@ -38,7 +38,7 @@ if (-not (Test-Path -LiteralPath $bin)) {
       }
       Fetch $asset (Join-Path $tmp 'muninn.exe')
       Fetch 'checksums.txt' (Join-Path $tmp 'checksums.txt')
-      $line = Get-Content -LiteralPath (Join-Path $tmp 'checksums.txt') | Where-Object { $_ -match " $([regex]::Escape($asset))$" } | Select-Object -First 1
+      $line = Get-Content -LiteralPath (Join-Path $tmp 'checksums.txt') | Where-Object { $_ -match " \*?$([regex]::Escape($asset))$" } | Select-Object -First 1
       if (-not $line) { throw "no checksum published for $asset" }
       $expected = ($line -split '\s+')[0].ToLowerInvariant()
       $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tmp 'muninn.exe')).Hash.ToLowerInvariant()

@@ -33,7 +33,8 @@ asset="muninn-$target$ext"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "$REPO/$asset" -o "$tmp/muninn$ext"
 curl -fsSL "$REPO/checksums.txt" -o "$tmp/checksums.txt"
-expected=$(grep " $asset\$" "$tmp/checksums.txt" | cut -d' ' -f1)
+# `sha256sum` in binary mode, the default on Windows, writes "hash *name"
+expected=$(grep -E " [*]?$asset\$" "$tmp/checksums.txt" | cut -d' ' -f1)
 actual=$(sha256 "$tmp/muninn$ext")
 [ -n "$expected" ] || { echo "no checksum published for $asset" >&2; exit 1; }
 [ "$expected" = "$actual" ] || { echo "checksum mismatch for $asset" >&2; exit 1; }

@@ -203,8 +203,9 @@ fn s03_disk_full_and_readonly_store() {
     }
 }
 
-// 4. stdout is dead while the hook writes (13 such failures in [Q3]).
-#[cfg(unix)]
+// 4. stdout is dead while the hook writes (13 such failures in [Q3]). /dev/full, the
+// device that fails every write, exists on Linux only.
+#[cfg(target_os = "linux")]
 #[test]
 fn s04_stdout_dead() {
     for _ in 0..reps() {
