@@ -6,6 +6,29 @@ they are not releases. Releases are the numbered headings, such as 0.2.0. See
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **Windows, macOS and Linux, each checked by CI.** Until now only Linux ran the tests, and the
+  Windows build did not compile: the background writer was started with a Unix-only call. CI
+  now runs the whole test suite on all three systems, and on each one it installs the plugin
+  the way a marketplace install does, from a copy of the release files: download, checksum,
+  `init`, `status`, and the memory arriving at the next session.
+- **Claude Code on Windows never downloaded the binary.** Its SessionStart hook ran a shell
+  script in exec form, which Windows cannot start. That one hook is now shell form, which
+  Claude Code runs through Git Bash on Windows.
+- **Codex on Windows gets its own hook commands** (`commandWindows`, run by `cmd.exe`). The
+  first session downloads the binary with a PowerShell script, `plugin/scripts/session-start.ps1`,
+  which checks the checksum the same way. `muninn init --codex` on Windows writes the same.
+- **On a Mac without `sha256sum`, every install failed with "checksum mismatch".** The fallback
+  to `shasum` sat behind a pipe whose exit status was always zero, so it never ran.
+- **Intel Macs get a binary**, and the Linux x86_64 binary is built on Ubuntu 22.04 so it runs on
+  systems with glibc 2.35 or newer, Debian 12 and Ubuntu 22.04 included; CI checks that floor.
+- **Releases run every CI check first.** `release.yml` calls the CI workflow and builds nothing
+  until it passes. CI also checks dependencies against the RustSec advisory database
+  (`deny.toml`), and Dependabot watches them weekly.
+- **`SECURITY.md`** says how to report a vulnerability privately.
+- **CI was red on `master` for four commits** because a grammar test's time limit, meant for
+  optimised builds, ran on a debug build on a shared runner (99.9 ms against 50). The limit now
+  applies to optimised builds only. Tests that wrote to the store through the `sqlite3` command,
+  which macOS ships without FTS5 and Windows does not ship at all, use the bundled SQLite.
 - **The plugin installs from its marketplace, in Claude Code and in Codex.** `plugin/bin/` is
   not in the repository, so a plugin installed with `/plugin install` had no binary and every
   hook failed. The SessionStart hook now downloads the release binary for the plugin's version

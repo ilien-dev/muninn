@@ -19,7 +19,7 @@ case "$os-$arch" in
   linux-x86_64)          target=x86_64-unknown-linux-gnu ;;
   linux-aarch64|linux-arm64) target=aarch64-unknown-linux-gnu ;;
   darwin-arm64)          target=aarch64-apple-darwin ;;
-  darwin-x86_64)         echo "only the arm64 macOS build is published, and an Intel Mac cannot run it — build from source: cargo build --release -p muninn-cli" >&2; exit 1 ;;
+  darwin-x86_64)         target=x86_64-apple-darwin ;;
   mingw*-x86_64|msys*-x86_64|cygwin*-x86_64)
                          target=x86_64-pc-windows-msvc; ext=".exe" ;;
   *) echo "unsupported platform $os-$arch — build from source: cargo build --release -p muninn-cli" >&2; exit 1 ;;
