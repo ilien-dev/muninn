@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [master, main, "release-*"]
+    branches: [master, main, "feature/**"]
   pull_request:
   # release.yml calls this workflow, so no tag publishes a build these checks have not passed
   workflow_call:
