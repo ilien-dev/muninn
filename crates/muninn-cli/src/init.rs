@@ -794,4 +794,24 @@ mod tests {
             );
         }
     }
+
+    /// On Windows Codex runs `commandWindows` through cmd.exe, where single quotes mean
+    /// nothing: the path is double-quoted, and what double quotes cannot hold is refused.
+    #[test]
+    fn codex_windows_path_is_double_quoted_and_cmd_metacharacters_refused() {
+        let q = cmd_quote_binary(Path::new(r"C:\Users\A B\.local\bin\muninn.exe")).unwrap();
+        assert_eq!(q, r#""C:\Users\A B\.local\bin\muninn.exe""#);
+        let h = codex_hooks("'x'", Some(&q));
+        assert_eq!(
+            h["hooks"]["Stop"][0]["hooks"][0]["commandWindows"],
+            format!("{q} hook Stop")
+        );
+        for bad in [
+            r#"C:\a"b\muninn.exe"#,
+            r"C:\%PATH%\muninn.exe",
+            "C:\\a\nb\\muninn.exe",
+        ] {
+            assert!(cmd_quote_binary(Path::new(bad)).is_err(), "{bad:?}");
+        }
+    }
 }

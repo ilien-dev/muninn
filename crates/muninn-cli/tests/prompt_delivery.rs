@@ -45,12 +45,10 @@ fn prompt_delivery_is_on_by_default_and_can_be_switched_off() {
     let db = root.join(".muninn/muninn.db");
     let sql = "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
                VALUES('decision','said:state:cache redis','is','we use redis for the cache layer','user: we use redis for the cache layer\n','user_said',3,'s','h1',1);";
-    assert!(Command::new("sqlite3")
-        .arg(&db)
-        .arg(sql)
-        .status()
-        .expect("sqlite3")
-        .success());
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute_batch(sql)
+        .unwrap();
 
     let prompt = |sid: &str| {
         format!(
@@ -99,12 +97,10 @@ fn a_fold_does_not_reopen_what_the_session_already_saw() {
     run(root, &["init", "--keep-native"], "");
     let sql = "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
                VALUES('decision','said:state:cache redis','is','we use redis for the cache layer','user: we use redis for the cache layer\n','user_said',3,'s','h1',1);";
-    assert!(Command::new("sqlite3")
-        .arg(root.join(".muninn/muninn.db"))
-        .arg(sql)
-        .status()
-        .expect("sqlite3")
-        .success());
+    rusqlite::Connection::open(root.join(".muninn/muninn.db"))
+        .unwrap()
+        .execute_batch(sql)
+        .unwrap();
 
     let start = format!(
         "{{\"session_id\":\"S\",\"cwd\":\"{}\",\"source\":\"startup\",\"hook_event_name\":\"SessionStart\"}}",

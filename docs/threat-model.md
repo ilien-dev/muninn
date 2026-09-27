@@ -13,20 +13,29 @@ variable, an interpolated `${...}` placeholder) can run arbitrary commands. The
 published attack succeeds 92.5 % of the time and endpoint defenders recalled 0 %.
 
 **Defence.**
-- Claude Code hooks are exec-form only: `command` plus an `args` array, no shell.
-- Each release publishes one plugin bundle per platform with the binary built from
-  that tag already in `plugin/bin/`, and stamps the tag's version into
-  `plugin.json` and `marketplace.json`, so the plugin version names the binary it
-  ships with. Every asset carries a published sha256 and a keyless Sigstore
-  signature; `scripts/install.sh` verifies the checksum always and the signature
-  whenever `cosign` is installed.
+- Claude Code hooks are exec form: `command` plus an `args` array, no shell. The
+  one exception is SessionStart, which runs `scripts/session-start`, a shell
+  script, and so is shell form: Windows exec form spawns only real executables.
+  Its command is `"${CLAUDE_PLUGIN_ROOT}/scripts/session-start"` and nothing
+  else, the placeholder in double quotes as Claude Code's documentation asks. The
+  value is the plugin's install directory, which Claude Code chooses.
 - No `${...}` other than `${CLAUDE_PLUGIN_ROOT}`, which Claude Code substitutes
   as a plain string in exec form.
+- `plugin/bin/` is not in the repository. The first session after an install or
+  an update downloads the release binary for the plugin's version, as committed
+  in `plugin.json` (the release workflow refuses a tag that disagrees with
+  `Cargo.toml`, and a test keeps every manifest equal to it). Every asset carries
+  a published sha256 and a keyless Sigstore signature.
+  `plugin/scripts/install.sh` verifies the checksum always and the signature
+  whenever `cosign` is installed. On Windows under Codex,
+  `plugin/scripts/session-start.ps1` does the download and verifies the sha256.
 - Codex hooks are shell-form by the harness's own design. `muninn init --codex`
   writes the absolute binary path **single-quoted**, so a space or a metacharacter
   in it is literal, and refuses outright a path carrying a single quote or a
   control character, which quoting cannot make safe
-  (`init::shell_quote_binary`, tested in `init::tests`).
+  (`init::shell_quote_binary`, tested in `init::tests`). On Windows, where Codex
+  runs `commandWindows` through `cmd.exe`, the path is double-quoted and a path
+  carrying `"`, `%` or a control character is refused (`init::cmd_quote_binary`).
 
 ## 2. Cross-context prompt injection through memory (X-CPE / M-CPE) [W2]
 

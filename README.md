@@ -89,6 +89,10 @@ change first and does nothing until you say yes.
 You need Claude Code or Codex. You do not need to know how to program. Installing is done once
 per computer; after that, you turn Muninn on in each project where you want memory.
 
+It works on Windows, macOS (Apple silicon and Intel) and Linux. On Windows, Claude Code needs
+[Git for Windows](https://git-scm.com/downloads/win) installed, the same thing Claude Code
+itself asks for; Codex needs nothing extra.
+
 ### Claude Code
 
 Type these two lines in Claude Code, one at a time:
@@ -129,7 +133,7 @@ clone starts without it.
 folder, paste this message and send it:
 
 ```
-Run `muninn init` in this project, then `muninn status`. If `muninn` is not found, use `~/.local/bin/muninn` instead. Show me what both commands print.
+Run `muninn init` in this project, then `muninn status`. If `muninn` is not found, use `~/.local/bin/muninn` instead (on Windows, `~/.local/bin/muninn.exe`). Show me what both commands print.
 ```
 
 Codex may ask your permission before running them; say yes. When it's done, the last line it
@@ -140,6 +144,8 @@ If you prefer the terminal, run this inside the project folder instead:
 ```sh
 ~/.local/bin/muninn init
 ```
+
+On Windows, in PowerShell: `~\.local\bin\muninn.exe init`.
 
 That file appears after your first Codex session with the plugin installed. If it isn't there
 yet, open Codex once, close it, and try again.
