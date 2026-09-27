@@ -28,12 +28,16 @@ they are not releases. Releases are the numbered headings, such as 0.2.0. See
   until it passes. CI also checks dependencies against the RustSec advisory database
   (`deny.toml`), and Dependabot watches them weekly.
 - **`SECURITY.md`** says how to report a vulnerability privately.
+- **`muninn status` no longer calls a busy store broken.** Read while the background writer was
+  creating or migrating the store, it answered "integrity RED, run `muninn init`" or "fts RED,
+  rebuild the index", and neither would have helped. The fault suite caught it twice on CI.
+  A held lock now reads as cold, with "ask again in a moment".
 - **`perf --strict` reads the machine it runs on.** On a CI runner, starting the process alone
   took 1.04 and 1.58 ms p95, over the gated hook's 1 ms limit before Muninn does anything. When
   that happens, the hook contracts are judged on what Muninn adds, and the output says so. The
   runner also read the in-process cue lookup at up to 3.27 ms p99 against its 3 ms limit, where
-  a developer machine reads 1.5 ms; CI sets `MUNINN_PERF_LIMIT_SCALE=1.5` and the output prints
-  it. The limits as written still hold locally, and CI retries the gate once.
+  a developer machine reads 1.5 ms. CI sets `MUNINN_PERF_LIMIT_SCALE=1.5`, and the output
+  prints it. The limits as written still hold locally, and CI retries the gate once.
 - **CI was red on `master` for four commits** because a grammar test's time limit, meant for
   optimised builds, ran on a debug build on a shared runner (99.9 ms against 50). The limit now
   applies to optimised builds only. Tests that wrote to the store through the `sqlite3` command,
