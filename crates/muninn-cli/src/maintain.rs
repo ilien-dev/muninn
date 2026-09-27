@@ -739,7 +739,6 @@ pub fn spawn_detached_throttled(paths: &ProjectPaths, min_age_s: u64) {
 /// Start `muninn maintain` as a detached process (no inherited stdio, own process
 /// group) so a read hook returns at once and the harness never waits on the write path.
 pub fn spawn_detached(paths: &ProjectPaths) {
-    use std::os::unix::process::CommandExt;
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
@@ -749,8 +748,19 @@ pub fn spawn_detached(paths: &ProjectPaths) {
         .arg("maintain")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .process_group(0);
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no console, and a Ctrl+C sent to
+        // the harness does not reach it
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200);
+    }
     let _ = cmd.spawn();
 }
 

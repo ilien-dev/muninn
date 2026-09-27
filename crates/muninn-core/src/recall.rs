@@ -450,10 +450,16 @@ pub fn turn_key(subject: &str) -> String {
 /// The evidence line of a block: where the literal text can be opened.
 pub fn evidence_line(r: &Option<String>) -> String {
     match r {
-        Some(t) if !t.is_empty() => format!(
-            "  evidence: {}\n",
-            t.replacen(&std::env::var("HOME").unwrap_or_default(), "~", 1)
-        ),
+        Some(t) if !t.is_empty() => {
+            // HOME is unset in a native Windows process; USERPROFILE is its home there
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_default();
+            match t.strip_prefix(home.as_str()) {
+                Some(rest) if !home.is_empty() => format!("  evidence: ~{rest}\n"),
+                _ => format!("  evidence: {t}\n"),
+            }
+        }
         _ => String::new(),
     }
 }
