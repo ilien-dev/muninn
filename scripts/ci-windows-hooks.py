@@ -3,7 +3,7 @@
 Runs the hook commands the way each harness spawns them on Windows, against a local mirror
 of the release assets:
 
-- Codex runs `commandWindows` as `cmd.exe /C ""<line>""` (codex-rs/hooks, command_runner.rs).
+- Codex runs `commandWindows` as `cmd.exe /C "<line>"` (codex-rs/hooks, command_runner.rs).
   A plugin copy without bin/ runs the SessionStart line, which downloads the binary with
   PowerShell and then serves the hook; every other event's line then runs the binary.
 - Claude Code spawns exec-form hooks without a shell, naming `bin/muninn` with no
@@ -50,7 +50,9 @@ hooks = json.loads((repo / "plugin/hooks/codex.json").read_text())["hooks"]
 def codex(event: str, payload: dict) -> str:
     line = hooks[event][0]["hooks"][0]["commandWindows"]
     out = subprocess.run(
-        f'cmd.exe /C ""{line}""',
+        # codex-rs/hooks command_runner.rs: raw_arg(format!(r#""{command_line}""#)), which is
+        # one pair of quotes around the line; cmd.exe strips exactly that pair
+        f'cmd.exe /C "{line}"',
         input=json.dumps(payload).encode(),
         capture_output=True,
         cwd=proj,

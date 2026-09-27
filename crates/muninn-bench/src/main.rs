@@ -851,7 +851,7 @@ fn main() -> Result<()> {
             )?;
             let (glob, anc) = cue_eval(root, runs)?;
             let ingest_ms = ingest_200(root)?;
-            let contracts = vec![
+            let mut contracts = vec![
                 Contract {
                     name: "hook SessionStart p95",
                     value: ss.1,
@@ -888,6 +888,19 @@ fn main() -> Result<()> {
                     floor: None,
                 },
             ];
+            // The limits were set on a developer machine. CI's shared runners measured the
+            // in-process cue lookup at 2.8 ms p50 and up to 3.27 ms p99 against 3, where this
+            // project's machine reads 1.5 ms p99, so CI states how much slack it allows
+            // (MUNINN_PERF_LIMIT_SCALE) and the output prints it. Unset, the limits hold as
+            // written; a value below 1 is ignored.
+            let scale = std::env::var("MUNINN_PERF_LIMIT_SCALE")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .filter(|s| *s >= 1.0)
+                .unwrap_or(1.0);
+            for c in &mut contracts {
+                c.limit *= scale;
+            }
             let failed: Vec<&Contract> = contracts.iter().filter(|c| !c.ok()).collect();
             if json {
                 println!(
@@ -898,6 +911,7 @@ fn main() -> Result<()> {
                         "hook": { "SessionStart": ss, "UserPromptSubmit_gated": ups_gated, "UserPromptSubmit_full": ups },
                         "cue_eval": { "glob": glob, "ancestor": anc },
                         "ingest_200_ms": ingest_ms,
+                        "limit_scale": scale,
                         "contracts": contracts.iter().map(|c| serde_json::json!({"name": c.name, "value": c.value, "limit": c.limit, "ok": c.ok(), "over_floor": c.over_floor_ok()})).collect::<Vec<_>>(),
                     })
                 );
@@ -927,6 +941,9 @@ fn main() -> Result<()> {
                     glob.0 / anc.0.max(0.001)
                 );
                 println!();
+                if scale != 1.0 {
+                    println!("limits × {scale} for this machine (MUNINN_PERF_LIMIT_SCALE)");
+                }
                 for c in &contracts {
                     println!(
                         "{} {:<36} {:.3} {} (limit {}){}",
