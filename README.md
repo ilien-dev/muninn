@@ -86,30 +86,73 @@ change first and does nothing until you say yes.
 
 ## Install
 
-You need Claude Code or Codex. You do not need to know how to program.
+You need Claude Code or Codex. You do not need to know how to program. Installing is done once
+per computer; after that, you turn Muninn on in each project where you want memory.
 
-**The easy way: ask your assistant.** Open Claude Code in your project and paste this:
+### Claude Code
 
-> Install Muninn by following the instructions at https://github.com/ilien-dev/muninn, then run
-> `muninn init` in this project and `muninn status` to check that it works.
+Type these two lines in Claude Code, one at a time:
 
-**Or do it yourself in a terminal:**
-
-```sh
-curl -fsSLO https://github.com/ilien-dev/muninn/releases/latest/download/install.sh
-sh install.sh
+```
+/plugin marketplace add ilien-dev/muninn
+/plugin install muninn@muninn
 ```
 
-The script is about 70 lines long. It checks the download before installing it, and you can read
-it first with `less install.sh`. Then, inside your project folder:
+Restart Claude Code. The first session downloads Muninn itself, about 13 MB, and checks the
+download before using it.
+
+### Codex
+
+Run these in a terminal:
 
 ```sh
-muninn init          # set up memory for this project
-muninn init --codex  # also set it up for Codex, if you use it
-muninn status        # check that everything is working
+codex plugin marketplace add ilien-dev/muninn
+codex plugin add muninn@muninn
 ```
 
-To remove it from a project, run `muninn clean --yes`.
+Open Codex, type `/hooks` and approve Muninn's hooks. Codex runs no plugin hook until you do.
+The first session after that downloads Muninn, the same way as in Claude Code.
+
+## Setting up a new project
+
+Muninn stays silent in a project until you turn it on there. Do it once per project, on each
+computer you work from: the memory lives on your machine, not in the repository, so a fresh
+clone starts without it.
+
+**In Claude Code**, open the project and type:
+
+```
+/muninn:init
+```
+
+**In Codex**, open the project and ask Codex to run `muninn init`. You can also run it yourself
+in a terminal inside the project folder. If the terminal can't find `muninn`, open one Codex
+session first: that session puts it in `~/.local/bin`.
+
+Either way, `muninn status` should then print a line starting with `MUNINN` and `GREEN`. Memory
+starts filling from that conversation on. If you use both assistants on the same project, one
+`init` covers both.
+
+What `init` changes in the project:
+
+- It creates the `.muninn/` folder, where the memory is kept, and adds it to `.gitignore`, so
+  your conversations never end up in a commit.
+- It turns off Claude Code's own memory for the project. `muninn init --keep-native` leaves it
+  on.
+- It lets the assistant run `muninn why`, `muninn status` and `muninn show` without asking you
+  each time.
+
+Running it twice is harmless. To remove Muninn from a project, run `muninn clean --yes`: it
+undoes exactly what `init` changed.
+
+## Updating
+
+- Claude Code: open `/plugin`, choose the muninn marketplace and update it, or turn on
+  auto-update there once.
+- Codex: run `codex plugin marketplace upgrade`.
+
+Restart the assistant afterwards. You don't run `muninn init` again: the first session after an
+update fetches the new version, and the memory you already have stays.
 
 ## Using it
 

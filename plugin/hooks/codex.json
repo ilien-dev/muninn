@@ -1,0 +1,97 @@
+{
+  "description": "Muninn memory engine hooks for the Codex plugin. Codex reads this file instead of hooks/hooks.json because .codex-plugin/plugin.json names it: Codex hooks are shell-form and match Codex tool names (apply_patch). Codex substitutes ${PLUGIN_ROOT} before the shell sees the command. SessionStart goes through scripts/session-start, which downloads the binary for this plugin version the first time and then execs it. `the_codex_plugin_hooks_match_the_generator` fails if this file drifts from `muninn init --codex`.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/scripts/session-start'",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/bin/muninn' hook UserPromptSubmit",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|Edit|Write|MultiEdit|Read|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/bin/muninn' hook PreToolUse",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/bin/muninn' hook PostToolUse",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/bin/muninn' hook PreCompact",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/bin/muninn' hook PostCompact",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/bin/muninn' hook Stop",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${PLUGIN_ROOT}/bin/muninn' hook SessionEnd",
+            "timeout": 1
+          }
+        ]
+      }
+    ]
+  }
+}

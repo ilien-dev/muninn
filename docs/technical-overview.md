@@ -417,48 +417,110 @@ The full list of what is claimed, what is not, and the limits of each result is 
 
 You need Claude Code or Codex. You do not need Rust.
 
-Download the plugin bundle for your machine from the
-[latest release](https://github.com/ilien-dev/muninn/releases/latest) — it is the
-`muninn-plugin-<your platform>.tar.gz` — unpack it, and add it:
+The repository is its own plugin marketplace, and both assistants read it from the same file,
+`.claude-plugin/marketplace.json`.
 
 ```sh
-tar -xzf muninn-plugin-x86_64-unknown-linux-gnu.tar.gz
-claude plugin add ./plugin
+# Claude Code (or /plugin marketplace add … inside a session)
+claude plugin marketplace add ilien-dev/muninn
+claude plugin install muninn@muninn
+
+# Codex
+codex plugin marketplace add ilien-dev/muninn
+codex plugin add muninn@muninn        # then approve the hooks once in /hooks
 ```
 
-The bundle already contains the binary the hooks call. You also need `muninn` on your `PATH`,
-because `muninn init`, the `/muninn` commands and the session summary all run it by name.
-[`scripts/install.sh`](../scripts/install.sh) does both at once, verifying the published sha256
-and, when `cosign` is installed, the Sigstore signature:
+`plugin/bin/` is not in the repository, so a fresh install has no binary. The SessionStart hook
+runs [`plugin/scripts/session-start`](../plugin/scripts/session-start), which downloads the
+release asset for the plugin's version into the plugin's `bin/` through
+[`plugin/scripts/install.sh`](../plugin/scripts/install.sh). That script checks the published
+sha256 and, when `cosign` is installed, the Sigstore signature. Later sessions find the binary
+and only pay for one `exec`; the other hooks call it directly. A failed download leaves memory
+off for that session and is retried at the next one. The script also keeps a link at
+`~/.local/bin/muninn` pointing at the current binary, so `muninn` works by name in a terminal and
+in Codex. Claude Code already puts the plugin's `bin/` on its own `PATH`. If `~/.local/bin/muninn`
+is a regular file, it is someone's own install, and the script leaves it alone.
+
+Each assistant reads its own manifest: Claude Code reads `plugin/.claude-plugin/plugin.json` and
+`plugin/hooks/hooks.json`, and Codex reads `plugin/.codex-plugin/plugin.json`, which points at
+`plugin/hooks/codex.json`. Codex hooks are shell commands and name Codex's tools (`apply_patch`),
+so the file is separate. A test keeps it equal to what `muninn init --codex` generates.
+
+Then, inside your own project, once per project and per machine:
 
 ```sh
-curl -fsSLO https://github.com/ilien-dev/muninn/releases/latest/download/install.sh
-less install.sh          # it is 70 lines; read it before running it
-sh install.sh
-```
-
-Then, inside your own project:
-
-```sh
-muninn init          # set up memory for this project
-muninn init --codex  # also set it up for Codex
+muninn init          # or /muninn:init in Claude Code
 muninn status        # check that everything is working
 ```
 
 `muninn clean --yes` removes everything `init` added.
 
+### What `init` does, and when to run it again
+
+Hooks do nothing in a project until `.muninn/muninn.db` exists, so `init` is the opt-in. It
+creates `.muninn/`, adds `.muninn/` to `.gitignore`, sets `autoMemoryEnabled: false` in the
+project's `.claude/settings.json` (`--keep-native` skips that), and allows `muninn why`,
+`muninn status` and `muninn show` there. Everything it touches outside `.muninn/` is recorded in
+`.muninn/init.json`, which is how `clean` knows what to undo. Running it again changes only
+what is missing.
+
+A plugin update does not need it. The hooks follow the plugin to its new directory, the binary
+for the new version arrives with the first session, and the store's schema is migrated by the
+first hook that writes. Run it again only when a release note says so, for example when a
+version adds a setting that `init` writes.
+
+### Updates
+
+- Claude Code: `/plugin` → Marketplaces → muninn → update, or enable auto-update there. From a
+  terminal: `claude plugin marketplace update muninn && claude plugin update muninn@muninn`.
+- Codex: `codex plugin marketplace upgrade` refreshes the marketplace and the installed plugin.
+
+Restart the assistant after either. Codex stores each approval with a hash of the hook's
+definition; in our test it survived a version bump that left the hooks unchanged.
+
+### Without the plugin
+
+`install.sh` also works on its own, for a machine where you would rather not install a plugin:
+
+```sh
+curl -fsSLO https://github.com/ilien-dev/muninn/releases/latest/download/install.sh
+less install.sh          # read it before running it
+sh install.sh            # puts muninn in ~/.local/bin
+muninn init --codex      # writes .codex/hooks.json pointing at that binary
+```
+
+`init --codex` refuses to run from a plugin's binary: that path changes with every update, and
+the Codex plugin already installs the same hooks.
+
+### Publishing a release
+
+Every version string lives in four places: `Cargo.toml`, both plugin manifests and the
+marketplace. A marketplace install reads them from the default branch and downloads the release
+tagged with that version, so they must agree before the tag is pushed:
+
+```sh
+scripts/bump-version.sh 1.0.1
+git commit -am "Release 1.0.1" && git tag v1.0.1
+git push && git push --tags
+```
+
+The `release` workflow fails if the tag and `Cargo.toml` disagree, and
+`every_manifest_carries_the_binary_version` fails `cargo test` if a manifest is left behind.
+Between the push and the end of the release workflow, a user who updates gets a version whose
+binary is not published yet; their session runs without memory and the next one picks it up.
+
 ### From source
 
-`plugin/bin/` is deliberately not in the repository, so a plugin added straight from a clone
-has no binary and every hook fails. Build it first:
+`plugin/bin/` is deliberately not in the repository. Build the binary into it, then add your
+clone as a local marketplace. A local marketplace is used in place, so a rebuild reaches the
+hooks at the next session:
 
 ```sh
 git clone https://github.com/ilien-dev/muninn
 cd muninn
 cargo build --release -p muninn-cli
 mkdir -p plugin/bin && cp target/release/muninn plugin/bin/
-cp target/release/muninn ~/.local/bin/          # and onto PATH
-claude plugin add ./plugin
+claude plugin marketplace add "$PWD" && claude plugin install muninn@muninn
 ```
 
 ## Everyday use

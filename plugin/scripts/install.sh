@@ -11,7 +11,8 @@ VERSION="${MUNINN_VERSION:-1.0.0}"
 DEST="${1:-${CLAUDE_PLUGIN_ROOT:-$HOME/.local/share/muninn}/bin}"
 BIN_DIR="${MUNINN_BIN_DIR:-$HOME/.local/bin}"
 OWNER="${MUNINN_REPO:-ilien-dev/muninn}"
-REPO="https://github.com/${OWNER}/releases/download/v${VERSION}"
+# MUNINN_RELEASE_URL points at a mirror holding the same assets (and serves the install test)
+REPO="${MUNINN_RELEASE_URL:-https://github.com/${OWNER}/releases/download/v${VERSION}}"
 os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m)
 ext=""
 case "$os-$arch" in
@@ -55,11 +56,15 @@ if [ "${MUNINN_WITH_MODEL:-0}" = "1" ]; then
   done
   echo "model installed in $mdir"
 fi
-mkdir -p "$DEST"; install -m 0755 "$tmp/muninn$ext" "$DEST/muninn$ext"
+# Copy next to the target, then rename over it: a hook that starts while this runs sees
+# either the old binary or the new one, never a half-written file.
+mkdir -p "$DEST"; install -m 0755 "$tmp/muninn$ext" "$DEST/.muninn$ext.$$"
+mv -f "$DEST/.muninn$ext.$$" "$DEST/muninn$ext"
 echo "installed $DEST/muninn$ext ($VERSION, $target)"
 # The hooks call the copy above by absolute path. Everything a person types needs PATH.
 if [ "$BIN_DIR" != "$DEST" ]; then
-  mkdir -p "$BIN_DIR"; install -m 0755 "$tmp/muninn$ext" "$BIN_DIR/muninn$ext"
+  mkdir -p "$BIN_DIR"; install -m 0755 "$tmp/muninn$ext" "$BIN_DIR/.muninn$ext.$$"
+  mv -f "$BIN_DIR/.muninn$ext.$$" "$BIN_DIR/muninn$ext"
   echo "installed $BIN_DIR/muninn$ext"
   case ":${PATH}:" in
     *":$BIN_DIR:"*) ;;
