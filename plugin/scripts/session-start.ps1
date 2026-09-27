@@ -41,7 +41,11 @@ if (-not (Test-Path -LiteralPath $bin)) {
       $line = Get-Content -LiteralPath (Join-Path $tmp 'checksums.txt') | Where-Object { $_ -match " \*?$([regex]::Escape($asset))$" } | Select-Object -First 1
       if (-not $line) { throw "no checksum published for $asset" }
       $expected = ($line -split '\s+')[0].ToLowerInvariant()
-      $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tmp 'muninn.exe')).Hash.ToLowerInvariant()
+      # .NET directly: Get-FileHash is script-defined in 5.1's Utility module, which fails to
+      # load when PowerShell 7 started this process and its module path came along
+      $sha = [Security.Cryptography.SHA256]::Create()
+      $fs = [IO.File]::OpenRead((Join-Path $tmp 'muninn.exe'))
+      try { $actual = -join ($sha.ComputeHash($fs) | ForEach-Object { $_.ToString('x2') }) } finally { $fs.Dispose(); $sha.Dispose() }
       if ($expected -ne $actual) { throw "checksum mismatch for $asset" }
       New-Item -ItemType Directory -Force -Path $binDir | Out-Null
       # copy next to the target, then rename over it: a hook starting meanwhile sees the old
