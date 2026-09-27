@@ -125,13 +125,28 @@ clone starts without it.
 /muninn:init
 ```
 
-**In Codex**, open the project and ask Codex to run `muninn init`. You can also run it yourself
-in a terminal inside the project folder. If the terminal can't find `muninn`, open one Codex
-session first: that session puts it in `~/.local/bin`.
+**In Codex** there is no command for this, so you ask Codex to do it. Open Codex in the project
+folder, paste this message and send it:
 
-Either way, `muninn status` should then print a line starting with `MUNINN` and `GREEN`. Memory
-starts filling from that conversation on. If you use both assistants on the same project, one
-`init` covers both.
+```
+Run `muninn init` in this project, then `muninn status`. If `muninn` is not found, use `~/.local/bin/muninn` instead. Show me what both commands print.
+```
+
+Codex may ask your permission before running them; say yes. When it's done, the last line it
+shows starts with `MUNINN` and says `GREEN`.
+
+If you prefer the terminal, run this inside the project folder instead:
+
+```sh
+~/.local/bin/muninn init
+```
+
+That file appears after your first Codex session with the plugin installed. If it isn't there
+yet, open Codex once, close it, and try again.
+
+To check it in Claude Code, type `/muninn:status`: it prints a line starting with `MUNINN` that
+says `GREEN`. Memory starts filling from that conversation on. If you use both assistants on the
+same project, one `init` covers both.
 
 What `init` changes in the project:
 
