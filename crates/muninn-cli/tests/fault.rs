@@ -69,7 +69,9 @@ fn hook_with(root: &Path, event: &str, input: &str, env: &[(&str, &str)], stdout
     let t = Instant::now();
     let mut child = cmd.spawn().unwrap();
     child.stdin.take().unwrap().write_all(input.as_bytes()).ok();
-    let limit = Duration::from_secs(3);
+    // Windows runners start processes and take file locks more slowly; the kill limit is
+    // only how long the test waits, each scenario still asserts its own bound
+    let limit = Duration::from_secs(if cfg!(windows) { 10 } else { 3 });
     loop {
         if let Some(st) = child.try_wait().unwrap() {
             let out: Output = child.wait_with_output().unwrap();
@@ -112,6 +114,10 @@ fn summary(root: &Path) -> String {
 }
 
 fn assert_clean_exit(r: &Run, what: &str) {
+    assert_clean_exit_within(r, what, Duration::from_secs(2));
+}
+
+fn assert_clean_exit_within(r: &Run, what: &str, bound: Duration) {
     assert_eq!(
         r.status,
         Some(0),
@@ -120,11 +126,7 @@ fn assert_clean_exit(r: &Run, what: &str) {
         r.stderr,
         r.elapsed
     );
-    assert!(
-        r.elapsed < Duration::from_secs(2),
-        "{what}: took {:?}",
-        r.elapsed
-    );
+    assert!(r.elapsed < bound, "{what}: took {:?}", r.elapsed);
     assert!(
         !r.stderr.contains("panicked"),
         "{what}: panic: {}",
@@ -571,9 +573,13 @@ fn s14_maintain_and_stop_concurrent() {
                 })
             })
             .collect();
+        // Stop and maintain are the write path: Stop runs in the background with a 30 s
+        // timeout in both harnesses. On a Windows CI runner a Stop waiting on maintain's
+        // lock took over 3 s, so there the bound is the 10 s the test waits.
+        let bound = Duration::from_secs(if cfg!(windows) { 10 } else { 2 });
         for h in handles {
             let r = h.join().unwrap();
-            assert_clean_exit(&r, "maintain/Stop concurrent");
+            assert_clean_exit_within(&r, "maintain/Stop concurrent", bound);
         }
         assert_eq!(records(p.path(), "SELECT count(*) FROM record"), expect);
         let s = summary(p.path());
