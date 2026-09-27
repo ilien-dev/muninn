@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muninn: persistent memory for Claude Code and Codex</title>
+<meta name="description" content="Local memory for Claude Code and Codex that drops a decision once you replace it, and turns CLAUDE.md and AGENTS.md rules into settings that block the action. No cloud, no API key.">
+<link rel="canonical" href="https://ilien-dev.github.io/muninn/">
+<link rel="icon" href="assets/muninn-symbol.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Muninn: persistent memory for Claude Code and Codex">
+<meta property="og:description" content="Local memory for Claude Code and Codex that drops a decision once you replace it, and turns CLAUDE.md rules into settings that block the action.">
+<meta property="og:url" content="https://ilien-dev.github.io/muninn/">
+<meta property="og:image" content="https://ilien-dev.github.io/muninn/assets/muninn-social.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Muninn",
+  "description": "Persistent memory for Claude Code and Codex. It drops a decision once you replace it, and turns CLAUDE.md and AGENTS.md rules into permission rules and deny hooks. Local, with no cloud service.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "softwareVersion": "1.0.0",
+  "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "codeRepository": "https://github.com/ilien-dev/muninn",
+  "url": "https://ilien-dev.github.io/muninn/",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<style>
+:root {
+  --bg: #fbfaf7; --fg: #1c1b19; --muted: #5d5a54; --line: #e3dfd6; --code: #f1eee7; --accent: #b7791f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0d0c; --fg: #efece5; --muted: #a9a49a; --line: #2a2926; --code: #1a1918; --accent: #e8a825;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0d0c; --fg: #efece5; --muted: #a9a49a; --line: #2a2926; --code: #1a1918; --accent: #e8a825;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+img { max-width: 100%; height: auto; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 24px 0 8px; }
+h2 { font-size: 1.3rem; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.lead { font-size: 1.15rem; font-weight: 600; margin: 0 0 16px; }
+a { color: var(--accent); }
+pre, code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; }
+pre { background: var(--code); padding: 12px 16px; border-radius: 6px; overflow-x: auto; }
+code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
+pre code { background: none; padding: 0; }
+.muted { color: var(--muted); }
+.logo-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo-dark { display: block; }
+  :root:not([data-theme="light"]) .logo-light { display: none; }
+}
+footer { margin-top: 48px; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+<img class="logo-light" src="assets/muninn-light.svg" width="320" alt="Muninn">
+<img class="logo-dark" src="assets/muninn-dark.svg" width="320" alt="Muninn">
+
+<h1>Muninn: persistent memory for Claude Code and Codex</h1>
+<p class="lead">A memory for Claude Code and Codex that keeps up when you change your mind.</p>
+
+<p>Every time you open a new session, Claude Code or Codex starts from zero, with no idea that last
+week you picked a database, agreed on a folder structure, or told it never to touch a certain file.
+So you explain it all again, or it guesses.</p>
+
+<p>Memory tools fix the forgetting, but most of them remember <em>everything</em>, including the
+decisions you have since changed. Muninn remembers what you decided, and when you change your mind,
+it puts the old decision away. The assistant only sees what is true now.</p>
+
+<p>It runs on your computer, with no cloud service and no API key. Each message takes a few
+thousandths of a second longer.</p>
+
+<p><a href="https://github.com/ilien-dev/muninn"><b>Source code, install and full docs on GitHub</b></a></p>
+
+<h2>Test results</h2>
+<p>We tested it against two popular memory tools, claude-mem and agentmemory, on tasks that depended
+on a decision that had later been changed.</p>
+<ul>
+<li>Changed in conversation: the assistant used the current decision in 252 of 270 tasks with Muninn,
+against 208 of 268 with claude-mem.</li>
+<li>Change also in the code: 54 of 54 with Muninn, 25 of 54 with claude-mem and 1 of 54 with agentmemory.</li>
+<li>A replaced value written back into the work: 0 of 54 times with Muninn, 10 of 54 with claude-mem.</li>
+</ul>
+<p class="muted">Each test had its rules written down before it ran, and the raw results are in the
+repository. <a href="https://github.com/ilien-dev/muninn/blob/master/docs/why-muninn.md">The full comparison</a>.</p>
+
+<h2>Rules that block instead of rules that get ignored</h2>
+<p>Claude Code reads <code>CLAUDE.md</code> as context, and a rule in it can be lost when a long
+conversation is compacted. Muninn turns a rule such as "never edit the migrations folder" from
+<code>CLAUDE.md</code>, <code>AGENTS.md</code> or <code>.claude/rules</code> into Claude Code
+permission rules and a deny hook, so the edit is refused before it happens. It shows you the proposed
+settings first and changes nothing until you say yes.</p>
+
+<h2>Install</h2>
+<p>In Claude Code, one line at a time:</p>
+<pre><code>/plugin marketplace add ilien-dev/muninn
+/plugin install muninn@muninn</code></pre>
+<p>For Codex, in a terminal:</p>
+<pre><code>codex plugin marketplace add ilien-dev/muninn
+codex plugin add muninn@muninn</code></pre>
+<p>Then turn it on in each project with <code>/muninn:init</code> in Claude Code, or
+<code>muninn init</code> for Codex. It works on Windows, macOS and Linux.
+<a href="https://github.com/ilien-dev/muninn#install">Install details</a>.</p>
+
+<footer class="muted">
+Muninn 1.0.0 · <a href="https://github.com/ilien-dev/muninn/blob/master/LICENSE">AGPL-3.0-only</a> ·
+<a href="https://github.com/ilien-dev/muninn/blob/master/docs/technical-overview.md">How it works</a> ·
+<a href="https://github.com/ilien-dev/muninn/blob/master/CHANGELOG.md">Changelog</a>
+</footer>
+</main>
+</body>
+</html>
