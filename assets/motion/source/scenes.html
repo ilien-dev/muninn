@@ -1,0 +1,1054 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Muninn en movimiento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;700;800&display=swap">
+<style>
+:root{
+  --ink:#0b0b0b; --ink2:#131211; --ink3:#1b1a18; --line:#2b2926;
+  --bone:#eeeae2; --bone2:#bdb8ae; --mute:#8a857c;
+  --amber:#e8a825; --frost:#7fa7c4; --ember:#d9663f; --moss:#8cc06f;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--ink);color:var(--bone);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--amber)}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:20px}
+@media (max-width:520px){.wrap{padding-inline:16px}}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--ink) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px}
+.brand{display:flex;align-items:center;gap:10px;font:500 14px var(--mono);letter-spacing:.02em;margin-right:auto}
+.brand svg{width:26px;height:26px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button,.btn{font:500 12px var(--mono);letter-spacing:.04em;background:transparent;color:var(--bone2);border:0;padding:7px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--bone);color:var(--ink)}
+.btn{border:1px solid var(--line);border-radius:8px}
+.btn:hover,.seg button:hover{color:var(--bone)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.lbl{font:500 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+
+/* intro */
+.intro{padding-block:56px 28px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:40px;align-items:end}
+@media (max-width:860px){.intro{grid-template-columns:1fr;gap:18px;padding-block:36px 20px}}
+h1{font:800 clamp(40px,7vw,86px)/.95 var(--mono);letter-spacing:-.03em;margin:10px 0 0;text-wrap:balance}
+h1 em{font-style:normal;color:var(--amber)}
+.lede{color:var(--bone2);max-width:58ch;margin:0}
+.lede strong{color:var(--bone);font-weight:600}
+.herostage{margin-block:8px 0}
+
+/* palette */
+.palette{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-block:36px}
+@media (max-width:860px){.palette{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:460px){.palette{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.sw{background:var(--ink2);padding:14px;display:grid;gap:6px;align-content:start}
+.sw i{display:block;height:34px;border-radius:6px;border:1px solid rgba(255,255,255,.08)}
+.sw b{font:600 13px var(--mono)}
+.sw code{font:12px var(--mono);color:var(--mute)}
+.sw span{font-size:13px;color:var(--bone2);line-height:1.4}
+.sw .src{font:500 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+
+/* layout */
+.layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:40px;align-items:start;padding-block:12px 40px}
+@media (max-width:980px){.layout{grid-template-columns:1fr;gap:20px}}
+.map{position:sticky;top:calc(env(safe-area-inset-top,0px) + 70px)}
+@media (max-width:980px){.map{position:static}}
+.map h2{font:600 13px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 12px}
+.map ol{list-style:none;margin:0;padding:0;border-left:1px solid var(--line)}
+.map li{position:relative;padding:6px 0 6px 18px}
+.map li::before{content:"";position:absolute;left:-4px;top:15px;width:7px;height:7px;border-radius:50%;background:var(--line)}
+.map li.has::before{background:var(--amber)}
+.map .sec{font:500 13px var(--mono);color:var(--bone)}
+.map .sec.new::after{content:"nueva";font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink);background:var(--amber);border-radius:3px;padding:1px 4px;margin-left:6px;vertical-align:2px}
+.map a{display:block;font-size:13px;color:var(--bone2);text-decoration:none;line-height:1.45}
+.map a:hover{color:var(--amber)}
+.map .none{font-size:13px;color:var(--mute);font-style:italic}
+@media (max-width:980px){.map ol{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));border:0;gap:4px 16px}.map li{border-left:1px solid var(--line)}}
+
+/* cards */
+.cards{display:grid;gap:64px}
+.card{display:grid;gap:14px;scroll-margin-top:80px}
+.card header{display:grid;gap:4px}
+.card h3{font:700 clamp(22px,3vw,30px)/1.15 var(--mono);letter-spacing:-.015em;margin:0;text-wrap:balance}
+.card h3 .n{color:var(--amber);margin-right:.5ch}
+.card .why{color:var(--bone2);max-width:70ch;margin:0}
+.place{font:500 12px var(--mono);color:var(--frost)}
+.stage{border-radius:10px;overflow:hidden;border:1px solid var(--line);max-width:100%}
+.stage svg{display:block;width:100%;height:auto}
+.ctrl{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ctrl button{font:600 12px var(--mono);background:var(--ink3);color:var(--bone);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;min-width:74px}
+.ctrl input[type=range]{flex:1;min-width:140px;accent-color:var(--amber)}
+.ctrl output{font:12px var(--mono);color:var(--mute);font-variant-numeric:tabular-nums;min-width:96px;text-align:right}
+.detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:28px}
+@media (max-width:760px){.detail{grid-template-columns:1fr;gap:16px}}
+dl.spec{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:14px}
+dl.spec dt{font:500 11px/2 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+dl.spec dd{margin:0;color:var(--bone);font-family:var(--mono);font-size:13px;line-height:1.9;overflow-wrap:anywhere}
+.beats{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.beats button{display:grid;grid-template-columns:54px 1fr;gap:10px;width:100%;text-align:left;background:transparent;border:0;border-radius:6px;color:var(--bone2);font:14px/1.45 var(--sans);padding:5px 8px;cursor:pointer}
+.beats button:hover{background:var(--ink3);color:var(--bone)}
+.beats button.cur{background:var(--ink3);color:var(--bone)}
+.beats time{font:500 12px/1.7 var(--mono);color:var(--amber);font-variant-numeric:tabular-nums}
+.grid6{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+@media (max-width:760px){.grid6{grid-template-columns:1fr}}
+.mini{display:grid;gap:8px}
+.mini h4{font:600 15px var(--mono);margin:0}
+.mini p{font-size:14px;color:var(--bone2);margin:0}
+.quiet{border:1px dashed var(--line);border-radius:10px;padding:18px 20px;color:var(--bone2)}
+.quiet b{color:var(--bone);font-family:var(--mono);font-weight:600}
+
+/* production */
+.prod{border-top:1px solid var(--line);padding-block:48px 72px;display:grid;gap:22px}
+.prod h2{font:800 clamp(28px,4vw,44px)/1 var(--mono);letter-spacing:-.02em;margin:0}
+.prod p,.prod li{color:var(--bone2);max-width:72ch}
+.prod ol{padding-left:1.2em;display:grid;gap:8px;margin:0}
+.prod li b{color:var(--bone)}
+pre{background:var(--ink2);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;font:13px/1.6 var(--mono);color:var(--bone);margin:0;max-width:100%}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+@media (max-width:860px){.cols{grid-template-columns:1fr}}
+
+/* ---------- scene tokens: GitHub grounds ---------- */
+.stage{--s-bg:#0d1117;--s-panel:#161b22;--s-ink:#eeeae2;--s-mute:#8b949e;--s-line:#30363d;--s-amber:#e8a825;--s-frost:#7fa7c4;--s-ember:#e0704c;--s-moss:#8cc06f;background:var(--s-bg)}
+.stage[data-v="light"]{--s-bg:#ffffff;--s-panel:#f6f8fa;--s-ink:#0b0b0b;--s-mute:#656d76;--s-line:#d0d7de;--s-amber:#c7860b;--s-frost:#2f6690;--s-ember:#b6431f;--s-moss:#3f7d2c}
+.stage[data-v="light"] .only-d,.stage:not([data-v="light"]) .only-l{display:none}
+.t{font-family:var(--mono)} .ts{font-family:var(--sans)}
+.bg{fill:var(--s-bg)} .pn{fill:var(--s-panel)} .ink{fill:var(--s-ink)} .mu,.f-mu{fill:var(--s-mute)}
+.f-am{fill:var(--s-amber)} .f-fr{fill:var(--s-frost)} .f-em{fill:var(--s-ember)} .f-mo{fill:var(--s-moss)} .f-ln{fill:var(--s-line)}
+.sk-line{stroke:var(--s-line)} .sk-am{stroke:var(--s-amber)} .sk-fr{stroke:var(--s-frost)} .sk-em{stroke:var(--s-ember)} .sk-mo{stroke:var(--s-moss)} .sk-mu{stroke:var(--s-mute)} .sk-ink{stroke:var(--s-ink)}
+.nf{fill:none}
+.nd .nd-r{fill:var(--s-panel);stroke:var(--s-line);stroke-width:1.5}
+.nd.on .nd-r{stroke:var(--s-amber);fill:color-mix(in srgb,var(--s-amber) 12%,var(--s-panel))}
+.nd.deny .nd-r{stroke:var(--s-ember);fill:color-mix(in srgb,var(--s-ember) 14%,var(--s-panel))}
+.nd .nd-t{fill:var(--s-ink)} .nd .nd-s{fill:var(--s-mute)}
+.ed{fill:none;stroke:var(--s-line);stroke-width:1.5}
+.ed.on{stroke:var(--s-amber);stroke-width:2}
+.ed.deny{stroke:var(--s-ember);stroke-width:2}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="top">
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><g id="brandring" fill="none" stroke="#eeeae2" stroke-width="3.2"></g><circle cx="20" cy="20" r="3" fill="#e8a825"/></svg>
+      muninn · motion
+    </div>
+    <span class="lbl" id="vlabel">Fondo del README</span>
+    <div class="seg" role="group" aria-labelledby="vlabel">
+      <button type="button" id="v-dark" aria-pressed="true">GitHub oscuro</button>
+      <button type="button" id="v-light" aria-pressed="false">GitHub claro</button>
+    </div>
+    <button type="button" class="btn" id="all">Pausar todo</button>
+  </div>
+</div>
+
+<main>
+  <section class="wrap intro">
+    <div>
+      <div class="lbl">Propuesta · animaciones para el README</div>
+      <h1>Muninn<br>en <em>movimiento</em></h1>
+    </div>
+    <p class="lede">Catorce animaciones pensadas para exportarse como GIF, desde el hero hasta «About the name». Muninn trabaja en segundo plano; estas piezas enseñan lo que pasa ahí dentro: <strong>qué guarda, qué retira, qué bloquea y qué le llega al asistente</strong>. Todas se reproducen aquí en vivo. Arrastra la barra de cualquiera para ver un fotograma exacto, o cambia arriba el fondo para verlas como en GitHub claro u oscuro. El texto dentro de las escenas está en inglés, como el README.</p>
+  </section>
+
+  <section class="wrap herostage" aria-label="Animación del hero">
+    <div id="slot-hero"></div>
+  </section>
+
+  <section class="wrap" aria-labelledby="pal-h">
+    <h2 id="pal-h" class="lbl" style="margin:40px 0 0">Paleta de las escenas</h2>
+    <div class="palette">
+      <div class="sw"><span class="src">del logo</span><i style="background:#0b0b0b"></i><b>Tinta</b><code>#0B0B0B</code><span>Cuervo, anillo y texto en fondo claro.</span></div>
+      <div class="sw"><span class="src">del logo</span><i style="background:#eeeae2"></i><b>Hueso</b><code>#EEEAE2</code><span>La misma tinta invertida, para fondo oscuro.</span></div>
+      <div class="sw"><span class="src">del logo</span><i style="background:#e8a825"></i><b>Ámbar</b><code>#E8A825</code><span>El ojo. Lo que Muninn recuerda y entrega ahora.</span></div>
+      <div class="sw"><span class="src">añadido</span><i style="background:#7fa7c4"></i><b>Escarcha</b><code>#7FA7C4</code><span>El asistente (Huginn, el pensamiento) y las reglas.</span></div>
+      <div class="sw"><span class="src">añadido</span><i style="background:#d9663f"></i><b>Brasa</b><code>#D9663F</code><span>Retirado o bloqueado. Nunca llega al asistente.</span></div>
+      <div class="sw"><span class="src">añadido</span><i style="background:#8cc06f"></i><b>Musgo</b><code>#8CC06F</code><span>Permitido, aplicado, <code>GREEN</code>.</span></div>
+    </div>
+  </section>
+
+  <div class="wrap layout">
+    <nav class="map" aria-labelledby="map-h">
+      <h2 id="map-h">Recorrido del README</h2>
+      <ol id="map"></ol>
+    </nav>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <section class="wrap prod" id="export" aria-labelledby="prod-h">
+    <div class="lbl">Producción</div>
+    <h2 id="prod-h">De la página al GIF</h2>
+    <p>Cada escena es una función del tiempo: el fotograma del segundo 3,40 siempre es el mismo. Por eso el GIF sale de capturar la página fotograma a fotograma, no de grabar la pantalla, y no hay saltos ni cuadros perdidos. La página expone <code>window.muninnMotion</code> para eso.</p>
+    <ol>
+      <li><b>Dos archivos por escena.</b> Un GIF no tiene transparencia suave, así que cada escena se exporta sobre el fondo exacto de GitHub: <code>#0d1117</code> para oscuro y <code>#ffffff</code> para claro, y el README elige con <code>&lt;picture&gt;</code>, igual que hoy con el logo.</li>
+      <li><b>El primer fotograma cuenta la historia.</b> Quien tenga desactivada la reproducción automática en GitHub solo ve un cuadro fijo. El script empieza a capturar en el fotograma «póster» de cada escena y da la vuelta, así que el primer cuadro del GIF ya se entiende solo.</li>
+      <li><b>20 fps y 64 colores</b> como punto de partida. Las escenas usan pocos colores planos, que es donde el GIF comprime bien. El peso real hay que medirlo después de exportar; no hay cifra todavía.</li>
+      <li><b>Texto alternativo que describa la acción</b>, no «animación». Ejemplo en el fragmento de abajo.</li>
+    </ol>
+    <div class="cols">
+      <pre><code>// export.mjs · node export.mjs hero dark
+import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
+
+const [id, v = "dark", fps = 20] = process.argv.slice(2);
+mkdirSync("frames", { recursive: true });
+const browser = await chromium.launch();
+const page = await browser.newPage();
+await page.goto("file://" + process.cwd() + "/muninn-motion.html");
+await page.evaluate(() =&gt; document.fonts.ready);
+
+const s = await page.evaluate(([id, v]) =&gt;
+  muninnMotion.prepare(id, v), [id, v]);
+await page.setViewportSize({ width: s.w, height: s.h });
+
+const n = Math.round(s.dur * fps);
+for (let i = 0; i &lt; n; i++) {
+  const t = (s.poster + i / fps) % s.dur;
+  await page.evaluate((t) =&gt; muninnMotion.frame(t), t);
+  await page.locator("#export-stage svg").screenshot({
+    path: `frames/${id}-${v}-${String(i).padStart(4, "0")}.png`,
+  });
+}
+await browser.close();</code></pre>
+      <pre><code># frames → GIF con paleta propia
+ffmpeg -framerate 20 -i frames/hero-dark-%04d.png \
+  -vf "split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];\
+[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+  -loop 0 hero-dark.gif
+
+# compresión final
+gifsicle -O3 --lossy=40 hero-dark.gif \
+  -o assets/motion/hero-dark.gif
+
+&lt;!-- README --&gt;
+&lt;picture&gt;
+  &lt;source media="(prefers-color-scheme: dark)"
+          srcset="assets/motion/hero-dark.gif"&gt;
+  &lt;img src="assets/motion/hero-light.gif" width="820"
+       alt="One remembered sentence at a time turns into a spark and enters Muninn's ring.
+            When the plan changes to zstd, the
+            old gzip card drops out, retired."&gt;
+&lt;/picture&gt;</code></pre>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+"use strict";
+const LOCK_D = "../../muninn-dark.png";   // light ink, for dark grounds
+const LOCK_L = "../../muninn-light.png";  // dark ink, for light grounds
+
+/* ---------- math ---------- */
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const P = (t, a, b) => clamp((t - a) / (b - a));
+const E = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const EO = x => 1 - Math.pow(1 - x, 3);
+const L = (a, b, x) => a + (b - a) * x;
+const pulse = (t, a, d) => { const x = P(t, a, a + d); return x > 0 && x < 1 ? Math.sin(Math.PI * x) : 0; };
+const fade = (t, dur, fi = .3, fo = .6) => Math.min(P(t, 0, fi), 1 - P(t, dur - fo, dur));
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const f1 = n => n.toFixed(1);
+
+/* ---------- drawing helpers ---------- */
+const O = (el, v) => { el.style.opacity = clamp(v); };
+const TR = (el, x, y, s = 1, r = 0) => el.setAttribute("transform", `translate(${f1(x)} ${f1(y)})${r ? ` rotate(${f1(r)})` : ""}${s !== 1 ? ` scale(${s.toFixed(3)})` : ""}`);
+const TY = (el, str, pr) => { el.textContent = str.slice(0, Math.round(str.length * clamp(pr))); };
+const ON = (el, b, c = "on") => el.classList.toggle(c, !!b);
+
+function arc(cx, cy, r, a0, a1) {
+  const pt = a => [cx + r * Math.cos(a * Math.PI / 180), cy - r * Math.sin(a * Math.PI / 180)];
+  const [x0, y0] = pt(a0), [x1, y1] = pt(a1);
+  return `M${f1(x0)} ${f1(y0)} A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 0 ${f1(x1)} ${f1(y1)}`;
+}
+const GAPS = [131, 222, 345]; // the three breaks in the logo's ring, measured on the PNG
+function ringPaths(cx, cy, r, g = 4) {
+  return [[GAPS[0] + g, GAPS[1] - g], [GAPS[1] + g, GAPS[2] - g], [GAPS[2] + g, GAPS[0] + 360 - g]].map(([a, b]) => arc(cx, cy, r, a, b));
+}
+const ring = (k, cx, cy, r, sw, cls = "sk-ink", g = 4) =>
+  `<g data-k="${k}" class="nf ${cls}" stroke-width="${sw}" stroke-linecap="butt">${ringPaths(cx, cy, r, g).map((d, i) => `<path data-k="${k}${i}" d="${d}" pathLength="1"/>`).join("")}</g>`;
+
+const KIND = { decision: ["decision", "am"], rule: ["rule", "fr"], deadend: ["dead end", "mu"], retired: ["retired", "em"], correction: ["correction", "mo"] };
+function chip(k, kind, label, fs = 13) {
+  const [kl, c] = KIND[kind];
+  const lx = 14 + kl.length * fs * .6 + 10, w = Math.round(lx + label.length * fs * .62 + 14), h = fs * 2.4;
+  return `<g data-k="${k}"><rect class="pn sk-${c}" width="${w}" height="${h}" rx="${fs * .55}" stroke-width="1.5"/>` +
+    `<text class="t f-${c}" x="14" y="${f1(h / 2 + fs * .36)}" font-size="${fs - 1}" font-weight="700">${kl}</text>` +
+    `<text class="t ink" x="${f1(lx)}" y="${f1(h / 2 + fs * .36)}" font-size="${fs}">${esc(label)}</text>` +
+    (kind === "retired" ? `<line x1="${f1(lx - 2)}" x2="${f1(w - 12)}" y1="${f1(h / 2)}" y2="${f1(h / 2)}" class="sk-em" stroke-width="1.6"/>` : "") + `</g>`;
+}
+function card(k, x, y, w, kind, num, text, sub) {
+  const [, c] = KIND[kind], h = sub ? 80 : 64;
+  return `<g data-k="${k}" transform="translate(${x} ${y})">` +
+    `<rect data-k="${k}r" class="pn sk-${c}" width="${w}" height="${h}" rx="8" stroke-width="1.5"/>` +
+    `<text data-k="${k}h" class="t f-${c}" x="14" y="21" font-size="12" font-weight="700">[muninn:${kind === "deadend" ? "deadend" : kind}] #${num}</text>` +
+    `<text class="t ink" x="14" y="45" font-size="15">${esc(text)}</text>` +
+    (sub ? `<text class="t mu" x="14" y="65" font-size="11">${esc(sub)}</text>` : "") +
+    `<line data-k="${k}x" x1="12" y1="40" x2="${14 + text.length * 9.2}" y2="39" class="sk-em" stroke-width="2" style="opacity:0"/>` +
+    `<g data-k="${k}s" style="opacity:0" transform="translate(${w - 92} 8) rotate(-8)"><rect width="84" height="24" rx="4" class="nf sk-em" stroke-width="2"/><text class="t f-em" x="42" y="17" font-size="12" font-weight="800" text-anchor="middle" letter-spacing="1.5">RETIRED</text></g>` +
+    `</g>`;
+}
+function retire(g, $, k, x) { // x: 0..1 progress of the retirement
+  $[k + "r"].setAttribute("class", x > 0 ? "pn sk-em" : $[k + "r"].dataset.base);
+  $[k + "h"].setAttribute("class", x > 0 ? "t f-em" : $[k + "h"].dataset.base);
+  O($[k + "x"], P(x, 0, .5)); O($[k + "s"], P(x, .3, 1));
+  const s = L(1.6, 1, EO(P(x, .3, 1)));
+  $[k + "s"].setAttribute("transform", $[k + "s"].dataset.base + ` scale(${s.toFixed(3)})`);
+}
+const bubble = (k, x, y, w, who, lines, cls = "sk-line", whoCls = "mu") =>
+  `<g data-k="${k}" transform="translate(${x} ${y})"><rect class="pn ${cls}" width="${w}" height="${36 + lines.length * 20}" rx="10" stroke-width="1.5"/>` +
+  `<text class="t ${whoCls}" x="14" y="21" font-size="11" font-weight="700">${who}</text>` +
+  lines.map((l, i) => `<text data-k="${k}l${i}" class="t ink" x="14" y="${44 + i * 20}" font-size="14" data-full="${esc(l)}">${esc(l)}</text>`).join("") + `</g>`;
+function typeLines($, k, n, pr) { // spreads a 0..1 progress over n lines
+  for (let i = 0; i < n; i++) { const el = $[k + "l" + i]; TY(el, el.dataset.full, pr * n - i); }
+}
+function node(k, x, y, w, h, title, sub) {
+  return `<g class="nd" data-k="${k}"><rect class="nd-r" x="${x}" y="${y}" width="${w}" height="${h}" rx="8"/>` +
+    `<text class="t nd-t" x="${x + 14}" y="${y + (sub ? 24 : h / 2 + 5)}" font-size="14" font-weight="700">${esc(title)}</text>` +
+    (sub ? `<text class="t nd-s" x="${x + 14}" y="${y + 43}" font-size="11">${esc(sub)}</text>` : "") + `</g>`;
+}
+const edge = (k, x1, y1, x2, y2) => { const dx = (x2 - x1) / 2; return `<path class="ed" data-k="${k}" d="M${x1} ${y1} C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}"/>`; };
+const raven = k => `<g data-k="${k}"><path data-k="${k}w" class="ink" d=""/><ellipse class="ink" cx="0" cy="3" rx="11" ry="4.5"/><path class="ink" d="M9 1 L17 2.5 L9 5 Z"/><path class="ink" d="M-10 2 L-18 -1 L-18 7 Z"/></g>`;
+function flap(el, t, sp = 7) { const w = Math.sin(t * sp * Math.PI) * 10; el.setAttribute("d", `M-3 2 Q-12 ${f1(-6 + w)} -24 ${f1(-2 + w * 1.4)} Q-12 ${f1(2 + w * .4)} -3 5 Z M3 2 Q12 ${f1(-6 + w)} 24 ${f1(-2 + w * 1.4)} Q12 ${f1(2 + w * .4)} 3 5 Z`); }
+const lockGlyph = (x, y, cls) => `<g transform="translate(${x} ${y})" class="${cls}"><rect x="0" y="7" width="14" height="11" rx="2"/><path d="M3 7 V4 a4 4 0 0 1 8 0 V7" fill="none" stroke-width="2" class="${cls.replace("f-", "sk-")}"/></g>`;
+const cylinder = (x, y, w, h, cls = "sk-ink") =>
+  `<g class="nf ${cls}" stroke-width="2"><path d="M${x} ${y + 12} V${y + h - 12} A${w / 2} 12 0 0 0 ${x + w} ${y + h - 12} V${y + 12}"/><ellipse cx="${x + w / 2}" cy="${y + 12}" rx="${w / 2}" ry="12"/><path d="M${x} ${y + h / 2} A${w / 2} 12 0 0 0 ${x + w} ${y + h / 2}" opacity=".5"/></g>`;
+const spinner = (k, cx, cy, r) => `<g data-k="${k}" transform="translate(${cx} ${cy})">${ringPaths(0, 0, r, 10).map(d => `<path d="${d}" class="nf sk-am" stroke-width="2.5"/>`).join("")}</g>`;
+function bez(p0, p1, p2, p3, u) {
+  const v = 1 - u;
+  return [v * v * v * p0[0] + 3 * v * v * u * p1[0] + 3 * v * u * u * p2[0] + u * u * u * p3[0],
+          v * v * v * p0[1] + 3 * v * v * u * p1[1] + 3 * v * u * u * p2[1] + u * u * u * p3[1]];
+}
+function along(path, x) { const n = path.getTotalLength(); return path.getPointAtLength(clamp(x) * n); }
+
+/* ---------- scene registry ---------- */
+const S = {};
+const def = (id, o) => { S[id] = o; };
+
+/* 01 · HERO ------------------------------------------------------------- */
+const HX = 40, HY = 30, HS = .62;              // lockup placement
+const RC = [HX + 248 * HS, HY + 245 * HS];    // ring centre in scene space
+const RR = 212 * HS;
+const gapPt = a => [RC[0] + RR * Math.cos(a * Math.PI / 180), RC[1] - RR * Math.sin(a * Math.PI / 180)];
+const HF = [
+  { k: "f1", kind: "decision", label: "let's use gzip", t0: .3 },
+  { k: "f2", kind: "rule", label: "never edit migrations/", t0: 3.3 },
+  { k: "f3", kind: "deadend", label: "redis cache lost writes", t0: 6.3 },
+  { k: "f4", kind: "decision", label: "change of plan: zstd", t0: 9.3 },
+];
+// One card at a time rests under the tagline long enough to read it, then
+// shrinks into a spark that takes a short path into the ring's right-hand gap.
+const H_IN = .4, H_HOLD = 1.8, H_GO = .8;       // seconds per phase
+const CARD = [482, 350];                         // resting spot (left, top)
+const CH = 18 * 2.4;                             // chip height at 18 px
+const SPARK = t => bez([CARD[0], CARD[1] + CH / 2], [400, CARD[1] + CH / 2], [334, 300], gapPt(345), t);
+def("hero", {
+  w: 1200, h: 440, dur: 15, poster: 10.4,
+  beats: [[.3, "«you said» + decision: let's use gzip, quieta y legible"], [2.5, "La tarjeta se encoge en una chispa y entra por el hueco del anillo; el ojo brilla"], [3.3, "Regla: never edit migrations/"], [6.3, "Callejón sin salida: redis cache lost writes"], [8.2, "El cuervo parpadea"], [9.3, "Decisión: change of plan: zstd"], [12.4, "gzip sale del anillo, tachado: «old plan · retired»"], [14.2, "Se apaga y el bucle vuelve a empezar"]],
+  svg(id) {
+    const tf = `translate(${HX} ${HY}) scale(${HS})`;
+    const [gx, gy] = gapPt(345);
+    let s = `<defs><filter id="${id}-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="9"/></filter><filter id="${id}-soft" x="-2" y="-2" width="5" height="5"><feGaussianBlur stdDeviation="6"/></filter></defs>`;
+    s += `<image class="only-d" href="${LOCK_D}" width="1340" height="490" transform="${tf}"/><image class="only-l" href="${LOCK_L}" width="1340" height="490" transform="${tf}"/>`;
+    s += `<g transform="${tf}"><rect data-k="lid" x="297" y="104" width="34" height="0" class="ink"/>` +
+      `<circle data-k="glow" cx="311" cy="119" r="24" class="f-am" filter="url(#${id}-blur)" style="opacity:0"/></g>`;
+    s += `<circle data-k="gapA" cx="${f1(gx)}" cy="${f1(gy)}" r="13" class="f-am" filter="url(#${id}-soft)" style="opacity:0"/>` +
+      `<circle data-k="gapE" cx="${f1(gx)}" cy="${f1(gy)}" r="13" class="f-em" filter="url(#${id}-soft)" style="opacity:0"/>`;
+    s += `<text class="t ink" x="376" y="284" font-size="22">A memory for Claude Code and Codex</text>` +
+      `<text class="t ink" x="376" y="316" font-size="22">that keeps up when you <tspan class="f-am" font-weight="700">change your mind.</tspan></text>`;
+    s += `<text data-k="said" class="t mu" x="376" y="${f1(CARD[1] + CH / 2 + 5)}" font-size="16" style="opacity:0">you said</text>`;
+    s += `<text data-k="put" class="t f-em" x="376" y="${f1(CARD[1] + CH / 2 + 5)}" font-size="16" font-weight="700" style="opacity:0">old plan</text>`;
+    s += `<text data-k="cnt" class="t mu" x="40" y="420" font-size="16"><tspan data-k="ca" class="f-am" font-weight="700">0</tspan> active · <tspan data-k="cr" class="f-em" font-weight="700">0</tspan> retired · <tspan class="mu">no model, no cloud</tspan></text>`;
+    for (const f of HF) s += chip(f.k, f.kind, f.label, 18);
+    s += chip("ghost", "retired", "gzip", 18);
+    s += `<circle data-k="spk" r="6.5" class="f-am" style="opacity:0"/><circle data-k="spkg" r="16" class="f-am" filter="url(#${id}-soft)" style="opacity:0"/>`;
+    return s;
+  },
+  draw(t, $) {
+    let glow = 0, active = 0, said = 0, sp = null, spCls = "f-am";
+    for (const f of HF) {
+      const a = f.t0, b = a + H_IN, c = b + H_HOLD, d = c + H_GO;
+      const inn = EO(P(t, a, b)), shrink = E(P(t, c, c + .35));
+      const sc = L(1, .15, shrink);
+      TR($[f.k], CARD[0], CARD[1] + L(8, 0, inn) + CH / 2 * (1 - sc), sc);
+      O($[f.k], t < a || t > c + .35 ? 0 : Math.min(inn, 1 - P(t, c + .15, c + .35)));
+      if (t >= a && t < c + .2) said = Math.max(said, Math.min(inn, 1 - P(t, c, c + .2)));
+      const u = P(t, c + .1, d);
+      if (u > 0 && u < 1) sp = SPARK(E(u));
+      glow = Math.max(glow, pulse(t, d - .05, .9));
+      if (t > d) active++;
+    }
+    // retirement: gzip comes back out of the gap, struck through, and rests where the cards rest
+    const r0 = 12.4, back = P(t, r0, r0 + .8), rest = r0 + .8, gone = 14.2;
+    if (back > 0 && back < 1) { sp = SPARK(1 - E(back)); spCls = "f-em"; }
+    const gIn = EO(P(t, rest - .1, rest + .3));
+    TR($.ghost, CARD[0], CARD[1] + CH / 2 * (1 - L(.15, 1, gIn)), L(.15, 1, gIn));
+    O($.ghost, t < rest - .1 ? 0 : Math.min(gIn, 1 - P(t, gone, gone + .4)));
+    O($.put, t < rest ? 0 : Math.min(P(t, rest, rest + .3), 1 - P(t, gone, gone + .4)));
+    O($.said, said);
+    for (const k of ["spk", "spkg"]) { const el = $[k]; el.setAttribute("class", spCls); O(el, sp ? (k === "spk" ? 1 : .6) : 0); if (sp) { el.setAttribute("cx", f1(sp[0])); el.setAttribute("cy", f1(sp[1])); } }
+    O($.glow, glow * .75); O($.gapA, glow * .85); O($.gapE, pulse(t, r0 - .1, .9) * .85);
+    $.lid.setAttribute("height", f1(24 * pulse(t, 8.2, .3)));
+    const ret = t > r0 ? 1 : 0;
+    $.ca.textContent = active - ret; $.cr.textContent = ret;
+    O($.cnt, Math.min(P(t, 0, .4), 1 - P(t, 14.4, 14.9)));
+  },
+});
+
+/* 02 · CHANGE OF MIND --------------------------------------------------- */
+def("change", {
+  w: 960, h: 580, dur: 18, poster: 14,
+  beats: [[.2, "Lunes: «Let's use gzip…» se escribe en un globo"], [1.2, "Muninn lo guarda como decisión #1"], [3, "Jueves: «Change of plan, let's use zstd»"], [3.9, "Nace la decisión #2; una flecha apunta a la #1: replaces #1"], [4.9, "La #1 se tacha, recibe el sello RETIRED y se queda en su sitio, atenuada"], [6.2, "Dos semanas después, sesión nueva: «Write up how we compress files.»"], [7.9, "Una memoria típica entrega las dos tarjetas; Muninn solo la vigente"], [9, "Izquierda: el asistente duda y salta de gzip a zstd. Derecha: escribe zstd ✓"], [12.2, "Izquierda: se queda con gzip, la vieja ✗. Derecha sigue en zstd"], [17.2, "Fundido para el bucle"]],
+  svg() {
+    let s = `<g data-k="all">`;
+    s += `<text class="t mu" x="60" y="40" font-size="12" font-weight="700" letter-spacing="1">MONDAY</text><text class="t mu" x="380" y="40" font-size="12" font-weight="700" letter-spacing="1">THURSDAY</text><text class="t mu" x="680" y="40" font-size="12" font-weight="700" letter-spacing="1">TWO WEEKS LATER · NEW SESSION</text>`;
+    s += `<line x1="60" x2="900" y1="56" y2="56" class="sk-line" stroke-width="2"/>` + [60, 380, 680].map(x => `<circle cx="${x}" cy="56" r="4" class="f-ln"/>`).join("") + `<circle data-k="ph" cy="56" r="7" class="f-am"/>`;
+    s += bubble("b1", 60, 76, 280, "you", ["Let's use gzip to compress", "the files we send."]);
+    s += bubble("b2", 380, 76, 280, "you", ["Change of plan, let's use", "zstd instead."]);
+    s += bubble("b3", 680, 76, 250, "you", ["Write up how we compress", "files."]);
+    s += card("c1", 60, 176, 280, "decision", 1, "compression: gzip");
+    s += card("c2", 380, 176, 280, "decision", 2, "compression: zstd");
+    s += `<path data-k="arr" d="M398 242 C 388 292, 348 292, 340 246" class="nf sk-am" stroke-width="2" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/><path data-k="arrh" d="M333 254 L340 244 L348 253" class="nf sk-am" stroke-width="2"/>`;
+    s += `<text data-k="arrl" class="t f-am" x="410" y="282" font-size="12" font-weight="700">replaces #1</text>`;
+    s += `<text data-k="hist" class="t mu" x="60" y="264" font-size="12">kept in history · never served</text>`;
+    s += `<rect data-k="pl" x="40" y="316" width="420" height="236" rx="12" class="pn sk-line" stroke-width="1.5"/><rect data-k="pr" x="500" y="316" width="420" height="236" rx="12" class="pn sk-am" stroke-width="1.5"/>`;
+    s += `<g data-k="plt"><text class="t mu" x="62" y="348" font-size="12" font-weight="700" letter-spacing="1">A TYPICAL MEMORY TOOL</text></g><g data-k="prt"><text class="t f-am" x="522" y="348" font-size="12" font-weight="700" letter-spacing="1">MUNINN</text></g>`;
+    s += `<g data-k="m1">${chip("m1c", "decision", "gzip", 14)}</g><g data-k="m2">${chip("m2c", "decision", "zstd", 14)}</g><g data-k="m3">${chip("m3c", "decision", "zstd", 14)}</g>`;
+    s += `<g data-k="q"><circle cx="420" cy="376" r="15" class="nf sk-em" stroke-width="2"/><text class="t f-em" x="420" y="382" font-size="17" font-weight="800" text-anchor="middle">?</text></g>`;
+    s += `<text data-k="lo" class="t ink" x="62" y="448" font-size="17"><tspan class="f-fr" font-weight="700">assistant › </tspan>compression: <tspan data-k="lw" class="f-em" font-weight="700"></tspan></text>`;
+    s += `<text data-k="ro" class="t ink" x="522" y="448" font-size="17"><tspan class="f-fr" font-weight="700">assistant › </tspan><tspan data-k="rot"></tspan><tspan data-k="rw" class="f-mo" font-weight="700"></tspan></text>`;
+    s += `<text data-k="ln1" class="ts ink" x="62" y="500" font-size="15">It gets both and has to guess</text><text data-k="ln1b" class="ts mu" x="62" y="522" font-size="15">which one is current.</text>`;
+    s += `<text data-k="ln2" class="ts f-em" x="62" y="500" font-size="15" font-weight="600">It guessed the old one.</text><text data-k="ln2b" class="ts mu" x="62" y="522" font-size="15">gzip ends up in the write-up.</text>`;
+    s += `<text data-k="rn" class="ts ink" x="522" y="500" font-size="15">It only gets the decision</text><text data-k="rnb" class="ts mu" x="522" y="522" font-size="15">that stands now.</text>`;
+    return s + `</g>`;
+  },
+  init($) { for (const k of ["c1", "c2"]) { $[k + "r"].dataset.base = $[k + "r"].getAttribute("class"); $[k + "h"].dataset.base = $[k + "h"].getAttribute("class"); $[k + "s"].dataset.base = $[k + "s"].getAttribute("transform"); } },
+  draw(t, $) {
+    O($.all, fade(t, 18, .2, .8));
+    const phx = t < 3 ? 60 : t < 6 ? L(60, 380, E(P(t, 3, 3.6))) : L(380, 680, E(P(t, 6, 6.6)));
+    $.ph.setAttribute("cx", f1(phx));
+    O($.b1, P(t, .2, .5)); typeLines($, "b1", 2, P(t, .3, 1.1));
+    TR($.c1, 60, L(188, 176, EO(P(t, 1.2, 1.7)))); retire(null, $, "c1", P(t, 4.9, 5.4));
+    O($.c1, P(t, 1.2, 1.7) * L(1, .55, P(t, 5.6, 6.2)));
+    O($.b2, P(t, 3, 3.3)); typeLines($, "b2", 2, P(t, 3.1, 3.8));
+    O($.c2, P(t, 3.9, 4.4)); TR($.c2, 380, L(188, 176, EO(P(t, 3.9, 4.4))));
+    $.arr.setAttribute("stroke-dashoffset", f1(1 - P(t, 4.4, 4.9))); O($.arrh, P(t, 4.8, 4.9)); O($.arrl, P(t, 4.5, 4.9));
+    O($.hist, P(t, 5.6, 6));
+    O($.b3, P(t, 6.2, 6.5)); typeLines($, "b3", 2, P(t, 6.4, 7.1));
+    const pn = P(t, 7.4, 7.8); for (const k of ["pl", "pr", "plt", "prt"]) O($[k], pn);
+    const u = EO(P(t, 7.9, 8.7)), u2 = EO(P(t, 8.1, 8.9));
+    // left: undecided from 9 to 12.2 (alternates every .7 s), then settles on the old value
+    const doubt = t >= 9 && t < 12.2, pick = doubt ? (Math.floor((t - 9) / .7) % 2 ? "zstd" : "gzip") : t >= 12.2 ? "gzip" : "";
+    TR($.m1, 62, L(300, 362, u)); TR($.m2, 216, L(300, 362, u2)); TR($.m3, 522, L(300, 362, u));
+    O($.m1, P(t, 7.9, 8.2) * (pick === "zstd" ? .3 : 1)); O($.m2, P(t, 8.1, 8.4) * (pick === "gzip" ? .3 : 1)); O($.m3, P(t, 7.9, 8.2));
+    O($.q, doubt ? .6 + .4 * Math.sin(t * 6) : 0);
+    O($.lo, P(t, 8.9, 9.1)); $.lw.textContent = doubt ? pick + "?" : t >= 12.2 ? "gzip  ✗" : "";
+    O($.ro, P(t, 8.9, 9.1)); TY($.rot, "compression: ", P(t, 9, 9.4)); TY($.rw, "zstd", P(t, 9.4, 9.8)); if (t > 9.9) $.rw.textContent = "zstd  ✓";
+    const n1 = Math.min(P(t, 9.3, 9.7), 1 - P(t, 12, 12.3)), n2 = P(t, 12.3, 12.7);
+    O($.ln1, n1); O($.ln1b, n1); O($.ln2, n2); O($.ln2b, n2); O($.rn, P(t, 10, 10.4)); O($.rnb, P(t, 10, 10.4));
+  },
+});
+
+/* 03 · RESULTS ------------------------------------------------------------ */
+const RES = [
+  { title: "You changed your mind in conversation", y: 130, t0: .4, rows: [["Muninn", 252, 270, 1], ["claude-mem", 208, 268, 0]] },
+  { title: "The change also reached the code", y: 250, t0: 2.2, rows: [["Muninn", 54, 54, 1], ["claude-mem", 25, 54, 0], ["agentmemory", 1, 54, 0]] },
+  { title: "Old value written back into the work · lower is better", y: 410, t0: 4.2, rows: [["Muninn", 0, 54, 1], ["claude-mem", 10, 54, 0]] },
+];
+def("results", {
+  w: 960, h: 520, dur: 9, poster: 7.2,
+  beats: [[0, "Título y subtítulo, sin barras"], [.4, "Grupo 1: 252 de 270 contra 208 de 268; los contadores suben con la barra"], [2.2, "Grupo 2: 54 de 54, 25 de 54, 1 de 54"], [4.2, "Grupo 3, al revés: Muninn 0 de 54 en musgo, claude-mem 10 de 54"], [8.4, "Fundido a negro para el bucle"]],
+  svg() {
+    let s = `<g data-k="all"><text class="ts ink" x="40" y="52" font-size="21" font-weight="600">Did the assistant use the decision that stands now?</text>` +
+      `<text class="ts mu" x="40" y="80" font-size="14">Same conversations, same tasks. Every run pre-registered; raw results in the repository.</text>`;
+    RES.forEach((g, gi) => {
+      s += `<text class="t mu" x="40" y="${g.y}" font-size="12" font-weight="700" letter-spacing=".5">${esc(g.title.toUpperCase())}</text>`;
+      g.rows.forEach(([name, , , me], ri) => {
+        const y = g.y + 16 + ri * 36;
+        s += `<text class="t ${me ? "f-am" : "ink"}" x="40" y="${y + 17}" font-size="14" font-weight="${me ? 700 : 400}">${name}</text>` +
+          `<rect x="190" y="${y}" width="540" height="24" rx="4" class="pn"/><rect data-k="b${gi}${ri}" x="190" y="${y}" width="0" height="24" rx="4" class="${me ? (gi === 2 ? "f-mo" : "f-am") : "f-mu"}"/>` +
+          `<text data-k="n${gi}${ri}" class="t ${me ? "ink" : "mu"}" x="748" y="${y + 17}" font-size="14" font-weight="${me ? 700 : 400}"></text>`;
+      });
+    });
+    return s + `<circle data-k="zero" cx="196" cy="438" r="6" class="f-mo" style="opacity:0"/></g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 9, .2, .6));
+    RES.forEach((g, gi) => g.rows.forEach(([, n, d], ri) => {
+      const u = EO(P(t, g.t0 + ri * .15, g.t0 + 1.5 + ri * .15));
+      $["b" + gi + ri].setAttribute("width", f1(540 * n / d * u));
+      const v = Math.round(n * u);
+      $["n" + gi + ri].textContent = u > 0 ? `${v} of ${d}` + (gi === 0 ? ` · ${Math.round(100 * v / d)}%` : "") : "";
+    }));
+    O($.zero, P(t, 4.3, 4.5) * (.55 + .45 * Math.cos(t * 5)));
+  },
+});
+
+/* 04 · FLOW (under the hood) ---------------------------------------------- */
+// Every highlight fades in and out with the step (no hard switches), and the
+// packet travels one edge per 1.3 s, then rests 0.6 s on the node it reached
+// while that node's subtitle turns into a note saying what happened there.
+// The label naming what the packet carries shows only while it moves.
+const HOOKS = [["ss", "SessionStart"], ["ups", "UserPromptSubmit"], ["pre", "PreToolUse"], ["post", "PostToolUse"], ["pc", "PreCompact"], ["stop", "Stop · SessionEnd"]];
+const hookY = i => 138 + i * 46;
+const FN = {
+  n_cues: [350, 100, 210, 56, "cues", "your words + files touched"], n_view: [590, 100, 210, 56, "active view", "retired cards filtered out"],
+  n_rules: [350, 190, 210, 56, "compiled rules", "deny · ask"], n_budget: [590, 190, 210, 56, "budget", "≤ 700 tokens + provenance"],
+  n_tr: [350, 360, 140, 56, "transcript", "what was said"], n_ex: [505, 360, 140, 56, "extraction", "typed, verbatim"], n_rd: [660, 360, 140, 56, "redaction", "secrets out"],
+  n_git: [350, 460, 140, 56, "git diffs", "your commits"], n_su: [505, 460, 295, 56, "supersession", "a removed value retires its card"],
+  n_act: [876, 112, 268, 256], n_ret: [876, 386, 268, 168],
+};
+HOOKS.forEach(([k, n], i) => { FN["h_" + k] = [56, hookY(i), 214, 34, n]; });
+const F_LEAD = .9, F_EDGE = 1.3, F_REST = .6, F_HOLD = 1.4, F_FADE = .7;
+const FSTEPS = [
+  { hook: "h_ss", src: "n_act", payload: "catalog · 3 cards", route: [["e_vs", 1, "n_view", "reads active cards only"], ["e_sv", 1, "h_ss"]],
+    cap: "A session starts. Muninn reads the active cards and hands the assistant a catalog of what is on record.", asst: ["session starts", "3 cards on record"] },
+  { hook: "h_ups", payload: "compress the uploads", route: [["e_ups", 0, "n_cues", "compress · uploads"], ["e_cv", 0, "n_view", "skips retired cards"], ["e_vs", 0, "n_act"]],
+    cap: "You write a message. Muninn takes your words and the files in play and looks for them among active cards only.", asst: ["you: compress the uploads", "Muninn looks it up…"] },
+  { hook: "h_ups", src: "n_act", payload: "#1 compression: zstd", route: [["e_sb", 0, "n_budget", "1 card · fits in 700 tokens"], ["e_bu", 0, "h_ups"]],
+    cap: "The match goes back as evidence: under 700 tokens, with its source and trust. No model runs.", asst: ["gets #1: compression zstd", "with its source + trust"] },
+  { hook: "h_pre", payload: "Edit migrations/004.sql", route: [["e_pre", 0, "n_rules", "matches rule #2"], ["e_pre", 1, "h_pre", null, "deny", "em"]],
+    cap: "The assistant tries to edit a file a rule protects. PreToolUse checks the compiled rules and answers deny.", asst: ["tries: Edit migrations/004.sql", "denied · nothing changed"], deny: true },
+  { hook: "h_stop", payload: "transcript", route: [["e_st", 0, "n_tr", "reads the session"], ["e_te", 0, "n_ex", "found: queue nats"], ["e_er", 0, "n_rd", "secrets removed"], ["e_rs", 0, "n_act"]],
+    cap: "The session ends. Stop reads the transcript and keeps decisions, rules and dead ends, word for word.", asst: ["session ends", "new card #4: queue nats"] },
+  { hook: null, src: "n_git", payload: "commit a1b2c3", route: [["e_cg", 0, "n_git", "nats → kafka"], ["e_gs", 0, "n_su", "nats is gone from the code"], ["e_ss2", 0, "n_ret"]], extra: 1.2,
+    cap: "A commit swaps nats for kafka. The card that named nats moves to retired, and kafka is recorded with the commit.", asst: ["commit a1b2c3", "#4 retired · #5 kafka"] },
+];
+{ let acc = .4; for (const st of FSTEPS) { st.s = acc; st.len = F_LEAD + st.route.length * (F_EDGE + F_REST) + F_HOLD + (st.extra || 0); st.e = acc + st.len; acc = st.e; } }
+const F_DUR = +(FSTEPS[FSTEPS.length - 1].e + .4).toFixed(1);
+const fStart = j => F_LEAD + j * (F_EDGE + F_REST), fArrive = j => fStart(j) + F_EDGE;
+const SHELF = [["decision", 1, "compression: zstd"], ["rule", 2, "migrations/ read-only"], ["deadend", 3, "redis cache: lost writes"], ["decision", 4, "queue: nats"], ["decision", 5, "queue: kafka"]];
+const T_NEW4 = FSTEPS[4].s + fArrive(3), T_RET4 = FSTEPS[5].s + fArrive(2);
+function fnode(k) {
+  const [x, y, w, h, title, sub] = FN[k];
+  const ov = (kk, c) => `<g data-k="${k}_${kk}" style="opacity:0"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" class="f-${c}" opacity=".14"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" class="nf sk-${c}" stroke-width="2"/></g>`;
+  let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" class="pn sk-line" stroke-width="1.5"/>` + ov("o", "am") + ov("d", "em");
+  if (title) s += `<text class="t ink" x="${x + 14}" y="${y + (sub ? 24 : h / 2 + 5)}" font-size="14" font-weight="700">${esc(title)}</text>`;
+  if (sub) s += `<text data-k="${k}_s" class="t mu" x="${x + 14}" y="${y + 43}" font-size="11">${esc(sub)}</text><text data-k="${k}_n" class="t f-am" x="${x + 14}" y="${y + 43}" font-size="11" font-weight="700" style="opacity:0"></text>`;
+  return s;
+}
+const fedge = (k, d) => `<path class="ed" data-k="${k}" d="${d}"/><path data-k="${k}_o" d="${d}" class="nf sk-am" stroke-width="2.5" style="opacity:0"/>`;
+const fcurve = (x1, y1, x2, y2) => { const dx = (x2 - x1) / 2; return `M${x1} ${y1} C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`; };
+def("flow", {
+  w: 1200, h: 680, dur: F_DUR, poster: +(FSTEPS[3].s + fArrive(0) + .6).toFixed(1),
+  beats: FSTEPS.map((st, i) => [+st.s.toFixed(1), st.cap]),
+  svg() {
+    let s = `<g data-k="all">`;
+    s += `<rect x="40" y="40" width="250" height="530" rx="12" class="pn sk-line" stroke-width="1.5"/><text class="t ink" x="60" y="72" font-size="15" font-weight="700">Claude Code · Codex</text><text class="t mu" x="60" y="118" font-size="11" font-weight="700" letter-spacing="1">HOOKS</text>`;
+    s += `<rect x="330" y="40" width="490" height="250" rx="12" class="nf sk-line" stroke-width="1.5" stroke-dasharray="4 4"/><text class="t f-am" x="350" y="68" font-size="12" font-weight="700" letter-spacing=".5">READ PATH · READ-ONLY · NO MODEL</text>`;
+    s += `<rect x="330" y="310" width="490" height="260" rx="12" class="nf sk-line" stroke-width="1.5" stroke-dasharray="4 4"/><text class="t mu" x="350" y="338" font-size="12" font-weight="700" letter-spacing=".5">WRITE PATH · STOP · SESSIONEND</text>`;
+    s += `<rect x="860" y="40" width="300" height="530" rx="12" class="pn sk-line" stroke-width="1.5"/><text class="t ink" x="880" y="72" font-size="15" font-weight="700">store · SQLite + FTS5</text><text class="t mu" x="880" y="92" font-size="11">.muninn/ on your machine</text>`;
+    s += fedge("e_sv", "M270 155 C 310 155, 300 86, 360 86 H 690 V 100") + fedge("e_ups", fcurve(270, 201, 350, 128)) + fedge("e_cv", fcurve(560, 128, 590, 128)) + fedge("e_vs", fcurve(800, 128, 876, 180)) +
+      fedge("e_sb", fcurve(876, 240, 800, 218)) + fedge("e_bu", fcurve(590, 218, 270, 201)) + fedge("e_pre", fcurve(270, 247, 350, 218)) +
+      fedge("e_st", fcurve(270, 385, 350, 388)) + fedge("e_te", fcurve(490, 388, 505, 388)) + fedge("e_er", fcurve(645, 388, 660, 388)) + fedge("e_rs", fcurve(800, 388, 876, 330)) +
+      fedge("e_cg", fcurve(300, 488, 350, 488)) + fedge("e_gs", fcurve(490, 488, 505, 488)) + fedge("e_ss2", fcurve(800, 488, 876, 470));
+    for (const k in FN) s += fnode(k);
+    s += `<circle cx="300" cy="488" r="6" class="nf sk-mu" stroke-width="2"/>`;
+    s += `<text class="t f-am" x="892" y="136" font-size="11" font-weight="700" letter-spacing="1">ACTIVE</text>`;
+    s += `<text class="t f-em" x="912" y="410" font-size="11" font-weight="700" letter-spacing="1">RETIRED · NEVER SERVED</text>${lockGlyph(892, 396, "f-em")}`;
+    SHELF.forEach(([kind, n, txt], i) => {
+      const [, c] = KIND[kind];
+      s += `<g data-k="sh${i}"><rect data-k="sh${i}r" width="244" height="36" rx="6" class="pn sk-${c}" stroke-width="1.3"/><rect data-k="sh${i}g" width="244" height="36" rx="6" class="f-am" style="opacity:0"/><text data-k="sh${i}h" class="t f-${c}" x="10" y="22" font-size="11" font-weight="700">#${n}</text><text class="t ink" x="36" y="23" font-size="12.5">${esc(txt)}</text><line data-k="sh${i}x" x1="34" x2="${40 + txt.length * 7.6}" y1="19" y2="19" class="sk-em" stroke-width="1.6" style="opacity:0"/>` +
+        `<g data-k="sh${i}t" style="opacity:0" transform="translate(166 -10)"><rect data-k="sh${i}tr" width="74" height="19" rx="9.5" class="f-am"/><text data-k="sh${i}tt" class="t" x="37" y="13.5" font-size="10" font-weight="800" text-anchor="middle" letter-spacing="1" style="fill:var(--s-bg)"></text></g></g>`;
+    });
+    s += `<g data-k="asst"><rect x="56" y="440" width="214" height="112" rx="10" class="pn sk-fr" stroke-width="1.5"/><text class="t f-fr" x="72" y="464" font-size="11" font-weight="700" letter-spacing="1">ASSISTANT</text><text data-k="asstt" class="t ink" x="72" y="494" font-size="12"></text><text data-k="asst2" class="t mu" x="72" y="520" font-size="11"></text></g>`;
+    s += `<g data-k="deny" style="opacity:0"><rect x="600" y="256" width="200" height="26" rx="13" class="f-em"/><text class="t" x="700" y="274" font-size="12" font-weight="800" text-anchor="middle" letter-spacing="1" style="fill:var(--s-bg)">DENY</text></g>`;
+    s += `<rect x="40" y="594" width="1120" height="62" rx="12" class="pn sk-line" stroke-width="1.5"/><rect data-k="prog" x="40" y="652" width="0" height="4" rx="2" class="f-am"/>`;
+    s += FSTEPS.map((_, i) => `<circle data-k="dot${i}" cx="${70 + i * 18}" cy="625" r="5" class="f-ln"/>`).join("");
+    s += `<text data-k="cap" class="ts ink" x="186" y="631" font-size="15.5"></text>`;
+    for (let i = 5; i >= 1; i--) s += `<circle data-k="tr${i}" r="${7 - i}" class="f-am" style="opacity:0"/>`;
+    s += `<circle data-k="rip" r="10" class="nf sk-am" stroke-width="2" style="opacity:0"/><circle data-k="pk2" r="14" class="f-am" style="opacity:0"/><circle data-k="pk" r="7" class="f-am" style="opacity:0"/>`;
+    s += `<g data-k="pay" style="opacity:0"><rect data-k="payr" x="0" y="-11" height="22" rx="11" class="pn sk-am" stroke-width="1.5"/><text data-k="payt" class="t f-am" x="10" y="4" font-size="11" font-weight="700"></text></g>`;
+    return s + `</g>`;
+  },
+  init($) { SHELF.forEach((_, i) => { $["sh" + i + "r"].dataset.base = $["sh" + i + "r"].getAttribute("class"); }); },
+  draw(t, $) {
+    O($.all, fade(t, F_DUR, .3, .4));
+    const si = FSTEPS.findIndex(st => t >= st.s && t < st.e), st = FSTEPS[si];
+    const lt = st ? t - st.s : 0, env = st ? Math.min(P(lt, 0, F_FADE), 1 - P(lt, st.len - F_FADE, st.len)) : 0;
+    const lit = {}, dn = {}, eo = {}, notes = {};
+    if (st) {
+      if (st.hook) lit[st.hook] = env;
+      if (st.src) lit[st.src] = env;
+      st.route.forEach(([ek, , tgt, note], j) => {
+        eo[ek] = Math.max(eo[ek] || 0, env * P(lt, fStart(j) - .1, fStart(j) + .4));
+        lit[tgt] = Math.max(lit[tgt] || 0, env * P(lt, fArrive(j) - .15, fArrive(j) + .3));
+        if (note) notes[tgt] = [note, env * P(lt, fArrive(j), fArrive(j) + .4)];
+      });
+      if (st.deny) { const d = env * P(lt, fArrive(0), fArrive(0) + .4); for (const k of ["n_rules", "h_pre"]) dn[k] = d; }
+    }
+    for (const k in FN) {
+      const d = dn[k] || 0; O($[k + "_o"], (lit[k] || 0) * (1 - d)); O($[k + "_d"], d);
+      if ($[k + "_n"]) { const [txt, v] = notes[k] || ["", 0]; if (v > 0 && $[k + "_n"].textContent !== txt) { $[k + "_n"].textContent = txt; $[k + "_n"].setAttribute("font-size", f1(Math.min(11, (FN[k][2] - 24) / (txt.length * .62)))); } O($[k + "_n"], v); O($[k + "_s"], 1 - v); }
+    }
+    for (const k of ["e_sv", "e_ups", "e_cv", "e_vs", "e_sb", "e_bu", "e_pre", "e_st", "e_te", "e_er", "e_rs", "e_cg", "e_gs", "e_ss2"]) {
+      const v = eo[k] || 0; O($[k + "_o"], v); $[k + "_o"].setAttribute("class", "nf " + (st && st.deny && k === "e_pre" && lt > fArrive(0) ? "sk-em" : "sk-am"));
+    }
+    O($.deny, st && st.deny ? env * P(lt, fArrive(0), fArrive(0) + .4) : 0);
+    // packet: moves along one edge, then rests on the node it reached
+    let pt = null, cls = "f-am", pay = st ? st.payload : "", trail = [], moving = 0;
+    if (st) {
+      st.route.forEach(([ek, rev, , , p2, c2], j) => {
+        const a = fStart(j), z = fArrive(j), el = $[ek], n = el.getTotalLength();
+        const at = u => el.getPointAtLength(rev ? n * (1 - u) : n * u);
+        if (lt >= a && lt < z + F_REST) {
+          const u = E(P(lt, a, z)); pt = at(u); moving = Math.min(P(lt, a, a + .25), 1 - P(lt, z - .1, z + .2));
+          trail = [1, 2, 3, 4, 5].map(i => u - i * .035 > 0 && u < 1 ? at(E(P(lt - i * .045, a, z))) : null);
+          if (p2) pay = p2; if (c2) cls = "f-" + c2;
+          const r = P(lt, z, z + .6); $.rip.setAttribute("r", f1(L(8, 30, r))); O($.rip, r > 0 && r < 1 ? (1 - r) * env : 0);
+          $.rip.setAttribute("cx", f1(at(1).x)); $.rip.setAttribute("cy", f1(at(1).y)); $.rip.setAttribute("class", "nf " + cls.replace("f-", "sk-"));
+        }
+      });
+    }
+    const pv = pt ? env : 0;
+    for (const k of ["pk", "pk2"]) { O($[k], k === "pk" ? pv : pv * .25); if (pt) { $[k].setAttribute("cx", f1(pt.x)); $[k].setAttribute("cy", f1(pt.y)); $[k].setAttribute("class", cls); } }
+    for (let i = 1; i <= 5; i++) { const q = trail[i - 1]; O($["tr" + i], q ? pv * (.5 - i * .08) : 0); if (q) { $["tr" + i].setAttribute("cx", f1(q.x)); $["tr" + i].setAttribute("cy", f1(q.y)); $["tr" + i].setAttribute("class", cls); } }
+    if (pt) {
+      $.payt.textContent = pay; const w = pay.length * 6.7 + 20; $.payr.setAttribute("width", f1(w));
+      $.payr.setAttribute("class", "pn " + cls.replace("f-", "sk-")); $.payt.setAttribute("class", "t " + cls);
+      TR($.pay, clamp(pt.x - w / 2, 44, 1156 - w), pt.y - 30);
+    }
+    O($.pay, pv * moving);
+    // store shelf: every card involved in the step wears a coloured tag saying
+    // what happens to it; the cards not involved dim so the eye lands on the right one
+    const rowY = r => 150 + r * 50;
+    const add = EO(P(t, T_NEW4, T_NEW4 + .6)), mv = E(P(t, T_RET4, T_RET4 + 1.1)), nw = EO(P(t, T_RET4 + 1, T_RET4 + 1.7));
+    const tag = [null, null, null, null, null], focus = new Set();
+    const on = (i, text, c, v) => { tag[i] = [text, c, v]; if (v > .05) focus.add(i); };
+    if (si === 0) for (let i = 0; i < 3; i++) on(i, "READ", "am", env * P(lt, .5 + i * .45, .8 + i * .45));
+    if (si === 1) on(0, "MATCH", "am", env * P(lt, fArrive(2), fArrive(2) + .3));
+    if (si === 2) on(0, "SERVED", "am", env);
+    if (si === 3) on(1, "BLOCKS", "em", env * P(lt, fArrive(0), fArrive(0) + .3));
+    if (si === 4) on(3, "NEW", "mo", env * add);
+    if (si === 5) { on(3, "RETIRED", "em", env * P(t, T_RET4, T_RET4 + .3)); on(4, "NEW", "mo", env * nw); }
+    const dim = focus.size ? env : 0;
+    SHELF.forEach((_, i) => {
+      const tg = tag[i], v = tg ? tg[2] : 0;
+      if (tg) { $["sh" + i + "tt"].textContent = tg[0]; $["sh" + i + "tr"].setAttribute("class", "f-" + tg[1]); $["sh" + i + "g"].setAttribute("class", "f-" + tg[1]); }
+      O($["sh" + i + "t"], v); O($["sh" + i + "g"], v * .2);
+      $["sh" + i].dataset.dim = focus.has(i) ? 1 : L(1, .35, dim);
+    });
+    for (let i = 0; i < 3; i++) { TR($["sh" + i], 888, rowY(i)); O($["sh" + i], +$["sh" + i].dataset.dim); }
+    TR($.sh3, L(1180, 888, add), L(rowY(3), 426, mv)); O($.sh3, add * L(1, .85, mv) * $.sh3.dataset.dim);
+    $.sh3r.setAttribute("class", mv > .05 ? "pn sk-em" : si === 4 || si === 5 ? "pn sk-mo" : $.sh3r.dataset.base); O($.sh3x, P(t, T_RET4 + .3, T_RET4 + .8));
+    TR($.sh4, L(1180, 888, nw), rowY(3)); O($.sh4, nw * $.sh4.dataset.dim);
+    $.sh4r.setAttribute("class", si === 5 ? "pn sk-mo" : $.sh4r.dataset.base);
+    // assistant + caption
+    if (st) { TY($.asstt, st.asst[0], P(lt, .3, 1.3)); $.asst2.textContent = st.asst[1]; }
+    O($.asstt, env); O($.asst2, st ? env * P(lt, fArrive(st.route.length - 1), fArrive(st.route.length - 1) + .4) : 0);
+    $.cap.textContent = st ? st.cap : ""; O($.cap, env);
+    $.prog.setAttribute("width", f1(st ? 1120 * P(lt, 0, st.len) : 0)); O($.prog, env * .8);
+    FSTEPS.forEach((_, i) => { const d = $["dot" + i]; d.setAttribute("class", i === si ? "f-am" : i < si ? "f-mu" : "f-ln"); d.setAttribute("r", i === si ? f1(5 + 1.5 * env) : "5"); });
+  },
+});
+
+/* 05 · SCENARIOS ---------------------------------------------------------- */
+const CAT = [["mu", "[muninn:catalog] what is on record, newest first"], ["ink", "#5 decision · compression: zstd · replaces #1"], ["ink", "#3 invariant · migrations/ is read-only"], ["ink", "#4 dead end · redis cache for sessions"], ["mu", "pull any of them in full: muninn show <id>"]];
+def("sc-catalog", {
+  w: 640, h: 360, dur: 7, poster: 5.8,
+  beats: [[.2, "Se enciende la píldora SessionStart"], [.6, "El catálogo se escribe línea a línea: vigente primero, con «replaces #1»"], [5.2, "Aparece la etiqueta: el asistente empieza sabiendo"]],
+  svg() {
+    let s = `<g data-k="all"><rect x="24" y="24" width="592" height="312" rx="12" class="pn sk-line" stroke-width="1.5"/>`;
+    s += `<g data-k="pill"><rect x="44" y="44" width="150" height="30" rx="15" class="nf sk-am" stroke-width="1.5"/><text class="t f-am" x="119" y="64" font-size="13" font-weight="700" text-anchor="middle">SessionStart</text></g>`;
+    CAT.forEach(([c, l], i) => { s += `<text data-k="l${i}" data-full="${esc(l)}" class="t ${c}" x="44" y="${116 + i * 34}" font-size="14"></text>`; });
+    s += `<g data-k="tag"><rect x="44" y="284" width="290" height="32" rx="16" class="nf sk-fr" stroke-width="1.5"/><text class="t f-fr" x="189" y="305" font-size="13" font-weight="700" text-anchor="middle">the assistant starts knowing</text></g>`;
+    return s + `</g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 7, .2, .5)); O($.pill, P(t, .2, .5));
+    CAT.forEach((_, i) => TY($["l" + i], $["l" + i].dataset.full, P(t, .6 + i * .85, 1.35 + i * .85)));
+    O($.tag, P(t, 5.2, 5.5));
+  },
+});
+def("sc-deadend", {
+  w: 640, h: 360, dur: 12, poster: 9.8,
+  beats: [[.5, "La semana pasada: el asistente prueba un caché con redis"], [1.8, "Falla: pierde escrituras bajo carga"], [2.4, "Muninn lo guarda como callejón sin salida #4"], [3.8, "Hoy, sesión nueva: «Sessions are slow. Add a cache.»"], [5, "El asistente planea redis otra vez"], [6.2, "Muninn trae la tarjeta #4: tried before"], [7.4, "El plan se tacha"], [8.2, "Nuevo plan: caché en memoria ✓"]],
+  svg() {
+    let s = `<g data-k="all">`;
+    s += `<text class="t mu" x="24" y="28" font-size="11" font-weight="700" letter-spacing="1">LAST WEEK</text><text class="t mu" x="330" y="28" font-size="11" font-weight="700" letter-spacing="1">TODAY · NEW SESSION</text>`;
+    s += `<line x1="24" x2="616" y1="40" y2="40" class="sk-line" stroke-width="2"/><circle cx="24" cy="40" r="3.5" class="f-ln"/><circle cx="330" cy="40" r="3.5" class="f-ln"/><circle data-k="ph" cy="40" r="6" class="f-am"/>`;
+    s += `<text data-k="l1" class="t ink" x="24" y="76" font-size="13"><tspan class="f-fr" font-weight="700">assistant › </tspan><tspan data-k="l1t"></tspan></text>`;
+    s += `<text data-k="l2" class="t f-em" x="24" y="102" font-size="13" font-weight="700">✗ lost writes under load</text>`;
+    s += card("dl", 24, 124, 276, "deadend", 4, "redis cache for sessions", "tried, lost writes under load");
+    s += `<text data-k="rec" class="t mu" x="24" y="224" font-size="11">recorded as a dead end</text>`;
+    s += bubble("yb", 330, 54, 286, "you", ["Sessions are slow.", "Add a cache."]);
+    s += `<text data-k="pl" class="t ink" x="330" y="160" font-size="13"><tspan class="f-fr" font-weight="700">assistant › </tspan><tspan data-k="plt"></tspan></text><line data-k="plx" x1="416" y1="156" x2="560" y2="156" class="sk-em" stroke-width="2" style="opacity:0"/>`;
+    s += card("dr", 330, 176, 286, "deadend", 4, "redis cache for sessions", "tried, lost writes under load");
+    s += `<g data-k="tb" style="opacity:0" transform="translate(508 166)"><rect width="100" height="19" rx="9.5" class="f-em"/><text class="t" x="50" y="13.5" font-size="10" font-weight="800" text-anchor="middle" letter-spacing="1" style="fill:var(--s-bg)">TRIED BEFORE</text></g>`;
+    s += `<text data-k="np" class="t ink" x="330" y="288" font-size="13"><tspan class="f-fr" font-weight="700">assistant › </tspan><tspan data-k="npt"></tspan><tspan data-k="npk" class="f-mo" font-weight="700"></tspan></text>`;
+    s += `<text data-k="cap" class="ts ink" x="24" y="340" font-size="14">Muninn remembers what failed, so it isn't tried again.</text>`;
+    return s + `</g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 12, .2, .6));
+    $.ph.setAttribute("cx", f1(L(24, 330, E(P(t, 3.4, 3.9)))));
+    O($.l1, P(t, .3, .5)); TY($.l1t, "try a redis cache", P(t, .5, 1.4));
+    O($.l2, P(t, 1.8, 2.1));
+    O($.dl, P(t, 2.4, 2.9) * L(1, .5, P(t, 6.2, 6.8))); TR($.dl, 24, L(134, 124, EO(P(t, 2.4, 2.9))));
+    O($.rec, P(t, 3, 3.3) * L(1, .5, P(t, 6.2, 6.8)));
+    O($.yb, P(t, 3.8, 4.1)); typeLines($, "yb", 2, P(t, 3.9, 4.6));
+    O($.pl, P(t, 5, 5.2)); TY($.plt, "plan: redis cache", P(t, 5.1, 5.8));
+    const f = E(P(t, 6.2, 7.1));
+    TR($.dr, L(24, 330, f), L(124, 176, f) + Math.sin(Math.PI * f) * 36); O($.dr, P(t, 6.2, 6.4));
+    O($.tb, P(t, 7, 7.3));
+    O($.plx, P(t, 7.4, 7.7)); $.plx.setAttribute("x2", f1(L(416, 560, P(t, 7.4, 7.8))));
+    O($.np, P(t, 8.1, 8.3)); TY($.npt, "plan: in-memory cache ", P(t, 8.2, 9)); $.npk.textContent = t > 9.1 ? "✓" : "";
+    O($.cap, P(t, 9.4, 9.8));
+  },
+});
+def("sc-rule", {
+  w: 640, h: 360, dur: 9, poster: 7,
+  beats: [[.5, "Se resalta la regla en CLAUDE.md"], [1.2, "Muninn propone un ajuste: deny Edit(migrations/**)"], [2.6, "Tú escribes y: el ajuste se aplica"], [4, "El asistente intenta Edit migrations/004.sql"], [5.4, "Bloqueado por el ajuste que salió de la regla"]],
+  svg() {
+    let s = `<g data-k="all"><rect x="24" y="24" width="280" height="130" rx="12" class="pn sk-line" stroke-width="1.5"/><text class="t mu" x="40" y="50" font-size="12" font-weight="700">CLAUDE.md</text>`;
+    s += `<rect data-k="hl" x="34" y="86" width="260" height="50" rx="5" class="f-am" style="opacity:0"/>`;
+    s += `<text class="t mu" x="40" y="76" font-size="13">## Rules</text><text class="t ink" x="44" y="104" font-size="14">Never edit the migrations</text><text class="t ink" x="44" y="124" font-size="14">folder.</text>`;
+    s += `<path data-k="ar" d="M308 89 H334 M328 83 L334 89 L328 95" class="nf sk-mu" stroke-width="2"/>`;
+    s += `<g data-k="prop"><rect data-k="propr" x="340" y="24" width="276" height="130" rx="12" class="pn sk-line" stroke-width="1.5"/><text class="t mu" x="356" y="50" font-size="12" font-weight="700">proposed setting</text><text class="t f-mo" x="356" y="84" font-size="13">+ deny  Edit(migrations/**)</text><text class="t ink" x="356" y="126" font-size="14">apply? <tspan data-k="y" class="f-am" font-weight="700"></tspan></text><text data-k="ok" class="t f-mo" x="530" y="126" font-size="12" font-weight="700">applied</text></g>`;
+    s += `<text data-k="act" class="t ink" x="24" y="210" font-size="15"><tspan class="f-fr" font-weight="700">assistant › </tspan><tspan data-k="actt"></tspan></text>`;
+    s += `<g data-k="den"><rect x="24" y="228" width="380" height="40" rx="8" class="nf sk-em" stroke-width="1.5"/>${lockGlyph(40, 238, "f-em")}<text class="t f-em" x="66" y="253" font-size="13" font-weight="700">denied by the setting from this rule</text></g>`;
+    s += `<text data-k="cap" class="ts ink" x="24" y="316" font-size="15">Shown to you first. Applied only after you say yes.</text>`;
+    return s + `</g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 9, .2, .5));
+    O($.hl, pulse(t, .5, 1.2) * .25 + P(t, 1.1, 1.2) * .12);
+    O($.ar, P(t, 1, 1.2)); O($.prop, P(t, 1.2, 1.6));
+    $.y.textContent = t > 2.6 ? "y" : ""; $.propr.setAttribute("class", t > 3 ? "pn sk-mo" : "pn sk-line"); O($.ok, P(t, 3, 3.3));
+    O($.act, P(t, 3.8, 4)); TY($.actt, "Edit migrations/004.sql", P(t, 4, 5));
+    O($.den, P(t, 5.4, 5.6)); TR($.den, Math.sin(Math.max(0, t - 5.4) * 40) * 4 * (1 - P(t, 5.4, 5.8)), 0);
+    O($.cap, P(t, 6, 6.4));
+  },
+});
+const CROWS = [220, 180, 240, 160, 210, 190, 230, 170, 200];
+def("sc-compact", {
+  w: 640, h: 360, dur: 9, poster: 7.4,
+  beats: [[.2, "Una conversación larga llena la ventana, con una regla y una corrección dentro"], [1, "La ventana se compacta en un resumen"], [3.2, "Los detalles se pierden: «details lost»"], [4.4, "Desde el store vuelven la regla y la corrección"], [6.6, "Cifra medida: 100 de 100 compactaciones"]],
+  svg() {
+    let s = `<g data-k="all"><rect x="24" y="24" width="316" height="312" rx="12" class="pn sk-line" stroke-width="1.5"/><text class="t mu" x="40" y="48" font-size="11" font-weight="700" letter-spacing="1">CONTEXT WINDOW</text>`;
+    CROWS.forEach((w, i) => {
+      const sp = i === 2 ? ["fr", "rule: migrations/ read-only"] : i === 6 ? ["mo", "correction: use zstd"] : null;
+      s += sp ? `<g data-k="r${i}"><rect width="${w + 40}" height="20" rx="4" class="pn sk-${sp[0]}" stroke-width="1.5"/><text class="t f-${sp[0]}" x="8" y="14" font-size="11">${sp[1]}</text></g>`
+              : `<g data-k="r${i}"><rect width="${w}" height="20" rx="4" class="f-mu" opacity=".28"/></g>`;
+    });
+    s += `<g data-k="sum"><rect x="40" y="62" width="284" height="34" rx="6" class="nf sk-mu" stroke-width="1.5"/><text class="t mu" x="54" y="84" font-size="12">summary · 9 turns → 1</text></g>`;
+    s += `<text data-k="lost" class="t f-em" x="40" y="124" font-size="12" font-weight="700">details lost</text>`;
+    s += `<g transform="translate(430 90)">${cylinder(0, 0, 110, 120, "sk-ink")}<text class="t ink" x="55" y="146" font-size="13" text-anchor="middle">store</text></g>`;
+    s += `<g data-k="k1">${chip("k1c", "rule", "migrations/ read-only", 12)}</g><g data-k="k2">${chip("k2c", "correction", "use zstd", 12)}</g>`;
+    s += `<text data-k="re" class="ts ink" x="40" y="236" font-size="13">reinjected from the store,</text><text data-k="re2" class="ts ink" x="40" y="254" font-size="13">not from the summary</text>`;
+    s += `<g data-k="badge"><text class="t f-am" x="370" y="286" font-size="20" font-weight="800">100 of 100</text><text class="ts mu" x="370" y="308" font-size="13">compactions kept the rules</text></g>`;
+    return s + `</g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 9, .2, .5));
+    const c = E(P(t, 1, 3));
+    CROWS.forEach((_, i) => { const y0 = 62 + i * 29; TR($["r" + i], 40, L(y0, 70, c), L(1, .2, c)); O($["r" + i], P(t, .1 + i * .05, .3 + i * .05) * (1 - P(c, .6, 1))); });
+    O($.sum, P(t, 2.4, 3)); O($.lost, pulse(t, 3.1, 1.3));
+    const a = EO(P(t, 4.4, 5.3)), b = EO(P(t, 4.7, 5.6));
+    TR($.k1, L(440, 40, a), L(150, 112, a)); O($.k1, P(t, 4.4, 4.6));
+    TR($.k2, L(440, 40, b), L(150, 156, b)); O($.k2, P(t, 4.7, 4.9));
+    O($.re, P(t, 5.6, 6)); O($.re2, P(t, 5.6, 6)); O($.badge, P(t, 6.6, 7));
+  },
+});
+def("sc-commit", {
+  w: 640, h: 360, dur: 8, poster: 6.2,
+  beats: [[.5, "Aparece el diff: - codec = \"gzip\""], [1.1, "+ codec = \"zstd\""], [2.4, "La tarjeta de gzip se tacha y se retira"], [3.2, "Baja al historial"], [4.2, "Entra la #6 con zstd, citando el commit"], [5.2, "Nada se adivina"]],
+  svg() {
+    let s = `<g data-k="all"><rect x="24" y="24" width="300" height="150" rx="12" class="pn sk-line" stroke-width="1.5"/><text class="t mu" x="40" y="50" font-size="12">commit a1b2c3 · update dependencies</text>`;
+    s += `<g data-k="d1"><rect x="34" y="68" width="280" height="30" rx="4" class="f-em" opacity=".14"/><text class="t f-em" x="44" y="88" font-size="14" xml:space="preserve">-  codec = "gzip"</text></g>`;
+    s += `<g data-k="d2"><rect x="34" y="104" width="280" height="30" rx="4" class="f-mo" opacity=".14"/><text class="t f-mo" x="44" y="124" font-size="14" xml:space="preserve">+  codec = "zstd"</text></g>`;
+    s += card("o", 344, 40, 272, "decision", 1, "compression: gzip");
+    s += card("n", 344, 40, 272, "decision", 6, "compression: zstd", "from commit a1b2c3");
+    s += `<text data-k="cap" class="ts ink" x="24" y="216" font-size="14">Nothing is guessed: a removed word</text><text data-k="cap2" class="ts ink" x="24" y="236" font-size="14">counts only if a card already named it.</text>`;
+    return s + `</g>`;
+  },
+  init($) { for (const k of ["o", "n"]) { $[k + "r"].dataset.base = $[k + "r"].getAttribute("class"); $[k + "h"].dataset.base = $[k + "h"].getAttribute("class"); $[k + "s"].dataset.base = $[k + "s"].getAttribute("transform"); } },
+  draw(t, $) {
+    O($.all, fade(t, 8, .2, .5));
+    O($.d1, P(t, .5, .8)); O($.d2, P(t, 1.1, 1.4));
+    O($.o, P(t, .2, .5)); retire(null, $, "o", P(t, 2.4, 3));
+    const m = E(P(t, 3.2, 4)); TR($.o, 344, L(40, 250, m)); if (t > 3.2) O($.o, L(1, .45, m));
+    const n = EO(P(t, 4.2, 4.8)); TR($.n, L(660, 344, n), 40); O($.n, n);
+    O($.cap, P(t, 5.2, 5.6)); O($.cap2, P(t, 5.2, 5.6));
+  },
+});
+def("sc-fault", {
+  w: 640, h: 360, dur: 8, poster: 6,
+  beats: [[.3, "La conversación sigue su curso"], [.8, "El store se agrieta: «store damaged»"], [2, "El hook responde exit 0"], [2.6, "El asistente responde igual que siempre"], [3.2, "El error queda en heartbeat.jsonl"], [4, "Si Muninn se rompe, tu sesión no"]],
+  svg() {
+    let s = `<g data-k="all"><g data-k="db">${cylinder(50, 90, 110, 120, "sk-ink")}<path data-k="crack" d="M92 102 L104 130 L94 148 L110 176 L100 204" class="nf sk-em" stroke-width="3" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/></g>`;
+    s += `<text data-k="dmg" class="t f-em" x="50" y="240" font-size="12" font-weight="700">store damaged</text>`;
+    s += `<path d="M168 150 H214" class="nf sk-mu" stroke-width="2"/><g><rect x="214" y="132" width="170" height="36" rx="18" class="pn sk-line" stroke-width="1.5"/><text class="t ink" x="299" y="155" font-size="12" text-anchor="middle">UserPromptSubmit</text></g>`;
+    s += `<g data-k="ex"><rect x="254" y="182" width="90" height="28" rx="14" class="f-mo"/><text class="t" x="299" y="201" font-size="13" font-weight="800" text-anchor="middle" style="fill:var(--s-bg)">exit 0</text></g>`;
+    s += `<path d="M384 150 H414" class="nf sk-mu" stroke-width="2"/><rect x="414" y="36" width="202" height="232" rx="12" class="pn sk-line" stroke-width="1.5"/>`;
+    const msgs = [["you", "add a retry", "mu"], ["assistant", "done", "f-fr"], ["you", "now the tests", "mu"], ["assistant", "all passing", "f-fr"]];
+    msgs.forEach(([w, m, c], i) => { s += `<g data-k="m${i}"><rect x="426" y="${50 + i * 52}" width="178" height="42" rx="8" class="nf ${c === "f-fr" ? "sk-fr" : "sk-line"}" stroke-width="1.3"/><text class="t ${c}" x="438" y="${66 + i * 52}" font-size="10" font-weight="700">${w}</text><text class="t ink" x="438" y="${84 + i * 52}" font-size="13">${m}</text></g>`; });
+    s += `<text data-k="hb" class="t mu" x="24" y="290" font-size="12">error → .muninn/log/heartbeat.jsonl</text>`;
+    s += `<text data-k="cap" class="ts ink" x="24" y="326" font-size="15">If Muninn breaks, your session doesn't.</text>`;
+    return s + `</g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 8, .2, .5));
+    $.crack.setAttribute("stroke-dashoffset", f1(1 - P(t, .8, 1.2)));
+    TR($.db, Math.sin(t * 60) * 3 * pulse(t, .8, .5), 0);
+    O($.dmg, P(t, 1, 1.3)); O($.ex, P(t, 2, 2.3));
+    [.3, 2.6, 3.8, 5].forEach((a, i) => O($["m" + i], P(t, a, a + .3)));
+    O($.hb, P(t, 3.2, 3.5)); O($.cap, P(t, 4, 4.4));
+  },
+});
+
+/* 06 · LOCAL ---------------------------------------------------------------- */
+def("local", {
+  w: 720, h: 400, dur: 15, poster: 12.6,
+  beats: [[.3, "1 · Escribes un mensaje"], [3, "2 · Muninn guarda tus palabras tal cual en .muninn/, dentro de tu proyecto"], [6, "3 · Un paquete intenta salir hacia la nube y rebota: nada se envía"], [9.5, "4 · Preguntas después; la tarjeta vuelve desde la carpeta, en milisegundos y sin modelo"]],
+  svg() {
+    let s = `<g data-k="all">`;
+    s += `<text class="t f-am" x="28" y="28" font-size="11" font-weight="700" letter-spacing="1">YOUR COMPUTER</text><rect data-k="bd" x="24" y="40" width="406" height="296" rx="18" class="nf sk-am" stroke-width="1.5" stroke-dasharray="6 6"/>`;
+    s += `<rect x="40" y="56" width="214" height="264" rx="10" class="pn sk-line" stroke-width="1.5"/><text class="t f-fr" x="54" y="78" font-size="11" font-weight="700" letter-spacing="1">CLAUDE CODE · CODEX</text>`;
+    s += `<rect data-k="fp" x="266" y="56" width="148" height="264" rx="10" class="pn sk-line" stroke-width="1.5"/><path d="M280 68 h12 l4 5 h18 v14 h-34 z" class="nf sk-am" stroke-width="1.6"/><text class="t f-am" x="322" y="83" font-size="13" font-weight="700">.muninn/</text>`;
+    s += `<g data-k="b1"><rect x="52" y="94" width="190" height="46" rx="8" class="nf sk-line" stroke-width="1.3"/><text class="t mu" x="64" y="110" font-size="10" font-weight="700">you</text><text data-k="b1t" class="t ink" x="64" y="129" font-size="13"></text></g>`;
+    s += `<g data-k="cd"><rect data-k="cdr" width="136" height="54" rx="8" class="pn sk-am" stroke-width="1.5"/><text class="t f-am" x="10" y="19" font-size="10" font-weight="700">decision</text><text class="t ink" x="10" y="40" font-size="13">let's use zstd</text></g>`;
+    s += `<g data-k="vb" style="opacity:0" transform="translate(300 172)"><rect width="84" height="19" rx="9.5" class="f-mo"/><text class="t" x="42" y="13.5" font-size="10" font-weight="800" text-anchor="middle" letter-spacing="1" style="fill:var(--s-bg)">VERBATIM</text></g>`;
+    s += `<text data-k="fly" class="t f-am" font-size="13" font-weight="700" style="opacity:0">let's use zstd</text>`;
+    s += `<g data-k="b2"><rect x="52" y="196" width="190" height="46" rx="8" class="nf sk-line" stroke-width="1.3"/><text class="t mu" x="64" y="212" font-size="10" font-weight="700">you</text><text data-k="b2t" class="t ink" x="64" y="231" font-size="13"></text></g>`;
+    s += `<g data-k="ev">${chip("evc", "decision", "let's use zstd", 12)}</g>`;
+    s += `<g data-k="sw" style="opacity:0"><circle cx="62" cy="304" r="8" class="nf sk-mo" stroke-width="1.8"/><path data-k="swh" d="M62 304 V298" class="nf sk-mo" stroke-width="1.8"/><text class="t f-mo" x="76" y="308" font-size="11" font-weight="700">a few ms · no model</text></g>`;
+    s += `<path d="M540 186 a26 26 0 0 1 50 -8 a22 22 0 0 1 40 14 a18 18 0 0 1 -6 36 h-80 a22 22 0 0 1 -4 -42 z" class="nf sk-mu" stroke-width="2"/>`;
+    s += `<path d="M434 206 H528" class="nf sk-mu" stroke-width="2" stroke-dasharray="4 6"/>`;
+    s += `<g data-k="x"><path d="M470 196 l14 14 M484 196 l-14 14" class="nf sk-em" stroke-width="3"/></g>`;
+    s += `<text class="t mu" x="520" y="272" font-size="12">no account</text><text class="t mu" x="520" y="290" font-size="12">no cloud service</text><text class="t mu" x="520" y="308" font-size="12">no server</text>`;
+    s += `<circle data-k="pk" r="7" class="f-am" style="opacity:0"/><circle data-k="hit" r="10" class="nf sk-em" stroke-width="2" style="opacity:0"/>`;
+    s += `<text data-k="num" class="t f-am" x="24" y="378" font-size="13" font-weight="800"></text><text data-k="cap" class="ts ink" x="58" y="378" font-size="15"></text>`;
+    return s + `</g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 15, .2, .6));
+    const caps = [[.3, 3, "You write a message in Claude Code or Codex."], [3, 6, "Muninn keeps your words as you wrote them, in a folder inside your project."], [6, 9.5, "Nothing is sent anywhere: no account, no cloud, no server."], [9.5, 15, "Later it comes back from that folder in a few thousandths of a second, no model."]];
+    const ci = caps.findIndex(c => t >= c[0] && t < c[1]), c = caps[ci];
+    $.cap.textContent = c ? c[2] : ""; $.num.textContent = c ? `${ci + 1}/4` : "";
+    const cv = c ? Math.min(P(t, c[0], c[0] + .4), 1 - P(t, c[1] - .3, c[1])) : 0; O($.cap, cv); O($.num, cv);
+    // 1 · the message
+    O($.b1, P(t, .3, .6)); TY($.b1t, "let's use zstd", P(t, .6, 1.6));
+    // 2 · the same words fly into .muninn/ and become a card
+    const f = E(P(t, 3.3, 4.4));
+    O($.fly, f > 0 && f < 1 ? 1 : 0); $.fly.setAttribute("x", f1(L(64, 282, f))); $.fly.setAttribute("y", f1(L(129, 152, f) - Math.sin(Math.PI * f) * 30));
+    O($.cd, P(t, 4.3, 4.6)); TR($.cd, 272, 112);
+    O($.vb, P(t, 4.8, 5.1));
+    O($.fp, 1); $.fp.setAttribute("class", "pn " + (pulse(t, 4.3, 1.2) > .1 || pulse(t, 10.6, 1.2) > .1 ? "sk-am" : "sk-line"));
+    // 3 · a packet tries to leave and bounces off the edge of your computer
+    const b = P(t, 6.4, 8.2), out = b < .5 ? E(b * 2) : 1 - E(b * 2 - 1);
+    TR($.pk, L(150, 430, out), L(118, 206, out)); O($.pk, b > 0 && b < 1 ? 1 : 0);
+    const h = pulse(t, 7.2, .8); O($.hit, h); $.hit.setAttribute("cx", "430"); $.hit.setAttribute("cy", "206"); $.hit.setAttribute("r", f1(L(8, 26, P(t, 7.2, 8))));
+    TR($.x, 477, 203, 1 + h * .5); $.x.setAttribute("transform", `translate(477 203) scale(${(1 + h * .5).toFixed(3)}) translate(-477 -203)`);
+    $.bd.setAttribute("class", "nf " + (h > .1 ? "sk-em" : "sk-am"));
+    // 4 · a later question; the card comes back from the folder, fast and without a model
+    O($.b2, P(t, 9.6, 9.9)); TY($.b2t, "how do we compress?", P(t, 9.9, 10.8));
+    const e = E(P(t, 10.8, 11.8)); TR($.ev, L(272, 52, e), L(112, 254, e)); O($.ev, P(t, 10.8, 11));
+    O($.sw, P(t, 11.8, 12.1)); $.swh.setAttribute("d", `M62 304 L${f1(62 + 6 * Math.sin(t * 9))} ${f1(304 - 6 * Math.cos(t * 9))}`);
+  },
+});
+
+/* 07 · INSTALL -------------------------------------------------------------- */
+const INST = [["> /plugin marketplace add ilien-dev/muninn", .4, 2, 2.8], ["> /plugin install muninn@muninn", 3, 4.2, 5], ["  restart · first session fetches Muninn, about 13 MB, and checks it", 5.2, 5.2, 0], ["> /muninn:init", 6.2, 7, 7.6], ["> /muninn:status", 8, 8.6, 0]];
+def("install", {
+  w: 900, h: 360, dur: 12, poster: 10.4,
+  beats: [[.4, "/plugin marketplace add ilien-dev/muninn"], [2, "El anillo gira mientras trabaja; luego ✓"], [3, "/plugin install muninn@muninn"], [5.2, "Reinicio: descarga de unos 13 MB, verificada"], [6.2, "/muninn:init en el proyecto"], [8, "/muninn:status"], [9, "MUNINN · GREEN"]],
+  svg() {
+    let s = `<g data-k="all"><rect x="20" y="20" width="860" height="320" rx="12" class="pn sk-line" stroke-width="1.5"/><path d="M20 32 a12 12 0 0 1 12 -12 H868 a12 12 0 0 1 12 12 V56 H20 Z" class="f-ln" opacity=".5"/>`;
+    s += [44, 64, 84].map(x => `<circle cx="${x}" cy="38" r="5" class="f-mu" opacity=".6"/>`).join("") + `<text class="t mu" x="450" y="43" font-size="12" text-anchor="middle">Claude Code</text>`;
+    INST.forEach(([l, , , sp], i) => {
+      s += `<text data-k="l${i}" data-full="${esc(l)}" class="t ${l.startsWith(">") ? "ink" : "mu"}" x="44" y="${96 + i * 44}" font-size="${l.startsWith(">") ? 16 : 13}" xml:space="preserve"></text>`;
+      if (sp) s += spinner("sp" + i, 830, 91 + i * 44, 9) + `<text data-k="ok${i}" class="t f-mo" x="830" y="${97 + i * 44}" font-size="16" font-weight="800" text-anchor="middle">✓</text>`;
+    });
+    s += `<g data-k="st"><text class="t ink" x="44" y="316" font-size="18" font-weight="800" letter-spacing="1">MUNINN</text><rect data-k="gp" x="140" y="296" width="86" height="28" rx="14" class="f-mo"/><text class="t" x="183" y="315" font-size="14" font-weight="800" text-anchor="middle" letter-spacing="1" style="fill:var(--s-bg)">GREEN</text><text class="t mu" x="242" y="315" font-size="13">memory on for this project</text></g>`;
+    return s + `</g>`;
+  },
+  draw(t, $) {
+    O($.all, fade(t, 12, .2, .6));
+    INST.forEach(([l, a, b, sp], i) => {
+      const el = $["l" + i]; TY(el, el.dataset.full, a === b ? P(t, a, a + .3) * 10 : P(t, a, b));
+      if (sp) { const on = t > b && t < sp; O($["sp" + i], on ? 1 : 0); $["sp" + i].setAttribute("transform", `translate(830 ${91 + i * 44}) rotate(${f1(t * 360)})`); O($["ok" + i], P(t, sp, sp + .15)); }
+    });
+    O($.st, P(t, 9, 9.25)); O($.gp, P(t, 9, 9.25) * (.75 + .25 * Math.cos((t - 9) * 4)));
+  },
+});
+
+/* 08 · DIVIDER -------------------------------------------------------------- */
+def("divider", {
+  w: 960, h: 48, dur: 5, poster: 2.2,
+  beats: [[0, "Una chispa ámbar recorre la línea"], [1.4, "Salta el primer hueco, como los del anillo"], [4.4, "Llega al final y se apaga"]],
+  svg() {
+    const gaps = [300, 530, 760];
+    let segs = [], x = 64; for (const g of gaps) { segs.push([x, g - 9]); x = g + 9; } segs.push([x, 936]);
+    return ring("rg", 28, 24, 11, 2.5, "sk-ink", 8) + segs.map(([a, b]) => `<line x1="${a}" x2="${b}" y1="24" y2="24" class="sk-line" stroke-width="2"/>`).join("") +
+      `<line data-k="tr" y1="24" y2="24" class="sk-am" stroke-width="2"/><circle data-k="sp" r="4" class="f-am"/><circle data-k="gl" r="10" class="f-am" opacity=".22"/>`;
+  },
+  draw(t, $) {
+    $.rg.setAttribute("transform", `rotate(${f1(t / 5 * 120)} 28 24)`);
+    const x = L(64, 936, P(t, 0, 4.6)), hop = [300, 530, 760].reduce((m, g) => Math.max(m, Math.max(0, 1 - Math.abs(x - g) / 22)), 0);
+    const y = 24 - Math.sin(hop * Math.PI / 2) * 9;
+    for (const c of [$.sp, $.gl]) { c.setAttribute("cx", f1(x)); c.setAttribute("cy", f1(y)); }
+    $.tr.setAttribute("x1", f1(Math.max(64, x - 90))); $.tr.setAttribute("x2", f1(x));
+    const o = Math.min(P(t, 0, .2), 1 - P(t, 4.5, 4.9)); O($.sp, o); O($.gl, o * .22); O($.tr, o * .6);
+  },
+});
+
+/* 09 · EYE ------------------------------------------------------------------ */
+// The real emblem, untouched except for the eye: the pupil looks ahead, then
+// back, the raven blinks twice, and a glint crosses the iris.
+const EYE = [313, 118];                                   // eye centre, logo coordinates
+def("eye", {
+  w: 240, h: 240, dur: 7, poster: 1.9,
+  beats: [[1.2, "Mira hacia delante"], [3.2, "Mira hacia atrás"], [4.6, "Parpadea dos veces"], [5.6, "Un brillo cruza el ojo"]],
+  svg(id) {
+    const img = `<image class="only-d" href="${LOCK_D}" width="1340" height="490"/><image class="only-l" href="${LOCK_L}" width="1340" height="490"/>`;
+    let s = `<defs><clipPath id="${id}-em"><rect width="490" height="490"/></clipPath><clipPath id="${id}-eye"><ellipse cx="${EYE[0]}" cy="${EYE[1]}" rx="12" ry="8.5"/></clipPath></defs>`;
+    s += `<g transform="translate(-4 -2.5) scale(.5)"><g clip-path="url(#${id}-em)">${img}</g>`;
+    s += `<g clip-path="url(#${id}-eye)"><rect x="${EYE[0] - 14}" y="${EYE[1] - 11}" width="28" height="22" fill="#e9a93a"/><circle data-k="pupil" cx="${EYE[0]}" cy="${EYE[1]}" r="4.6" fill="#0b0b0b"/>` +
+      `<rect data-k="gl" x="0" y="${EYE[1] - 12}" width="5" height="24" fill="#fff4d6" transform="rotate(20 ${EYE[0]} ${EYE[1]})" style="opacity:0"/>` +
+      `<rect data-k="lid" x="${EYE[0] - 14}" y="${EYE[1] - 11}" width="28" height="0" class="ink"/></g></g>`;
+    return s;
+  },
+  draw(t, $) {
+    const look = E(P(t, 1.2, 1.5)) * (1 - E(P(t, 2.6, 2.9))) * 5.5 - E(P(t, 3.2, 3.5)) * (1 - E(P(t, 4, 4.3))) * 4.5;
+    $.pupil.setAttribute("cx", f1(EYE[0] + look));
+    $.lid.setAttribute("height", f1(22 * Math.max(pulse(t, 4.6, .24), pulse(t, 5, .24))));
+    const g = P(t, 5.6, 6.1); $.gl.setAttribute("x", f1(L(EYE[0] - 16, EYE[0] + 12, g))); O($.gl, g > 0 && g < 1 ? .8 : 0);
+  },
+});
+
+/* ---------- page content: cards ---------- */
+const CARDS = [
+  { id: "change", n: "02", title: "El cambio de opinión", place: "README › A quick example", readme: "Justo debajo del ejemplo de gzip y zstd", why: "Es el ejemplo del README hecho escena: lunes, jueves, dos semanas después. La tarjeta vieja se retira en su sitio, así que la flecha «replaces #1» sigue apuntándole. El final dura más: a la izquierda el asistente recibe las dos tarjetas, salta de una a otra durante tres segundos y se queda con gzip; a la derecha escribe zstd a la primera.", files: "motion/change-{dark,light}.gif", width: "820" },
+  { id: "results", n: "03", title: "Los números crecen", place: "README › Test results", readme: "Encima de la lista de resultados", why: "Las barras crecen y los contadores suben hasta la cifra real de cada prueba. El tercer grupo va al revés, menos es mejor, y Muninn se queda en cero con un punto verde que late.", files: "motion/results-{dark,light}.gif", width: "760" },
+  { id: "flow", n: "04", title: "Lo que pasa en segundo plano", place: "README › sección nueva: What happens in the background", readme: "Entre «Test results» y «What else it does»", why: "El equivalente al vídeo de Hindsight: el diagrama completo con los hooks a la izquierda, la ruta de lectura y la de escritura en medio y el store a la derecha. Seis pasos que entran y salen con fundido. En cada uno, un punto con una etiqueta de lo que lleva (tu mensaje, la tarjeta, el diff) recorre el camino despacio y se detiene en cada caja; al llegar, el subtítulo de esa caja cambia por lo que acaba de pasar ahí. Una barra bajo el subtítulo marca cuánto falta para el siguiente paso.", files: "motion/flow-{dark,light}.gif", width: "100%" },
+  { id: "scenarios", n: "05", title: "Qué pasa en cada escenario", place: "README › What else it does", readme: "Rejilla de 2 × 3 como tabla de GIF pequeños, 320 px cada uno", why: "Seis escenas cortas, una por situación. Cada una se entiende sola y en pocos segundos, así que funcionan bien en rejilla: quien pasa por encima ve seis cosas moviéndose y se detiene en la que le interesa.", grid: [
+    ["sc-catalog", "Sesión nueva", "El asistente recibe el catálogo de lo que hay registrado antes de que preguntes nada."],
+    ["sc-deadend", "A punto de repetir un error", "La semana pasada un caché con redis perdió datos. Hoy el asistente iba a proponerlo otra vez; Muninn le trae esa tarjeta y el plan cambia."],
+    ["sc-rule", "Una regla se vuelve candado", "Una línea de CLAUDE.md se convierte en un ajuste que bloquea, solo después de tu sí."],
+    ["sc-compact", "La conversación se compacta", "El resumen pierde detalles; las reglas vuelven desde el store. 100 de 100."],
+    ["sc-commit", "Un commit cambia el valor", "El diff retira la decisión vieja y registra la nueva con el commit que la respalda."],
+    ["sc-fault", "Si Muninn falla", "El store se daña, el hook sale con 0 y la sesión sigue como si nada."],
+  ] },
+  { id: "local", n: "06", title: "Todo se queda en tu equipo", place: "README › What else it does", readme: "Junto al párrafo de «Everything stays on your computer»", why: "Cuenta en cuatro pasos, con subtítulo, qué significa «local». Escribes «let's use zstd» y esas mismas palabras vuelan a la carpeta .muninn/ con la etiqueta VERBATIM. Un paquete intenta salir hacia la nube y rebota contra el borde de tu equipo. Al preguntar después, la tarjeta vuelve desde la carpeta con un cronómetro: «a few ms · no model». No da una cifra de milisegundos porque el README no la da.", files: "motion/local-{dark,light}.gif", width: "520" },
+  { id: "limits", n: "—", title: "Limits: sin animación, a propósito", quiet: true },
+  { id: "install", n: "07", title: "Instalar en cuatro líneas", place: "README › Install · Setting up a new project", readme: "Al final de «Setting up a new project», como resumen de todo el recorrido", why: "Una terminal que escribe sola los mismos comandos del README. Mientras trabaja, el anillo del logo hace de spinner, y todo termina en la línea que el README pide buscar: MUNINN y GREEN.", files: "motion/install-{dark,light}.gif", width: "720" },
+  { id: "divider", n: "08", title: "Separador con chispa", place: "README › entre bloques grandes", readme: "Como mucho tres veces: antes de Install, antes de For the technically curious y antes de About the name", why: "Una línea con los tres huecos del anillo y una chispa ámbar que los salta. Es el elemento que se mueve a lo largo del README sin pedir atención: marca el paso de una parte a otra.", files: "motion/divider-{dark,light}.gif", width: "100%" },
+  { id: "eye", n: "09", title: "El cuervo que mira", place: "README › About the name", readme: "En lugar de muninn-symbol.png, alineado a la derecha", why: "Solo el emblema real, sin nada alrededor. El anillo no se mueve; solo se mueve el ojo: la pupila mira hacia delante y hacia atrás, el cuervo parpadea dos veces y un brillo cruza el iris. Es un detalle pequeño junto al texto del mito, que ya cuenta la historia por sí solo.", files: "motion/eye-{dark,light}.gif", width: "160" },
+];
+const MAP = [
+  ["Hero (logo)", [["hero", "01 · El cuervo que recuerda"]]],
+  ["A quick example", [["change", "02 · El cambio de opinión"]]],
+  ["Test results", [["results", "03 · Los números crecen"]]],
+  ["What happens in the background", [["flow", "04 · Lo que pasa en segundo plano"]], true],
+  ["What else it does", [["scenarios", "05 · Seis escenarios"], ["local", "06 · Todo se queda en tu equipo"]]],
+  ["Limits", null],
+  ["Install · Setting up", [["install", "07 · Instalar en cuatro líneas"]]],
+  ["Entre bloques", [["divider", "08 · Separador con chispa"]]],
+  ["About the name", [["eye", "09 · El cuervo que mira"]]],
+];
+
+const stageHTML = id => `<figure class="stage" data-scene="${id}" data-v="dark" style="margin:0;aspect-ratio:${S[id].w}/${S[id].h}${S[id].w < 400 ? ";max-width:280px" : ""}"></figure>
+  <div class="ctrl"><button type="button" data-play="${id}" aria-label="Pausar">Pausa</button><input type="range" id="scrub-${id}" data-scrub="${id}" min="0" max="${S[id].dur}" step="0.02" value="0" aria-label="Posición en la animación"><output id="out-${id}" for="scrub-${id}">0.0 / ${S[id].dur.toFixed(1)} s</output></div>`;
+const beatsHTML = id => `<ol class="beats">${S[id].beats.slice().sort((a, b) => a[0] - b[0]).map(([t, l]) => `<li><button type="button" data-seek="${id}" data-t="${t}"><time>${t.toFixed(1)} s</time><span>${esc(l)}</span></button></li>`).join("")}</ol>`;
+const specHTML = (id, c) => `<dl class="spec"><dt>Lugar</dt><dd>${esc(c.readme)}</dd><dt>Archivos</dt><dd>${esc(c.files)}</dd><dt>Lienzo</dt><dd>${S[id].w} × ${S[id].h} px</dd><dt>En README</dt><dd>width="${c.width}"</dd><dt>Duración</dt><dd>${S[id].dur} s · bucle · 20 fps</dd><dt>Póster</dt><dd>${S[id].poster} s</dd></dl>`;
+
+function buildPage() {
+  document.getElementById("slot-hero").innerHTML = `<div class="card" id="c-hero" style="gap:10px">${stageHTML("hero")}</div>`;
+  const heroCard = { readme: "Reemplaza el logo estático de arriba, dentro del mismo <picture>", files: "motion/hero-{dark,light}.gif", width: "820" };
+  let h = `<article class="card" id="c-hero-detail"><header><div class="place">README › arriba, en lugar del logo</div><h3><span class="n">01</span>El cuervo que recuerda</h3><p class="why">El logo no se toca: ni el cuervo ni el anillo cambian. Lo que se mueve es lo de alrededor. Bajo el lema aparece una sola frase a la vez, «you said» y la decisión, quieta casi dos segundos para que se lea. Luego se encoge en una chispa y entra por el hueco derecho del anillo, que se ilumina con un halo suave, y el ojo brilla. Cuando llega «change of plan: zstd», gzip sale por el mismo hueco, tachado, y se queda un momento como «old plan».</p></header><div class="detail">${specHTML("hero", heroCard)}${beatsHTML("hero")}</div></article>`;
+  for (const c of CARDS) {
+    if (c.quiet) { h += `<article class="card" id="c-${c.id}"><div class="quiet"><b>Limits</b> se queda quieto. Es la sección donde el README pide que lo lean con calma, y algo moviéndose al lado de «Muninn uses a bit more of the assistant's attention» le quitaría seriedad. Callar aquí también hace que las demás animaciones pesen más.</div></article>`; continue; }
+    h += `<article class="card" id="c-${c.id}"><header><div class="place">${esc(c.place)}</div><h3><span class="n">${c.n}</span>${esc(c.title)}</h3><p class="why">${esc(c.why)}</p></header>`;
+    if (c.grid) {
+      h += `<div class="grid6">${c.grid.map(([id, t, d]) => `<div class="mini" id="c-${id}"><h4>${esc(t)}</h4>${stageHTML(id)}<p>${esc(d)}</p></div>`).join("")}</div>`;
+      h += `<dl class="spec"><dt>Archivos</dt><dd>motion/{catalog,deadend,rule,compact,commit,fault}-{dark,light}.gif</dd><dt>Lienzo</dt><dd>640 × 360 px cada una</dd><dt>En README</dt><dd>tabla de 2 columnas, width="320"</dd><dt>Duración</dt><dd>7 a 9 s · bucle · 20 fps</dd></dl>`;
+    } else {
+      h += stageHTML(c.id) + `<div class="detail">${specHTML(c.id, c)}${beatsHTML(c.id)}</div>`;
+    }
+    h += `</article>`;
+  }
+  document.getElementById("cards").innerHTML = h;
+  document.getElementById("map").innerHTML = MAP.map(([sec, items, isNew]) =>
+    `<li class="${items ? "has" : ""}"><div class="sec${isNew ? " new" : ""}">${esc(sec)}</div>${items ? items.map(([id, l]) => `<a href="#c-${id === "hero" ? "hero-detail" : id}">${esc(l)}</a>`).join("") : `<span class="none">sin animación, a propósito</span>`}</li>`).join("");
+}
+
+/* ---------- runtime ---------- */
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ST = {};
+let variant = "dark";
+try { variant = localStorage.getItem("muninn-motion-v") || "dark"; } catch (e) {}
+
+function mount(fig) {
+  const id = fig.dataset.scene, sc = S[id];
+  fig.innerHTML = `<svg viewBox="0 0 ${sc.w} ${sc.h}" role="img" aria-label="${esc(id)}"><rect width="${sc.w}" height="${sc.h}" class="bg"/>${sc.svg(id + "-" + Math.random().toString(36).slice(2, 7))}</svg>`;
+  const $ = {}; fig.querySelectorAll("[data-k]").forEach(el => { $[el.dataset.k] = el; });
+  sc.init && sc.init($);
+  return { id, sc, fig, $, t: reduce ? sc.poster : 0, playing: !reduce, visible: false };
+}
+function render(s) {
+  s.sc.draw(s.t, s.$);
+  const r = document.getElementById("scrub-" + s.id), o = document.getElementById("out-" + s.id);
+  if (r) r.value = s.t; if (o) o.textContent = `${s.t.toFixed(1)} / ${s.sc.dur.toFixed(1)} s`;
+  const b = document.querySelector(`[data-play="${s.id}"]`); if (b) { b.textContent = s.playing ? "Pausa" : "Reproducir"; b.setAttribute("aria-label", s.playing ? "Pausar" : "Reproducir"); }
+}
+function setVariant(v) {
+  variant = v; try { localStorage.setItem("muninn-motion-v", v); } catch (e) {}
+  document.querySelectorAll(".stage").forEach(f => { f.dataset.v = v; });
+  document.getElementById("v-dark").setAttribute("aria-pressed", v === "dark"); document.getElementById("v-light").setAttribute("aria-pressed", v === "light");
+}
+
+function boot() {
+  document.getElementById("brandring").innerHTML = ringPaths(20, 20, 15, 7).map(d => `<path d="${d}"/>`).join("");
+  buildPage();
+  document.querySelectorAll(".stage").forEach(f => { const s = mount(f); ST[s.id] = s; render(s); });
+  setVariant(variant);
+  const io = new IntersectionObserver(es => es.forEach(e => { const s = ST[e.target.dataset.scene]; if (s) s.visible = e.isIntersecting; }), { rootMargin: "80px" });
+  Object.values(ST).forEach(s => io.observe(s.fig));
+  document.addEventListener("click", e => {
+    const p = e.target.closest("[data-play]"); if (p) { const s = ST[p.dataset.play]; s.playing = !s.playing; render(s); }
+    const k = e.target.closest("[data-seek]"); if (k) { const s = ST[k.dataset.seek]; s.t = +k.dataset.t + .01; s.playing = false; render(s); k.closest(".beats").querySelectorAll("button").forEach(b => b.classList.toggle("cur", b === k)); }
+  });
+  document.addEventListener("input", e => { const id = e.target.dataset.scrub; if (id) { const s = ST[id]; s.t = +e.target.value; s.playing = false; render(s); } });
+  document.getElementById("v-dark").onclick = () => setVariant("dark");
+  document.getElementById("v-light").onclick = () => setVariant("light");
+  const all = document.getElementById("all");
+  const sync = () => { all.textContent = Object.values(ST).some(s => s.playing) ? "Pausar todo" : "Reproducir todo"; };
+  all.onclick = () => { const any = Object.values(ST).some(s => s.playing); Object.values(ST).forEach(s => { s.playing = !any; render(s); }); sync(); };
+  document.addEventListener("click", sync);
+  sync();
+  let last = performance.now();
+  const loop = now => {
+    const dt = Math.min(.1, (now - last) / 1000); last = now;
+    for (const s of Object.values(ST)) if (s.playing && s.visible) { s.t = (s.t + dt) % s.sc.dur; render(s); }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+
+/* ---------- export API: one scene alone, at native size, frame by frame ---------- */
+window.muninnMotion = {
+  scenes: () => Object.keys(S),
+  prepare(id, v = "dark") {
+    Object.values(ST).forEach(s => { s.playing = false; });
+    const sc = S[id];
+    for (const el of document.body.children) if (!/^(STYLE|SCRIPT|LINK)$/.test(el.tagName)) el.style.display = "none";
+    document.getElementById("export-stage")?.remove();
+    document.body.insertAdjacentHTML("beforeend", `<div id="export-stage"><figure class="stage" data-scene="${id}" data-v="${v}" style="margin:0;border:0;border-radius:0;width:${sc.w}px;height:${sc.h}px"></figure></div>`);
+    document.body.style.cssText = "margin:0;padding:0;background:" + (v === "light" ? "#ffffff" : "#0d1117");
+    this._s = mount(document.querySelector("#export-stage .stage"));
+    return { w: sc.w, h: sc.h, dur: sc.dur, poster: sc.poster };
+  },
+  frame(t) { this._s.t = t; this._s.sc.draw(t, this._s.$); },
+};
+
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
+})();
+</script>
+
+
+</html>

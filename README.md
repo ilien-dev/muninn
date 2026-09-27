@@ -1,8 +1,17 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/muninn-dark.png">
-    <img src="assets/muninn-light.png" alt="Muninn" width="480">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/hero-dark.gif">
+    <img src="assets/motion/hero-light.gif" width="820"
+         alt="The Muninn raven and its ring. One sentence at a time appears under the tagline, turns into a spark and enters the ring. When the plan changes to zstd, the old gzip decision comes back out, struck through, as the old plan.">
   </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ilien-dev/muninn/actions/workflows/ci.yml"><img src="https://github.com/ilien-dev/muninn/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-e8a825" alt="Works with Claude Code and Codex">
+  <img src="https://img.shields.io/badge/runs%20on-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-30363d" alt="Runs on Windows, macOS and Linux">
+  <img src="https://img.shields.io/badge/cloud-none-8cc06f" alt="No cloud service">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-30363d" alt="License: AGPL-3.0-only"></a>
 </p>
 
 # Muninn
@@ -22,6 +31,14 @@ Muninn remembers what you decided, and when you change your mind, it puts the ol
 The assistant only sees what is true now. The old one is still in your history if you ever want
 to look.
 
+<p align="center">
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#what-happens-in-the-background">How it works</a> ·
+  <a href="#muninn-or-another-memory-tool">Compare</a> ·
+  <a href="#questions">Questions</a> ·
+  <a href="docs/technical-overview.md">Technical overview</a>
+</p>
+
 ## A quick example
 
 On Monday you tell the assistant:
@@ -36,11 +53,27 @@ Two weeks later, in a brand-new session, you ask it to write up how the project 
 files. The assistant remembers neither conversation, so it checks its memory. A typical memory
 tool hands it both messages. Muninn hands it only Thursday's, and the assistant writes zstd.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/change-dark.gif">
+    <img src="assets/motion/change-light.gif" width="820"
+         alt="Monday: gzip is saved as decision 1. Thursday: zstd becomes decision 2 and decision 1 is stamped retired. Two weeks later, a typical memory tool hands the assistant both cards and it guesses gzip; Muninn hands it only zstd.">
+  </picture>
+</p>
+
 ## Test results
 
 We tested it against two popular memory tools, claude-mem and agentmemory. Every tool got the
 same conversations, and the assistant was then given tasks that depended on a decision that had
 later been changed.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/results-dark.gif">
+    <img src="assets/motion/results-light.gif" width="760"
+         alt="Bar chart. Changed in conversation: Muninn 252 of 270, claude-mem 208 of 268. Change also in the code: Muninn 54 of 54, claude-mem 25 of 54, agentmemory 1 of 54. Old value written back: Muninn 0 of 54, claude-mem 10 of 54.">
+  </picture>
+</p>
 
 - **When you change your mind in conversation**, the assistant used the up-to-date decision in
   **252 of 270 tasks (93%)** with Muninn, against **208 of 268 (78%)** with claude-mem. We tried
@@ -58,6 +91,32 @@ Each test had its rules written down before it ran, and all the raw results are 
 repository, so anyone can check them. The full comparison, including the tools we have not
 tested yet, is in [docs/why-muninn.md](docs/why-muninn.md).
 
+## What happens in the background
+
+You never call Muninn. It rides along on the hooks Claude Code and Codex already fire, reads from
+a small database in your project, and writes to it only when a session ends.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/flow-dark.gif">
+    <img src="assets/motion/flow-light.gif" width="100%"
+         alt="Diagram of hooks, a read path, a write path and the store. A packet travels step by step: the session catalog, a message matched against active cards, the match returned as evidence, an edit denied by a rule, the transcript turned into a new card, and a commit that moves an old card to retired.">
+  </picture>
+</p>
+
+1. **A session starts.** The assistant gets a short catalog of what is on record, so it knows
+   what it can ask for.
+2. **You write a message.** Muninn takes your words and the files in play and looks for them among
+   the decisions that still stand. Retired ones are not in the list it searches.
+3. **The matches go back as evidence**, capped at 700 tokens, each with where it came from and how
+   much to trust it. No AI model runs in this step, so the same question gets the same answer.
+4. **The assistant reaches for something a rule forbids.** If you turned that rule into a setting,
+   the tool refuses before anything changes.
+5. **The session ends.** Muninn reads the conversation and keeps the decisions, rules, corrections
+   and dead ends, in your words.
+6. **A commit changes a value.** When the code stops using something a decision named, that
+   decision is retired, and the new value is recorded along with the commit.
+
 ## What else it does
 
 Once it is set up it works in the background, and you keep talking to your assistant as usual.
@@ -69,6 +128,85 @@ to each message.
 It can also turn a rule from your project notes, such as "never edit the migrations folder", into
 a setting that blocks the action instead of hoping the assistant remembers. It shows you the
 change first and does nothing until you say yes.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/motion/catalog-dark.gif">
+        <img src="assets/motion/catalog-light.gif" width="100%" alt="SessionStart prints the catalog of what is on record, newest first.">
+      </picture>
+      <b>A new session starts.</b> The assistant knows what is on record before you ask anything.
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/motion/deadend-dark.gif">
+        <img src="assets/motion/deadend-light.gif" width="100%" alt="Last week a redis cache lost writes and became dead end 4. Today the assistant plans redis again; Muninn brings back card 4, marked tried before, and the plan changes.">
+      </picture>
+      <b>It is about to repeat a mistake.</b> What failed last time comes back before it is tried again.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/motion/rule-dark.gif">
+        <img src="assets/motion/rule-light.gif" width="100%" alt="A rule in CLAUDE.md becomes a proposed deny setting; after the user types y, an edit to migrations is denied.">
+      </picture>
+      <b>A written rule becomes a lock.</b> You see the proposed setting first, and it applies only after you say yes.
+    </td>
+    <td valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/motion/compact-dark.gif">
+        <img src="assets/motion/compact-light.gif" width="100%" alt="A long conversation is compacted into a summary that loses a rule and a correction; both come back from the store.">
+      </picture>
+      <b>The conversation gets compacted.</b> Rules come back from the store, not from the summary: 100 of 100 times.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/motion/commit-dark.gif">
+        <img src="assets/motion/commit-light.gif" width="100%" alt="A commit diff replaces gzip with zstd; the gzip card is retired and a zstd card citing the commit takes its place.">
+      </picture>
+      <b>A commit changes a value.</b> The decision that named the old value is retired on its own.
+    </td>
+    <td valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/motion/fault-dark.gif">
+        <img src="assets/motion/fault-light.gif" width="100%" alt="The store cracks, the hook still exits 0, and the conversation carries on while the error goes to a log.">
+      </picture>
+      <b>Muninn breaks.</b> Your session does not. Every hook exits cleanly, and the error goes to a log.
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/local-dark.gif">
+    <img src="assets/motion/local-light.gif" width="560"
+         alt="Four steps inside a box labelled your computer: a message is written, the same words are saved verbatim in the .muninn folder, a packet trying to reach the cloud bounces off the edge, and later the card comes back in a few milliseconds with no model.">
+  </picture>
+</p>
+
+## Muninn or another memory tool?
+
+Every row below comes from the same test harness: the same live sessions filled each tool's
+memory through its own hooks, and a fixed check graded what the assistant wrote. No AI judge
+graded anything.
+
+| | Muninn | claude-mem | agentmemory |
+|---|---|---|---|
+| Uses the current decision after you changed it in conversation | **252 / 270** | 208 / 268 | not in this run |
+| …when the change also reached the code | **54 / 54** | 25 / 54 | 1 / 54 |
+| Writes a replaced value into its work anyway | **0 / 54** | 10 / 54 | — |
+| Same conversations give the same memory | yes, 3 runs of 20 sessions stored the same records | stored text did not overlap between two runs | not measured |
+| Room it takes in the assistant's context | about 2.4 times claude-mem's | baseline | not measured |
+
+Every row above measures the same case: a decision that changed while the project went on.
+If you need one memory for a whole team, use an assistant other than Claude Code or Codex, or
+already run short on context, read the limits below before you install. Mem0, Zep, Letta and
+Claude Code's built-in memory have not been run on the same harness, so there is no figure to
+compare. [docs/why-muninn.md](docs/why-muninn.md) says why for each one.
 
 ## Limits
 
@@ -83,6 +221,13 @@ change first and does nothing until you say yes.
   conversations, and a `git push` does not share it with anyone. Muninn keeps its folder out of
   your repository, so your conversations are not published along with your code.
 - It works with Claude Code and Codex only, for now. Other assistants are planned for later.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/divider-dark.gif">
+    <img src="assets/motion/divider-light.gif" width="100%" alt="">
+  </picture>
+</p>
 
 ## Install
 
@@ -154,6 +299,14 @@ To check it in Claude Code, type `/muninn:status`: it prints a line starting wit
 says `GREEN`. Memory starts filling from that conversation on. If you use both assistants on the
 same project, one `init` covers both.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/install-dark.gif">
+    <img src="assets/motion/install-light.gif" width="720"
+         alt="A Claude Code terminal types the install commands, then /muninn:init and /muninn:status, and ends on MUNINN GREEN.">
+  </picture>
+</p>
+
 What `init` changes in the project:
 
 - It creates the `.muninn/` folder, where the memory is kept, and adds it to `.gitignore`, so
@@ -185,6 +338,70 @@ muninn why "why did we pick zstd"   # what stands now, and what it replaced
 muninn status                        # is everything healthy
 ```
 
+## Questions
+
+<details>
+<summary><b>Does it send my conversations anywhere?</b></summary>
+
+No. There is no account, no server and no cloud service. The memory is a folder called
+`.muninn/` inside your project, and `init` adds it to `.gitignore` so it never reaches a commit.
+On the first session the plugin downloads Muninn itself and checks it against its checksum
+before it runs.
+</details>
+
+<details>
+<summary><b>Will it slow my assistant down?</b></summary>
+
+Not noticeably. The hooks are held to hard limits in CI with a full store of 20 000 records:
+2.8 ms for a session start and 4.0 ms for a message (95th percentile). No AI model runs while it
+answers the assistant.
+</details>
+
+<details>
+<summary><b>What happens if Muninn itself breaks?</b></summary>
+
+Your session carries on. Every hook exits cleanly even when something inside it fails, and the
+error goes to a log in `.muninn/log/`. A test drives the real hooks 200 times per run, including
+with the database corrupted, and fails if a hook blocks or a retired decision leaks out.
+`muninn status` tells you what is wrong.
+</details>
+
+<details>
+<summary><b>Do I need an API key, or does it cost anything to run?</b></summary>
+
+No key and no running cost. Muninn is a single program on your computer, and it does not call
+a paid model.
+</details>
+
+<details>
+<summary><b>Does it clash with Claude Code's own memory?</b></summary>
+
+`init` turns Claude Code's built-in memory off for that project. If you want to keep both, run
+`muninn init --keep-native`.
+</details>
+
+<details>
+<summary><b>Can my team share one memory?</b></summary>
+
+Not yet. Each person's memory is built from their own conversations and stays on their machine.
+A `git push` does not share it.
+</details>
+
+<details>
+<summary><b>How do I see what it remembers, or take it out?</b></summary>
+
+`muninn why "your question"` shows what stands now and what it replaced, and
+`muninn why --all "topic"` includes the retired ones. To remove Muninn from a project, run
+`muninn clean --yes`, which undoes exactly what `init` changed.
+</details>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/divider-dark.gif">
+    <img src="assets/motion/divider-light.gif" width="100%" alt="">
+  </picture>
+</p>
+
 ## For the technically curious
 
 - [How Muninn works, and how well](docs/technical-overview.md): the design, every measurement,
@@ -196,7 +413,10 @@ muninn status                        # is everything healthy
 
 ## About the name
 
-<img src="assets/muninn-symbol.png" alt="" width="96" align="right">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/motion/eye-dark.gif">
+  <img src="assets/motion/eye-light.gif" alt="" width="160" align="right">
+</picture>
 
 In Norse myth, the god Odin keeps two ravens. Every morning they fly out over the world, and every
 evening they come back to tell him what they saw. Huginn is thought; Muninn is memory. In one of
@@ -223,3 +443,6 @@ Muninn is © 2026 ilien and free to use under the
 
 Want to contribute? There is a one-time [Contributor License Agreement](CLA.md); see
 [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The animations in this README are drawn from [`assets/motion/source/`](assets/motion/source/)
+and can be rebuilt with `node export.mjs` there.

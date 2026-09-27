@@ -6,6 +6,11 @@ they are not releases. Releases are the numbered headings, such as 0.2.0. See
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **The README shows what Muninn does, with animations.** The gzip-to-zstd example, the test
+  results, what happens in the background and six everyday cases each have a GIF, in a light and
+  a dark version. A comparison table and a questions section cover what people ask before
+  installing. The GIFs are drawn from `assets/motion/source/scenes.html` and rebuilt with
+  `node export.mjs` in that folder.
 - **Windows, macOS and Linux, each checked by CI.** Until now only Linux ran the tests, and the
   Windows build did not compile: the background writer was started with a Unix-only call. CI
   now runs the whole test suite on all three systems, and on each one it installs the plugin

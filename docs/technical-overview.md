@@ -42,6 +42,14 @@ change and said yes.
 
 ## How it works
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/motion/flow-dark.gif">
+    <img src="../assets/motion/flow-light.gif" width="100%"
+         alt="Diagram of hooks, a read path, a write path and the store. A packet travels step by step: the session catalog, a message matched against active cards, the match returned as evidence, an edit denied by a rule, the transcript turned into a new card, and a commit that moves an old card to retired.">
+  </picture>
+</p>
+
 When a session ends, Muninn reads the conversation and keeps the parts that are decisions,
 corrections, rules or dead ends. Each one becomes a small card: the topic, the value, where it
 came from, and the place in the transcript it came from. The card holds your words verbatim, so
