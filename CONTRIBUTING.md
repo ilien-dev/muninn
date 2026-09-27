@@ -16,9 +16,10 @@ contribution public under the AGPL.
 
 ## Branches and pull requests
 
-`master` takes changes only through a pull request. Name your branch `feature/<name>`, with
-the name in lowercase (letters, digits, `.`, `_` and `-`), for example `feature/fix-windows-install`,
-and open the pull request against `master`. A check fails any other branch name, and a pull
+`master` takes changes only through a pull request, from the maintainer too. Name your branch
+`feature/<name>`, where the name is at least three lowercase words joined by hyphens (letters
+and digits only, no underscores or dots), for example `feature/fix-windows-install`, and open
+the pull request against `master`. A check fails any other branch name, and a pull
 request merges after the maintainer approves it.
 
 ## Before you open a pull request
