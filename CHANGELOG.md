@@ -6,6 +6,21 @@ they are not releases. Releases are the numbered headings, such as 0.2.0. See
 
 ## 1.0.0 — prepared, not yet tagged
 
+- **The plugin installs from its marketplace, in Claude Code and in Codex.** `plugin/bin/` is
+  not in the repository, so a plugin installed with `/plugin install` had no binary and every
+  hook failed. The SessionStart hook now downloads the release binary for the plugin's version
+  on the first session after an install or an update, checks it, and runs it; later sessions
+  go straight to it. Codex reads the same marketplace and gets its own manifest and hooks file
+  (`plugin/.codex-plugin/`, `plugin/hooks/codex.json`). Measured on local copies of the
+  marketplace, in both assistants: install, `init`, memory delivered at the next session, then
+  an update to a new version with memory still delivered and no second `init`.
+- **`/muninn:init`** turns Muninn on for the project from inside Claude Code.
+- **`muninn init --codex` refuses to run from a plugin's binary.** The hooks it writes pin that
+  path, which the next update deletes, and the Codex plugin already fires the same hooks.
+- **Releases no longer rewrite the version at tag time.** The workflow checks that the tag
+  matches `Cargo.toml`, a test checks that every manifest matches too, and
+  `scripts/bump-version.sh` sets all of them at once. `scripts/install.sh` moved to
+  `plugin/scripts/install.sh`, so the plugin can call it.
 - **`muninn init` keeps the whole `.muninn/` folder out of version control.** It used to ignore
   only the database, logs and state, which left the Markdown mirror (`records/`, `index.md`)
   and `compiled/` exposed to a `git add .`: every record's words, retired ones included,

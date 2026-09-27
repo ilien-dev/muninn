@@ -70,8 +70,9 @@ impl Report {
 /// and the writing hooks are then the first to refuse it.
 fn heartbeat_fix(err: &str) -> &'static str {
     if err.contains("newer than this binary supports") {
-        "the binary the hooks run is older than the store: replace it with the newer build \
-         (`scripts/install.sh`, or copy `target/release/muninn` over the one in the plugin's `bin/`)"
+        "the binary the hooks run is older than the store: update the plugin (Claude Code: \
+         `/plugin`, Codex: `codex plugin marketplace upgrade`), or copy `target/release/muninn` \
+         over the one in the plugin's `bin/`"
     } else {
         "the failing hook's error is above; its full history is in `.muninn/log/heartbeat.jsonl`"
     }

@@ -1,0 +1,34 @@
+#!/bin/sh
+# SessionStart entry for the plugin. Every other hook calls bin/muninn directly.
+#
+# bin/ is not in the repository, so a plugin installed or updated from a marketplace
+# arrives without the binary, and each update lands in a new directory. The first session
+# after an install or an update downloads the release that matches this plugin's version
+# into the plugin's own bin/, through install.sh (checksum verified, Sigstore signature
+# when cosign is installed). Every later session finds it there and only pays for one
+# exec. A failed download never blocks the session: it says why on stderr and exits 0,
+# and the next session tries again.
+root="${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}}"
+bin="$root/bin/muninn"
+if [ ! -x "$bin" ] && [ ! -x "$bin.exe" ]; then
+  manifest="$root/.claude-plugin/plugin.json"
+  [ -f "$manifest" ] || manifest="$root/.codex-plugin/plugin.json"
+  version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)
+  # stdin carries the hook's JSON for the binary; stdout is the hook's answer
+  if ! MUNINN_VERSION="$version" MUNINN_BIN_DIR="$root/bin" \
+       sh "$root/scripts/install.sh" "$root/bin" </dev/null >&2; then
+    echo "muninn: could not download muninn $version into $root/bin; memory is off for this session and the next one will retry" >&2
+    exit 0
+  fi
+fi
+[ -x "$bin" ] || bin="$bin.exe"
+# `muninn` by name: Claude Code puts this plugin's bin/ on the agent's PATH, Codex does not,
+# and a person typing `muninn init` in a terminal has neither. Keep a link in
+# ~/.local/bin pointing at the current version's binary. A regular file there is someone's
+# own install and is left alone.
+link="${MUNINN_BIN_DIR:-$HOME/.local/bin}/muninn"
+if [ -L "$link" ] || [ ! -e "$link" ]; then
+  [ "$(readlink "$link" 2>/dev/null)" = "$bin" ] ||
+    { mkdir -p "$(dirname "$link")" && ln -sf "$bin" "$link"; } 2>/dev/null || true
+fi
+exec "$bin" hook SessionStart

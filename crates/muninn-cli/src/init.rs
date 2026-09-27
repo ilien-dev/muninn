@@ -297,7 +297,7 @@ fn shell_quote_binary(binary: &Path) -> Result<String> {
         bail!(
             "refusing to write .codex/hooks.json: the muninn binary path contains {bad:?}, \
              which cannot be quoted safely for a shell-form hook ({s}). Install the binary \
-             somewhere without it (scripts/install.sh) and re-run `muninn init --codex`."
+             somewhere without it (plugin/scripts/install.sh) and re-run `muninn init --codex`."
         );
     }
     Ok(format!("'{s}'"))
@@ -329,6 +329,22 @@ pub fn codex_hooks_json(binary: &Path) -> Result<serde_json::Value> {
 }
 
 pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
+    if opts.codex {
+        let bin = std::env::current_exe().context("locating muninn binary")?;
+        // A plugin's binary lives in a directory named after its version, which the next
+        // update replaces: hooks pinned to it stop at the first upgrade, and the Codex plugin
+        // already runs the same hooks, so the project file would fire every one twice.
+        if let Some(root) = bin.parent().and_then(Path::parent) {
+            if root.join(".codex-plugin").is_dir() || root.join(".claude-plugin").is_dir() {
+                bail!(
+                    "--codex is for a binary installed with install.sh; this one belongs to the \
+                     plugin ({}). The Codex plugin already installs these hooks: `codex plugin \
+                     marketplace add ilien-dev/muninn`, then `codex plugin add muninn@muninn`.",
+                    bin.display()
+                );
+            }
+        }
+    }
     let mut touched: Vec<String> = Vec::new();
     let mut st = load_state(paths);
     for d in paths.all_dirs() {
@@ -534,6 +550,43 @@ mod tests {
                 a["hooks"][0]["command"], b["hooks"][0]["command"],
                 "{k}: command"
             );
+        }
+    }
+
+    /// The Codex plugin ships its own hooks file, which Codex reads instead of the Claude
+    /// Code one. It must run the same events, matchers and timeouts as `init --codex`, with
+    /// the binary under `${PLUGIN_ROOT}` (Codex substitutes it before the shell runs) and
+    /// SessionStart through the script that downloads the binary on first use.
+    #[test]
+    fn the_codex_plugin_hooks_match_the_generator() {
+        let mut generated = codex_hooks_json(Path::new("${PLUGIN_ROOT}/bin/muninn")).unwrap();
+        generated["hooks"]["SessionStart"][0]["hooks"][0] = serde_json::json!({
+            "type": "command", "command": "'${PLUGIN_ROOT}/scripts/session-start'", "timeout": 120
+        });
+        let shipped: serde_json::Value =
+            serde_json::from_str(include_str!("../../../plugin/hooks/codex.json")).unwrap();
+        assert_eq!(generated["hooks"], shipped["hooks"]);
+        let manifest: serde_json::Value =
+            serde_json::from_str(include_str!("../../../plugin/.codex-plugin/plugin.json"))
+                .unwrap();
+        assert_eq!(manifest["hooks"], "./hooks/codex.json");
+    }
+
+    /// A marketplace install reads the version from the manifests in the repository, and the
+    /// plugin downloads the release binary tagged with that version. A manifest that names a
+    /// different version than the binary it is built with downloads another release, or none.
+    #[test]
+    fn every_manifest_carries_the_binary_version() {
+        let v = muninn_core::VERSION;
+        let read = |s: &str| serde_json::from_str::<serde_json::Value>(s).unwrap();
+        let claude = read(include_str!("../../../plugin/.claude-plugin/plugin.json"));
+        let codex = read(include_str!("../../../plugin/.codex-plugin/plugin.json"));
+        let market = read(include_str!("../../../.claude-plugin/marketplace.json"));
+        assert_eq!(claude["version"], v, "plugin/.claude-plugin/plugin.json");
+        assert_eq!(codex["version"], v, "plugin/.codex-plugin/plugin.json");
+        assert_eq!(market["metadata"]["version"], v, "marketplace metadata");
+        for p in market["plugins"].as_array().unwrap() {
+            assert_eq!(p["version"], v, "marketplace entry {}", p["name"]);
         }
     }
 
