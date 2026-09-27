@@ -47,7 +47,7 @@ pub fn sole_anchor<T: AsRef<str>>(files: &[T]) -> Option<String> {
 /// Detect the harness from the file and parse from `start_offset`.
 pub fn parse_any(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if name.starts_with("rollout-") || path.to_string_lossy().contains("/.codex/") {
+    if name.starts_with("rollout-") || path.components().any(|c| c.as_os_str() == ".codex") {
         codex::parse(path, start_offset)
     } else {
         claude::parse(path, start_offset)

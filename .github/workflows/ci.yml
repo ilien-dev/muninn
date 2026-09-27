@@ -1,8 +1,10 @@
 name: ci
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, "release-*"]
   pull_request:
+  # release.yml calls this workflow, so no tag publishes a build these checks have not passed
+  workflow_call:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -35,8 +37,43 @@ jobs:
         run: |
           ./target/release/muninn-bench enforce \
             --cases crates/muninn-bench/corpora/claude-md/enforce_cases_holdout3.jsonl
+  # The full suite on the two other platforms the release ships for. The latency gates and
+  # the fault suite stay on Linux, where their contracts were measured.
+  test-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --features exact-tokens
+  # What a marketplace install does, on each platform, against a local mirror of the
+  # release assets: download, checksum, init, status, memory delivered at the next session.
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+      - run: cargo build --release -p muninn-cli
+      - name: install through the plugin's SessionStart script
+        shell: bash
+        run: |
+          bin=target/release/muninn; [ -f "$bin.exe" ] && bin="$bin.exe"
+          scripts/ci-install-smoke.sh "$bin"
+      - name: Windows hooks as Codex (cmd.exe) and Claude Code (exec form) spawn them
+        if: runner.os == 'Windows'
+        run: python scripts/ci-windows-hooks.py target/release/muninn.exe
   build:
-    needs: test
+    needs: [test, test-os, install]
     strategy:
       matrix:
         include:
