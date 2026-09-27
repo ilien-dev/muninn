@@ -47,8 +47,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # dist-* only: the ci job this workflow calls uploads its own muninn-<target> artifacts
+      # with the raw build output (muninn, muninn.exe, muninn.pdb, muninn.d), which are not
+      # release assets
       - uses: actions/download-artifact@v8
-        with: { path: dist, merge-multiple: true }
+        with: { path: dist, pattern: "dist-*", merge-multiple: true }
       # plugin/bin/ is gitignored, so a plugin installed from the marketplace has no binary
       # until its SessionStart hook (plugin/scripts/session-start) downloads the asset for its
       # version from this release. The per-target bundles below are for installing by hand.
