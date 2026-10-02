@@ -4,6 +4,20 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 1.0.4 — 2026-10-02
+
+- **On Windows, typing `muninn` opened "Select an app to open 'muninn'".** The session start
+  keeps a copy of the binary in `~/.local/bin` for the terminal. Git Bash's `test` finds
+  `muninn.exe` when asked for `muninn`, so the script took the Unix branch and `ln -s`, which
+  Git Bash turns into a copy, wrote a file named `muninn` with no extension. PowerShell finds
+  that file first on PATH and hands it to Windows to open as a document. The script now looks
+  for `muninn.exe` first, and a copy left by the old check is renamed to `muninn.exe`, or
+  removed when a `muninn.exe` is already there. The install smoke test checks the names
+  exactly.
+- **On Windows, the background `maintain` no longer opens a `git.exe` window.** It started
+  with no console at all, so each `git` it ran got a new visible one. It now starts with a
+  hidden console that its children share.
+
 ## 1.0.3 — 2026-10-02
 
 - **A store written by a newer Muninn could be stamped back to an older version.** Opening the
