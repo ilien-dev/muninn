@@ -144,7 +144,7 @@ before the first cell.
 ```bash
 DB=$HOME/Projects/dreambench-swe
 EXT=$HOME/Projects/muninn/crates/muninn-bench/experiment/dreambench
-OUT=$HOME/Projects/muninn/crates/muninn-bench/experiment/results/dreambench-public
+OUT=$HOME/Projects/muninn/crates/muninn-bench/experiment/results/dbench
 
 # one-time setup
 cd $DB
@@ -162,8 +162,8 @@ docker build -t dreambench-swe-codex-agent:latest -f scripts/Dockerfile.codex-ag
 # grid: 4 conditions x 3 seeds x 24 sessions
 export PATH=$DB/.venv/bin:$PATH DREAMBENCH_ROOT=$DB PYTHONDONTWRITEBYTECODE=1
 export DREAMBENCH_MEM0_OFFLINE=1 MEM0_TELEMETRY=False FASTEMBED_CACHE_PATH=$HOME/.cache/fastembed
-export DREAMBENCH_MEM0_FIXTURE_ROOT=$OUT/mem0-exchanges DREAMBENCH_MEM0_OFFLINE_ROOT=$OUT/mem0-stores
-export MUNINN_DREAMBENCH_STORE_ROOT=$OUT/muninn-stores HF_HUB_OFFLINE=1
+export DREAMBENCH_MEM0_FIXTURE_ROOT=$OUT/m0x DREAMBENCH_MEM0_OFFLINE_ROOT=$OUT/m0s
+export MUNINN_DREAMBENCH_STORE_ROOT=$OUT/mns HF_HUB_OFFLINE=1
 mkdir -p $OUT/raw $OUT/logs
 for seed in 1 2 3; do
   for cond in B0 B5 B5-MEM0-LIT MUNINN; do

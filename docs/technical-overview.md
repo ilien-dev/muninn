@@ -430,11 +430,11 @@ The repository is its own plugin marketplace, and both assistants read it from t
 
 ```sh
 # Claude Code (or /plugin marketplace add … inside a session)
-claude plugin marketplace add ilien-dev/muninn
+claude plugin marketplace add ilien-dev/muninn --sparse .claude-plugin plugin
 claude plugin install muninn@muninn
 
 # Codex
-codex plugin marketplace add ilien-dev/muninn
+codex plugin marketplace add ilien-dev/muninn --sparse .claude-plugin --sparse plugin
 codex plugin add muninn@muninn        # then approve the hooks once in /hooks
 ```
 

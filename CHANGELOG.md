@@ -4,6 +4,20 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 1.0.1 — 2026-10-02
+
+- **Installing on Windows failed with "Filename too long".** Claude Code clones the whole
+  repository into `C:\Users\<name>\.claude\plugins\marketplaces\`, and Git for Windows refuses
+  paths over 260 characters unless `core.longpaths` is on, which it is not by default. Some
+  benchmark result files had paths of up to 224 characters before that prefix. Every tracked
+  path now has at most 170: pmbench run folders keep only their timestamp, and
+  `results/dreambench-public/` is now `results/dbench/`. The files themselves did not change,
+  and `results/RENAMES.tsv` maps each old path to its new one. A test fails if a tracked path
+  grows past 170 characters again.
+- **The install commands download only the plugin.** With `--sparse .claude-plugin plugin` in
+  Claude Code, or `--sparse .claude-plugin --sparse plugin` in Codex, the marketplace takes
+  about 8 MB instead of the whole repository. The command without the flag still works.
+
 ## 1.0.0 — 2026-09-27
 
 - **Easier to find.** The README opens with what Muninn is for (persistent memory for Claude Code
