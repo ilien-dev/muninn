@@ -21,7 +21,10 @@ if [ ! -x "$bin" ] && [ ! -x "$bin.exe" ]; then
     exit 0
   fi
 fi
-[ -x "$bin" ] || bin="$bin.exe"
+# .exe first: Git Bash's `test` resolves `muninn` to `muninn.exe`, so `[ -x "$bin" ]` holds on
+# Windows too, and the link below came out as an extensionless copy that PowerShell and
+# cmd hand to "Select an app to open 'muninn'" instead of running
+if [ -f "$bin.exe" ]; then bin="$bin.exe"; elif [ ! -x "$bin" ]; then bin="$bin.exe"; fi
 # `muninn` by name: Claude Code puts this plugin's bin/ on the agent's PATH, Codex does not,
 # and a person typing `muninn init` in a terminal has neither. Keep a link in
 # ~/.local/bin pointing at the current version's binary. A regular file there is someone's
@@ -33,6 +36,14 @@ case "$bin" in
     # copy stale. Keep a copy marked as ours, refreshed when the plugin's binary is newer;
     # a muninn.exe there without the mark is someone's own install and is left alone.
     mark="$link.plugin"
+    # The extensionless copy the old check left behind, found by its exact name (`-e` would
+    # match muninn.exe too). It is a Windows binary, starts with MZ, and nothing installs one
+    # there on purpose: it becomes our marked muninn.exe, or goes if one already exists.
+    if ls -A "$(dirname "$link")" 2>/dev/null | grep -qx muninn &&
+       [ "$(head -c 2 "$link" 2>/dev/null)" = MZ ]; then
+      if ls -A "$(dirname "$link")" | grep -qx muninn.exe; then rm -f "$link"
+      else mv -f "$link" "$link.exe" && : > "$mark"; fi
+    fi 2>/dev/null || true
     if [ ! -e "$link.exe" ] || { [ -e "$mark" ] && [ "$bin" -nt "$link.exe" ]; }; then
       { mkdir -p "$(dirname "$link")" && cp -f "$bin" "$link.exe" && : > "$mark"; } 2>/dev/null || true
     fi ;;

@@ -35,7 +35,9 @@ echo "== first session: download, verify, serve"
 event s1 | "$work/plugin/scripts/session-start" > "$work/out1.json"
 test -x "$work/plugin/bin/muninn$ext"
 case "$ext" in
-  .exe) test -f "$HOME/.local/bin/muninn.exe" && test -f "$HOME/.local/bin/muninn.plugin" ;;
+  # by exact name: Git Bash's `test` would accept an extensionless muninn as muninn.exe
+  .exe) ls -A "$HOME/.local/bin" | grep -qx muninn.exe && ls -A "$HOME/.local/bin" | grep -qx muninn.plugin &&
+        ! ls -A "$HOME/.local/bin" | grep -qx muninn ;;
   *)    test -L "$HOME/.local/bin/muninn" ;;
 esac
 
