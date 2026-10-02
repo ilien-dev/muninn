@@ -757,9 +757,10 @@ pub fn spawn_detached(paths: &ProjectPaths) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no console, and a Ctrl+C sent to
-        // the harness does not reach it
-        cmd.creation_flags(0x0000_0008 | 0x0000_0200);
+        // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: a hidden console, and a Ctrl+C sent
+        // to the harness does not reach it. Not DETACHED_PROCESS: with no console at all,
+        // every console child it runs (git) gets a fresh visible window of its own
+        cmd.creation_flags(0x0800_0000 | 0x0000_0200);
         // Windows children inherit every inheritable handle, and the hook's own stdin,
         // stdout and stderr are pipes the harness reads to EOF: the writer would hold them
         // open and the harness would wait for it, 5.7 s on a locked store in CI. The hook's
