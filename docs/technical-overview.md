@@ -26,8 +26,9 @@ releases are numbered like 0.2.0.
   [`research/00-evidence-log.md`](../research/00-evidence-log.md).
 
 Every run is registered in
-[`experiment/PREREGISTRATION.md`](../crates/muninn-bench/experiment/PREREGISTRATION.md), with its
-raw data under `crates/muninn-bench/experiment/results/`.
+[`experiment/PREREGISTRATION.md`](https://github.com/ilien-dev/muninn-experiments/blob/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/PREREGISTRATION.md), with its
+raw data under `experiment/results/`, both in
+[ilien-dev/muninn-experiments](https://github.com/ilien-dev/muninn-experiments).
 
 ## What it does
 
@@ -143,8 +144,8 @@ evidence ids point into [`research/00-evidence-log.md`](../research/00-evidence-
 ## Does it work?
 
 Every result below comes from a test whose rules were written and timestamped before it ran, and
-the raw data is in this repository. Most of the grids can be re-run from
-[`REPRODUCE.md`](../crates/muninn-bench/experiment/REPRODUCE.md); the ones seeded from private
+the raw data is in [ilien-dev/muninn-experiments](https://github.com/ilien-dev/muninn-experiments). Most of the grids can be re-run from
+[`REPRODUCE.md`](https://github.com/ilien-dev/muninn-experiments/blob/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/REPRODUCE.md); the ones seeded from private
 transcripts of this project cannot, and they say so.
 
 The first claim is not a score. A retired decision is never handed to the assistant, because the
@@ -419,7 +420,7 @@ one command and is in the repository, so a later version can be re-tested.
 The full list of what is claimed, what is not, and the limits of each result is in
 [`docs/claims.md`](claims.md). What Muninn deliberately does not do is in
 [`docs/scope.md`](scope.md). The commands to reproduce every number are in
-[`crates/muninn-bench/experiment/REPRODUCE.md`](../crates/muninn-bench/experiment/REPRODUCE.md).
+[`experiment/REPRODUCE.md`](https://github.com/ilien-dev/muninn-experiments/blob/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/REPRODUCE.md) in ilien-dev/muninn-experiments.
 
 ## Install
 
@@ -430,11 +431,11 @@ The repository is its own plugin marketplace, and both assistants read it from t
 
 ```sh
 # Claude Code (or /plugin marketplace add … inside a session)
-claude plugin marketplace add ilien-dev/muninn --sparse .claude-plugin plugin
+claude plugin marketplace add ilien-dev/muninn
 claude plugin install muninn@muninn
 
 # Codex
-codex plugin marketplace add ilien-dev/muninn --sparse .claude-plugin --sparse plugin
+codex plugin marketplace add ilien-dev/muninn
 codex plugin add muninn@muninn        # then approve the hooks once in /hooks
 ```
 

@@ -8,7 +8,8 @@ evidence does not support; they are listed so that nobody has to discover them.
 Conventions: point estimate [95 % CI]; CIs are bootstrap over cells, clustered by task where
 the pre-registration says so; "cells" are one model invocation on one task in one arm. Every
 grid, its pre-registration and its raw data are indexed in
-`crates/muninn-bench/experiment/README.md`; the commands are in `REPRODUCE.md` there. Test
+[`experiment/README.md`](https://github.com/ilien-dev/muninn-experiments/blob/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/README.md) in ilien-dev/muninn-experiments, and the paths
+below are relative to that repository; the commands are in `REPRODUCE.md` there. Test
 names: v1, v17, v43 and the like are head-to-head runs numbered in the order they were registered
 (not releases of Muninn, which look like 0.2.0); Gate 1 to Gate 5 are the acceptance tests fixed at
 design time; loop N is a round of the retirement tests. See [how to read the test names](technical-overview.md#how-to-read-the-test-names).
@@ -54,7 +55,7 @@ design time; loop N is a round of the retirement tests. See [how to read the tes
   whether it has an auto-memory directory, the agent answers `no memory` under the arm's own
   settings and under the operator's defaults, where auto memory is on by default. A
   session told to remember a fact acknowledges it and writes 0 files
-  (`crates/muninn-bench/experiment/results/native-probe/`, reproducible with
+  (`experiment/results/native-probe/`, reproducible with
   `h2h/competitors/native/probe.sh`, Claude Code 2.1.268). Running the arm anyway would put a
   0/27 in the table that measured the harness's session mode, not its memory. What that does
   support, narrowly: **on this version Muninn's hooks deliver in `-p` sessions and the native
@@ -100,7 +101,7 @@ design time; loop N is a round of the retirement tests. See [how to read the tes
   returns `{"facts": []}` for **0 of 4** engineering decisions, while the same model under a
   plain instruction extracts them. The arm would therefore store nothing and score 0/27, which
   would be a measurement of that model's reading of Mem0's prompt under Mem0's name
-  (`crates/muninn-bench/experiment/results/mem0-extractor/`, one command to reproduce). Giving
+  (`experiment/results/mem0-extractor/`, one command to reproduce). Giving
   Mem0 a rewritten extraction prompt would make it work and is refused: tuning a competitor's
   prompt is not measuring the competitor.
 - **DreamBench-SWE.** The confirmatory traps need the authors' private oracles (request drafted). The

@@ -6,7 +6,9 @@
 //! share, whether the later message announces a change and whether it names a new value.
 //!
 //!   cargo run -p muninn-capture --example supersede_probe -- \
-//!       crates/muninn-bench/experiment/loop6/heldout_phrasings.json
+//!       <muninn-experiments>/experiment/loop6/heldout_phrasings.json
+//!
+//! (https://github.com/ilien-dev/muninn-experiments)
 //!
 //! Add `--misses` to print only the pairs that are not detected.
 
