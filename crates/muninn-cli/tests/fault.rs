@@ -391,7 +391,9 @@ fn s10_schema_versions() {
         let s = summary(p.path());
         assert!(!s.starts_with("MUNINN RED"), "after migration: {s}");
         // newer: refuse to touch, report RED
+        // the first SessionStart spawned a detached `maintain` that may still hold the lock
         let conn = rusqlite::Connection::open(db_path(p.path())).unwrap();
+        conn.busy_timeout(Duration::from_secs(10)).unwrap();
         conn.execute("UPDATE meta SET value='99' WHERE key='schema_version'", [])
             .unwrap();
         drop(conn);

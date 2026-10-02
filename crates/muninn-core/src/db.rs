@@ -92,7 +92,19 @@ impl Db {
     }
 
     /// Apply the schema and record its version. Idempotent.
+    ///
+    /// One IMMEDIATE transaction around the whole of it: the version read, the schema and the
+    /// version write must see the same file. Without it a second writer (a detached
+    /// `maintain` racing a hook) could read an old version, wait while a newer binary
+    /// stamps its own, and then write this binary's version over it.
     pub fn migrate(&self) -> Result<()> {
+        let tx = self.write_tx()?;
+        self.migrate_locked()?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn migrate_locked(&self) -> Result<()> {
         // The version has to be read before the schema is applied: every statement in it is
         // `IF NOT EXISTS`, so a table whose *definition* changed survives its own schema.
         let before = self.schema_version()?;
