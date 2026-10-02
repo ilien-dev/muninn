@@ -2,12 +2,16 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # tag.yml dispatches this on the tag it creates (a GITHUB_TOKEN push triggers nothing)
+  workflow_dispatch:
 permissions:
   contents: write
   id-token: write   # Sigstore keyless signing
 jobs:
   # every check CI runs on master, on this exact commit, before anything is built or published
   ci:
+    # a dispatch on a branch instead of a tag would publish nothing coherent
+    if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/ci.yml
   build:
     needs: ci

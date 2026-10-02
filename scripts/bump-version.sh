@@ -1,9 +1,8 @@
 #!/bin/sh
 # Set one version everywhere a release reads it: Cargo.toml (the binary), both plugin
 # manifests and the marketplace. A marketplace install takes the version from these files
-# on the default branch and downloads the release tagged with it, so the order is:
-#   scripts/bump-version.sh 1.0.1 && git commit -am "Release 1.0.1" && git tag v1.0.1
-#   git push && git push --tags
+# on the default branch and downloads the release tagged with it. Commit the change in a
+# pull request; when it merges, .github/workflows/tag.yml tags v<version> and starts the release.
 # `every_manifest_carries_the_binary_version` fails if any of them is left behind.
 set -eu
 new="${1:?usage: scripts/bump-version.sh X.Y.Z}"

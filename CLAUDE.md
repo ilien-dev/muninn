@@ -23,6 +23,7 @@ CI runs exactly these; a change is finished when all of them pass.
 - Nothing enters the hot path without a `perf --strict` figure. Records are retired (`invalid=1`), never deleted. Trust derives from `origin`, never from wording.
 - Every number in docs is measured or cited by evidence id; estimates are labelled. Never describe the output of a command that did not run.
 - Experiments live in `ilien-dev/muninn-experiments`: pre-register in its `experiment/PREREGISTRATION.md` before any cell runs; cells stay confined to their checkout; raw results are committed under its `experiment/results/`.
+- Every PR sets its release version: `scripts/bump-version.sh X.Y.Z` (patch for fixes and docs, minor for features, major for breaking changes) plus a CHANGELOG entry under that version. On merge, `.github/workflows/tag.yml` tags `vX.Y.Z` and runs the release; never push a tag by hand.
 - Every user-facing file (README, `docs/`, CHANGELOG, release notes, PR descriptions) goes through the `quiron` skill before it is committed — new files and every later edit to them alike, so they stay free of AI-sounding prose. The skill rewrites style only; figures, evidence ids and caveats stay exactly as measured.
 
 ## This repository dogfoods Muninn

@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Persistent memory for Claude Code and Codex",
-    "version": "1.0.1"
+    "version": "1.0.2"
   },
   "plugins": [
     {
       "name": "muninn",
       "source": "./plugin",
       "description": "Persistent memory for Claude Code and Codex that never serves a replaced decision, and turns CLAUDE.md / AGENTS.md rules into permission rules and deny hooks. Local: one binary, SQLite, no cloud, no model in the read path.",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "author": {
         "name": "Muninn contributors"
       },
