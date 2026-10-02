@@ -1,0 +1,35 @@
+name: tag
+# A merge to master that changes the version in Cargo.toml tags that commit v<version> and starts
+# the release. Every other merge finds the tag already there and does nothing.
+#
+# A tag pushed with GITHUB_TOKEN does not trigger other workflows, so release.yml's `push: tags`
+# never fires for these tags; this job dispatches it instead, on the tag's ref. A tag pushed by
+# hand still triggers release.yml the usual way.
+on:
+  push:
+    branches: [master]
+permissions:
+  contents: write   # push the tag
+  actions: write    # dispatch release.yml
+concurrency: { group: tag, cancel-in-progress: false }
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - name: tag the version if it is new
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists; nothing to release"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Muninn $version" "$GITHUB_SHA"
+          git push origin "$tag"
+          gh workflow run release.yml --ref "$tag"
+          echo "tagged $GITHUB_SHA as $tag and started release.yml" >> "$GITHUB_STEP_SUMMARY"

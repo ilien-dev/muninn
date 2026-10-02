@@ -4,6 +4,19 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 1.0.2 — 2026-10-02
+
+- **Installing downloads far less.** The experiments (pre-registrations, gate reports,
+  harnesses and raw results, 35,796 files) moved to
+  [ilien-dev/muninn-experiments](https://github.com/ilien-dev/muninn-experiments), copied byte
+  for byte. The repository a marketplace install clones went from 36,322 files to 528, and from
+  about 134 MB to about 27 MB, most of it the README's GIFs. The install commands no longer need
+  `--sparse`. The rule corpus the CI gates read stays here, and the docs link to the experiments
+  by permalink.
+- **A version bump releases itself.** When a pull request that changes the version in
+  `Cargo.toml` merges, the `tag` workflow tags the merge commit and starts the release. Other
+  merges do nothing.
+
 ## 1.0.1 — 2026-10-02
 
 - **Installing on Windows failed with "Filename too long".** Claude Code clones the whole
