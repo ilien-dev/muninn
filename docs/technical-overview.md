@@ -515,17 +515,20 @@ the Codex plugin already installs the same hooks.
 
 Every version string lives in four places: `Cargo.toml`, both plugin manifests and the
 marketplace. A marketplace install reads them from the default branch and downloads the release
-tagged with that version, so they must agree before the tag is pushed:
+tagged with that version, so they must agree:
 
 ```sh
-scripts/bump-version.sh 1.0.1
-git commit -am "Release 1.0.1" && git tag v1.0.1
-git push && git push --tags
+scripts/bump-version.sh 1.0.2
 ```
+
+Commit that in a pull request with its CHANGELOG entry. When it merges, the `tag` workflow sees
+a version in `Cargo.toml` that has no tag yet, tags the merge commit `v1.0.2` and starts the
+`release` workflow on that tag. A merge that leaves the version alone does nothing. Pushing a
+tag by hand still starts a release.
 
 The `release` workflow fails if the tag and `Cargo.toml` disagree, and
 `every_manifest_carries_the_binary_version` fails `cargo test` if a manifest is left behind.
-Between the push and the end of the release workflow, a user who updates gets a version whose
+Between the merge and the end of the release workflow, a user who updates gets a version whose
 binary is not published yet; their session runs without memory and the next one picks it up.
 
 ### From source
