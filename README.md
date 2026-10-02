@@ -258,9 +258,13 @@ itself asks for; Codex needs nothing extra.
 Type these two lines in Claude Code, one at a time:
 
 ```
-/plugin marketplace add ilien-dev/muninn
+/plugin marketplace add ilien-dev/muninn --sparse .claude-plugin plugin
 /plugin install muninn@muninn
 ```
+
+`--sparse` limits the download to the two folders the plugin needs, about 8 MB. Without it,
+`/plugin marketplace add ilien-dev/muninn` still works but downloads the whole repository,
+benchmark data included.
 
 Restart Claude Code. The first session downloads Muninn itself, about 13 MB, and checks the
 download before using it.
@@ -270,7 +274,7 @@ download before using it.
 Run these in a terminal:
 
 ```sh
-codex plugin marketplace add ilien-dev/muninn
+codex plugin marketplace add ilien-dev/muninn --sparse .claude-plugin --sparse plugin
 codex plugin add muninn@muninn
 ```
 
