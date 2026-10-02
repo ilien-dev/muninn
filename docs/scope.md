@@ -23,5 +23,5 @@ omission. The table mirrors `design/ENGINE.md` §12.
 | Trusting a commit's author | `git log` is read as the repository presents it; anyone who can land a commit can retire a record. Not defended (see `docs/threat-model.md` §6), and strictly less powerful than what that person can already do to the code |
 | Tree-sitter grammars beyond Rust, TypeScript/TSX, JavaScript/JSX, Python, Go | Each grammar adds to the binary; others are added on measured demand: a crate, two `.scm` files, a fixture and a test |
 
-What it does, with numbers, is in `README.md` and the gate reports under
-`crates/muninn-bench/experiment/`.
+What it does, with numbers, is in `README.md` and the gate reports in
+[ilien-dev/muninn-experiments](https://github.com/ilien-dev/muninn-experiments/tree/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/).

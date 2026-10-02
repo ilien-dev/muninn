@@ -53,7 +53,7 @@ Both products ran in one grid, and each built its own memory from the same sessi
 | replaced value written anyway | **2** | 6 |
 
 Muninn wins two phrasings outright and ties the other three. Source:
-`crates/muninn-bench/experiment/results/h2h-v43-*`.
+`experiment/results/h2h-v43-*` in [ilien-dev/muninn-experiments](https://github.com/ilien-dev/muninn-experiments/tree/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/results).
 
 ### A decision replaced in conversation and in the code (test run v17)
 
