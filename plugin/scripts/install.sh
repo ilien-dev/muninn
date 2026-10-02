@@ -7,7 +7,7 @@
 # Verifies the published checksum, and the Sigstore signature when cosign is installed,
 # before placing anything. Not meant for `curl | sh`: download it, read it, run it.
 set -eu
-VERSION="${MUNINN_VERSION:-1.0.2}"
+VERSION="${MUNINN_VERSION:-1.0.3}"
 DEST="${1:-${CLAUDE_PLUGIN_ROOT:-$HOME/.local/share/muninn}/bin}"
 BIN_DIR="${MUNINN_BIN_DIR:-$HOME/.local/bin}"
 OWNER="${MUNINN_REPO:-ilien-dev/muninn}"

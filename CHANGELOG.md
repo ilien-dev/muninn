@@ -4,6 +4,17 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 1.0.3 — 2026-10-02
+
+- **A store written by a newer Muninn could be stamped back to an older version.** Opening the
+  store for writing read the schema version, applied the schema and wrote its own version as
+  separate steps. A second writer, such as the background `maintain` a session start launches,
+  could read the old version, wait while a newer binary recorded its own, and then write the
+  older number over it. The three steps now run in one transaction. The fault test that checks
+  a newer schema is refused failed twice on master's CI: once its own connection hit the
+  background writer's lock, which it now waits out, and once the newer version was gone, which
+  is what this race produces. Neither failure reproduced locally in 600 runs.
+
 ## 1.0.2 — 2026-10-02
 
 - **Installing downloads far less.** The experiments (pre-registrations, gate reports,
