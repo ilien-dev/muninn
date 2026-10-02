@@ -69,9 +69,10 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Four-arm experiment (Gate 2): see experiment/PREREGISTRATION.md
+    /// Four-arm experiment (Gate 2): see experiment/PREREGISTRATION.md in
+    /// https://github.com/ilien-dev/muninn-experiments, which also holds the task files
     Experiment {
-        #[arg(long, default_value = "crates/muninn-bench/experiment/tasks.json")]
+        #[arg(long)]
         config: PathBuf,
         #[arg(long, default_value = "crates/muninn-bench/experiment/out")]
         out: PathBuf,

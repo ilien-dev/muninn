@@ -4,7 +4,7 @@ A local, deterministic memory engine for coding agents: one Rust binary, SQLite 
 The design is fixed by `research/CONCLUSION.md` and `research/00-evidence-log.md`; decisions cite evidence ids such as `[K2]`. `design/ENGINE.md` is the spec, `docs/scope.md` lists what is deliberately not done. Neither is re-litigated without a new measurement.
 
 ## Map
-`crates/muninn-core` store, `schema.sql`, recall, cues, filter, health gate · `muninn-cli` the `muninn` binary: commands and every hook entry (`hook.rs`) · `muninn-capture` transcript and git capture, typed extraction, redaction · `muninn-compile` F2 · `muninn-embed` model2vec sidecar, write path only · `muninn-symbols` tree-sitter graph · `muninn-why` routed responder · `muninn-bench` latency contracts and the experiment runner; gate reports and raw results under `crates/muninn-bench/experiment/`.
+`crates/muninn-core` store, `schema.sql`, recall, cues, filter, health gate · `muninn-cli` the `muninn` binary: commands and every hook entry (`hook.rs`) · `muninn-capture` transcript and git capture, typed extraction, redaction · `muninn-compile` F2 · `muninn-embed` model2vec sidecar, write path only · `muninn-symbols` tree-sitter graph · `muninn-why` routed responder · `muninn-bench` latency contracts, the experiment runner and the rule corpus its CI gates read (`corpora/claude-md`); gate reports, harnesses and raw results are in `ilien-dev/muninn-experiments`.
 
 ## Commands
 ```sh
@@ -22,7 +22,7 @@ CI runs exactly these; a change is finished when all of them pass.
 - Read hooks open the store `query_only`, always exit 0, never load the model. Only `Stop`, `SessionEnd` and `maintain` write, inside `write_tx()`.
 - Nothing enters the hot path without a `perf --strict` figure. Records are retired (`invalid=1`), never deleted. Trust derives from `origin`, never from wording.
 - Every number in docs is measured or cited by evidence id; estimates are labelled. Never describe the output of a command that did not run.
-- Experiments: pre-register in `experiment/PREREGISTRATION.md` before any cell runs; cells stay confined to their checkout; raw results are committed under `results/`.
+- Experiments live in `ilien-dev/muninn-experiments`: pre-register in its `experiment/PREREGISTRATION.md` before any cell runs; cells stay confined to their checkout; raw results are committed under its `experiment/results/`.
 - Every user-facing file (README, `docs/`, CHANGELOG, release notes, PR descriptions) goes through the `quiron` skill before it is committed — new files and every later edit to them alike, so they stay free of AI-sounding prose. The skill rewrites style only; figures, evidence ids and caveats stay exactly as measured.
 
 ## This repository dogfoods Muninn
