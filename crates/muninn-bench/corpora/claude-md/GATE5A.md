@@ -11,7 +11,8 @@ reported in full below, because what they found is the interesting part.
 
 Gate, registered before run 1 and unchanged since: block rate ≥ 0.90 **and** false-block
 rate ≤ 0.10. Pre-registration and both amendments:
-`../../experiment/PREREGISTRATION.md`; raw data `../../experiment/results/gate5a-holdout{1,2,3}/`.
+[`experiment/PREREGISTRATION.md`](https://github.com/ilien-dev/muninn-experiments/blob/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/PREREGISTRATION.md); raw data
+[`experiment/results/gate5a-holdout{1,2,3}/`](https://github.com/ilien-dev/muninn-experiments/tree/bc2fe5c7a73cdee32ea7b8bcccb6daeaf7287bf3/experiment/results) in ilien-dev/muninn-experiments.
 
 The four sets are disjoint by construction — no corpus file appears in two of them, nor in
 either Gate 1 hold-out — and each run happened after its set was labelled and registered and

@@ -1,4 +1,5 @@
-//! Four-arm experiment runner (Gate 2). See experiment/PREREGISTRATION.md.
+//! Four-arm experiment runner (Gate 2). See experiment/PREREGISTRATION.md in
+//! https://github.com/ilien-dev/muninn-experiments.
 //! Every cell: fresh worktree at base_ref, fresh store seeded from prior-session
 //! transcripts, one `claude -p` run with the hooks wired through `--settings`,
 //! then the task's executable oracle. Nothing is scored by a model.

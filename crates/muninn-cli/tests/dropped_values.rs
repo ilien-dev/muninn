@@ -1,7 +1,7 @@
 //! The fourth invalidation trigger, end to end: a decision whose value the code stopped
 //! holding is retired, and one whose value the code still holds is not.
 //!
-//! The grids in `experiment/loop8` and `loop9` measure how often this pays across thirty
+//! The grids in `experiment/loop8` and `loop9` (ilien-dev/muninn-experiments) measure how often this pays across thirty
 //! held-out replacements. This test fixes the three properties those grids cannot express as
 //! a pass/fail, and that a refactor could quietly remove: a one-for-one swap is enough on its
 //! own, a commit about something else retires nothing, and a value still present elsewhere in
