@@ -43,7 +43,7 @@ or acceptance of a pull request that adds the policy so they can run it.
 
 Four conditions — B0 (no memory), B5 (the harness's literal event memory), B5-MEM0-LIT (Mem0 OSS offline,
 `infer=False`), MUNINN (`muninn_policy.py`) — × seeds 1–3 on the 24 public v0 tasks, Codex 0.142.0 in
-Docker, `gpt-5.5`. Raw data `results/dreambench-public/`.
+Docker, `gpt-5.5`. Raw data `results/dbench/` (renamed from `dreambench-public/` to fit Windows path limits; old to new paths in `results/RENAMES.tsv`).
 
 **The grid stopped on the ChatGPT plan's usage limit** at 10:18 UTC: every later session failed with
 "You've hit your usage limit" (`agent_error`). Complete runs (24/24 sessions `completed`):
