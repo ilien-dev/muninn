@@ -76,9 +76,10 @@ impl Db {
                 conn.execute_batch("PRAGMA query_only=1; PRAGMA temp_store=MEMORY;")?;
             }
             Mode::ReadWrite => {
+                set_wal(&conn, busy_ms)?;
                 conn.execute_batch(
-                    "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; \
-                     PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;",
+                    "PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; \
+                     PRAGMA foreign_keys=ON;",
                 )?;
             }
         }
@@ -272,6 +273,32 @@ impl Db {
     }
 }
 
+/// Put the file in WAL mode, waiting up to `busy_ms` for another writer.
+///
+/// A file that is not in WAL mode yet (new, or an empty file where the store should be)
+/// needs an exclusive lock for the switch, and SQLite takes that lock without consulting
+/// the busy handler: with a second writer in the file the pragma fails at once with
+/// SQLITE_BUSY, whatever `busy_timeout` says. A hook racing the detached `maintain` on
+/// such a file gave up there and left the store unmigrated. The wait is done here instead.
+fn set_wal(conn: &Connection, busy_ms: u64) -> Result<()> {
+    let t = std::time::Instant::now();
+    let mut attempt = 0;
+    loop {
+        match conn.execute_batch("PRAGMA journal_mode=WAL;") {
+            Ok(()) => return Ok(()),
+            Err(e)
+                if e.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy)
+                    && t.elapsed() < Duration::from_millis(busy_ms) =>
+            {
+                let step = BUSY_BACKOFF_MS[attempt.min(BUSY_BACKOFF_MS.len() - 1)];
+                std::thread::sleep(Duration::from_millis(step));
+                attempt += 1;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
 /// Epoch milliseconds. `MUNINN_FAKE_NOW_MS` overrides it for tests (clock faults).
 pub fn now_ms() -> i64 {
     if let Ok(v) = std::env::var("MUNINN_FAKE_NOW_MS") {
@@ -301,6 +328,34 @@ mod tests {
             .conn
             .execute("INSERT INTO meta(key,value) VALUES('x','y')", []);
         assert!(err.is_err(), "read-only handle must not write");
+    }
+
+    /// An empty file where the store should be, and several writers opening it at once: a
+    /// hook and the detached `maintain` its SessionStart spawned. Every one of them has to
+    /// come back with a migrated store.
+    #[test]
+    fn writers_racing_to_open_an_empty_store_all_migrate_it() {
+        for _ in 0..50 {
+            let tmp = tempfile::tempdir().unwrap();
+            let p = tmp.path().join("m.db");
+            std::fs::write(&p, b"").unwrap();
+            let gate = std::sync::Arc::new(std::sync::Barrier::new(4));
+            let handles: Vec<_> = (0..4)
+                .map(|_| {
+                    let (p, gate) = (p.clone(), gate.clone());
+                    std::thread::spawn(move || {
+                        gate.wait();
+                        Db::open(&p, Mode::ReadWrite).map(|db| db.schema_version())
+                    })
+                })
+                .collect();
+            for h in handles {
+                match h.join().unwrap() {
+                    Ok(v) => assert_eq!(v.unwrap(), SCHEMA_VERSION),
+                    Err(e) => panic!("a racing writer failed to open the store: {e}"),
+                }
+            }
+        }
     }
 
     /// An index added after a store was created has to reach that store, or the query it was
