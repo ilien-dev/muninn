@@ -4,6 +4,19 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 1.0.5 — 2026-10-08
+
+- **A write hook could give up on a store it had to migrate.** Opening the store for writing
+  starts with `PRAGMA journal_mode=WAL`. On a file that is not in WAL mode yet, a new one or
+  an empty file where the store should be, SQLite needs an exclusive lock for that switch and
+  takes it without calling the busy handler. With a second writer in the file, such as the
+  background `maintain` a session start launches, the pragma failed at once with "database is
+  locked" instead of waiting the 700 ms a hook allows. The hook exited 0 and the store stayed
+  without its schema until the next write. The switch now retries inside the same wait. This
+  is the fault test that failed on four of master's CI runs, with a RED status or "no such
+  table: meta" after the migration: a new test opens an empty file from four threads at once,
+  and it failed in under 0.1 s on each of 8 runs before the change.
+
 ## 1.0.4 — 2026-10-02
 
 - **On Windows, typing `muninn` opened "Select an app to open 'muninn'".** The session start

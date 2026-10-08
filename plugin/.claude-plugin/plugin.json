@@ -1,6 +1,6 @@
 {
   "name": "muninn",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Persistent memory for Claude Code and Codex that never serves a replaced decision, and turns CLAUDE.md / AGENTS.md rules into permission rules and deny hooks. Local: one binary, SQLite, no cloud, no model in the read path.",
   "author": {
     "name": "ilien",
