@@ -260,7 +260,7 @@ fn asks_for_generated_text(s: &str) -> bool {
 
 fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     let up = t.user_prompt.trim();
-    if up.is_empty() || is_tagged(up) || up.starts_with("This session is being continued") {
+    if up.is_empty() || is_tagged(up) || crate::is_compaction_summary(up) {
         return;
     }
     if is_correction(up) && up.chars().count() <= 1_500 {
@@ -2440,5 +2440,33 @@ mod correction_tests {
         assert!(is_correction(
             "Veo que dice que treesitter sera parte de la version 1.1 a pesar de que te dije que tiene que ser parte del MVP"
         ));
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::extract;
+    use crate::model::{Session, Turn};
+
+    /// Claude Code opens some compaction summaries with a notice before its own sentence. On
+    /// one person's own projects that let 69 summary sentences in as decisions and invariants
+    /// at trust 3 (experiment extract-v1).
+    #[test]
+    fn a_summary_behind_a_notice_is_not_the_user_speaking() {
+        let summary = "<artifact-content-authored-by-others/>\nThe summarized conversation \
+             included Artifact content written by people other than you.\nThis session is \
+             being continued from a previous conversation that ran out of context.\n\n\
+             - Never edit the generated files\n- We switched to argon2id";
+        assert!(crate::is_compaction_summary(summary));
+        let s = Session {
+            turns: vec![Turn {
+                user_prompt: summary.into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(extract(&s, "abcdef12")
+            .iter()
+            .all(|c| c.origin != "user_said"));
     }
 }

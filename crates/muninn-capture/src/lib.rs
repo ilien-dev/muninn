@@ -21,10 +21,16 @@ pub use model::{Session, ToolCall, Turn};
 /// The sentence is Claude Code's. Codex compacts differently and its marker is not known
 /// here, so a Codex summary is still captured as a turn of its own; no rollout of this
 /// project was available to read one from.
+///
+/// The sentence is looked for past any leading notice, not only at the start: Claude Code now
+/// opens some summaries with `<artifact-content-authored-by-others/>` and a paragraph about it,
+/// and on one person's own projects that let 69 summary sentences in as decisions and
+/// invariants at trust 3 (experiment extract-v1).
 pub fn is_compaction_summary(prompt: &str) -> bool {
-    prompt
-        .trim_start()
-        .starts_with("This session is being continued")
+    const MARK: &str = "This session is being continued from a previous conversation";
+    let p = prompt.trim_start();
+    p.starts_with("This session is being continued")
+        || (p.starts_with('<') && p.get(..1_000).unwrap_or(p).contains(MARK))
 }
 
 /// The file a record is about, from the files its evidence names — and nothing when the
