@@ -46,6 +46,17 @@ These come from reading the stores of several projects one person had used Munin
   wanted behaviour, pasted code, the tail of a wrapped line) removed 23.5% of the noise on
   the held-out split against the 30% registered, and did not ship. The `extract_dump`
   example that produced the figures is in `muninn-capture`.
+- **File and symbol cues never fired in a large store.** The turn-context log is never folded,
+  and one store's had reached 5.5 MB. `load_context` read its first 1 MiB, so none of that
+  store's eight latest sessions was in what it read. It now reads the last 1 MiB and parses
+  only the running session's lines, and `maintain` cuts the log to its last 1 MiB once it
+  passes 8 MiB. Parsing every line had cost 4.5 ms of the prompt hook there. On a copy of that
+  store the hook went from 22.1 ms p50 and 84.5 ms p95 to 19.7 and 21.0 ms, over 60 runs on
+  Windows with process start included.
+- **A sentence on record under two kinds was shown twice.** A message that is both a
+  correction and a decision came back as two blocks in one turn, and as two catalogue lines.
+  It is now rendered once, and the twin counts as delivered. On a copy, one of the ten
+  catalogue lines a session start shows had been a repeat.
 - **The health check's fix for a stale render named a flag that does not exist.** It said
   `muninn status --render` and now says `muninn cues --event session_start --ungated`.
 - **`muninn ledger` is readable.** A row of `fire_ledger` is one delivered record, and the
@@ -59,6 +70,12 @@ These come from reading the stores of several projects one person had used Munin
   changes title.
 - **`muninn-bench perf`, `enforce` and `experiment` find `muninn.exe` on Windows.** They looked
   for `muninn` with no extension.
+- **The embedding sidecar's health line says it is optional.** Without a model, `muninn why`
+  searches lexically.
+- **Tried and not shipped.** Reserving session-start slots for rules the user restates: only
+  7 of 78, 4 of 47 and 4 of 26 standing rules are restated in the three largest stores, too few
+  to change what a session start shows. extract-v1's filters on 120 messages they were never
+  designed on (extract-v2): 12.8% of the noise removed, again below the 30% registered.
 - **Not fixed:** `perf --strict` still fails on Windows. SessionStart p95 is about 14 ms and the
   full UserPromptSubmit about 15 to 17 ms against a 10 ms limit, the same as on the 1.0.5 build.
   Starting the process alone takes 5 to 6.5 ms p95 there.
