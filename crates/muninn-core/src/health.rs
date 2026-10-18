@@ -663,7 +663,7 @@ pub fn run(
                 > 0;
             let model = db.meta_get("embed_model").ok().flatten();
             if !has_table || model.is_none() {
-                check(10, "embed", Status::Cold, "sidecar not enabled (no model)", None)
+                check(10, "embed", Status::Cold, "optional sidecar off (no model): `muninn why` searches lexically", None)
             } else if !live {
                 // Coverage costs a join over every vector — 3.1 ms of a 10 ms hook on a store
                 // at the schema's cap — and it says nothing about the read path, which never
