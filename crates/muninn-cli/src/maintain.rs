@@ -693,6 +693,9 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             Err(e) => output::err(&format!("muninn maintain: project: {e}")),
         }
     }
+    if let Err(e) = muninn_core::cue::trim_context_log(paths) {
+        output::err(&format!("muninn maintain: turn context: {e}"));
+    }
     if let Ok(n) = muninn_core::cue::derive_missing(&db) {
         st.cues_derived = n;
     }

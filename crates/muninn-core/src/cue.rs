@@ -216,17 +216,43 @@ pub fn append_context(paths: &ProjectPaths, line: &ContextLine) {
 
 /// The last `CONTEXT_FILES` files and `CONTEXT_SYMBOLS` symbols of a session, newest
 /// last, from a bounded tail of the log.
+/// Keep the turn-context log from growing without end: past `TRIM_AT` it is cut to its last
+/// `KEEP` bytes. Nothing folds this log, and only its tail is ever read. Write path only; a
+/// line appended between the read and the rename is lost, which costs one file of one
+/// turn's context.
+pub fn trim_context_log(paths: &ProjectPaths) -> std::io::Result<bool> {
+    const TRIM_AT: u64 = 8 << 20;
+    const KEEP: u64 = 1 << 20;
+    let log = context_log(paths);
+    if std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0) <= TRIM_AT {
+        return Ok(false);
+    }
+    let tail = crate::sanitize::read_regular_tail(&log, KEEP)?;
+    let tmp = log.with_extension("jsonl.trim");
+    std::fs::write(&tmp, tail)?;
+    std::fs::rename(&tmp, &log)?;
+    Ok(true)
+}
+
 pub fn load_context(paths: &ProjectPaths, session: &str, event: &str) -> TurnContext {
     let mut ctx = TurnContext {
         event: event.to_string(),
         ..Default::default()
     };
-    let Ok(text) = crate::sanitize::read_regular_bounded(&context_log(paths), 1 << 20) else {
+    // The log only grows, so what matters is its end: the head was read before, and past
+    // 1 MiB the session running now was never in it (one store: 5.5 MB, none of its eight
+    // latest sessions visible). Only this session's lines are parsed; parsing all of them
+    // was 4.5 ms of the prompt hook on that store.
+    let Ok(text) = crate::sanitize::read_regular_tail(&context_log(paths), 1 << 20) else {
         return ctx;
     };
+    let needle = serde_json::to_string(session).unwrap_or_default();
     let mut files: Vec<String> = Vec::new();
     let mut syms: Vec<String> = Vec::new();
     for l in text.lines() {
+        if !l.contains(&needle) {
+            continue;
+        }
         let Ok(v) = serde_json::from_str::<ContextLine>(l) else {
             continue;
         };
@@ -945,6 +971,38 @@ mod tests {
             .any(|(i, r)| *i == 2 && r.starts_with("cue:")));
         let tiny = merge(&[], &recs, &[], &[], 30, &[]);
         assert!(tiny.ids.len() <= 1 && !tiny.gated.is_empty());
+    }
+
+    /// The turn-context log is append-only and was read from its start, at most 1 MiB: past
+    /// that size the session running now was never in what was read. One store's log had
+    /// reached 5.5 MB and none of its eight latest sessions was visible.
+    #[test]
+    fn the_current_session_is_found_past_the_first_megabyte() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::resolve(tmp.path());
+        std::fs::create_dir_all(paths.log_dir()).unwrap();
+        let filler = ContextLine {
+            at: 1,
+            session: "old".into(),
+            files: vec!["src/a/very/long/path/to/some/file/that/fills/the/log.rs".into()],
+            symbols: vec![],
+        };
+        for _ in 0..16_000 {
+            append_context(&paths, &filler);
+        }
+        assert!(std::fs::metadata(context_log(&paths)).unwrap().len() > 1 << 20);
+        append_context(
+            &paths,
+            &ContextLine {
+                at: 2,
+                session: "now".into(),
+                files: vec!["src/auth/jwt.rs".into()],
+                symbols: vec!["verify_token".into()],
+            },
+        );
+        let ctx = load_context(&paths, "now", "prompt");
+        assert_eq!(ctx.files, vec!["src/auth/jwt.rs"]);
+        assert_eq!(ctx.symbols, vec!["verify_token"]);
     }
 
     /// More invariants than the turn budget holds: the newest fill it. The field stores had
