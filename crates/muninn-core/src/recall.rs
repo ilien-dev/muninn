@@ -727,12 +727,19 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         // than how long it is: two words, one of them four characters or more and not a
         // function word. That keeps "Apache-2.0 instead" and "https everywhere", which a
         // character floor threw away, and still refuses "Actually" and "OK so".
+        // Nor do the words of a clause that points back at what was said before: `En lugar de
+        // eso` and `En cuanto a esta parte` pass the length test on `lugar`, `cuanto` and
+        // `parte`, and a real catalogue listed clauses like these as titles.
+        const POINTING: [&str; 12] = [
+            "lugar", "cuanto", "parte", "donde", "dices", "dijiste", "esto", "esta", "este", "eso",
+            "that", "this",
+        ];
         let carries_a_value = |clause: &str| {
             let words: Vec<&str> = clause.split_whitespace().collect();
             words.len() >= 2
                 && words.iter().any(|w| {
                     let bare = w.trim_matches(|c: char| !c.is_alphanumeric());
-                    bare.chars().count() >= 4
+                    bare.chars().count() >= 4 && !POINTING.contains(&bare.to_lowercase().as_str())
                 })
         };
         // Only where the line does not fit anyway. A first line inside the display width is
@@ -1536,6 +1543,41 @@ mod tests {
             c2.text.contains("the only decision"),
             "and the probe row past the page is never rendered as an entry:\n{}",
             c2.text
+        );
+    }
+
+    /// A clause that only points back at what was said before names nothing: a real
+    /// catalogue listed decisions titled with nothing but such a clause.
+    #[test]
+    fn a_catalogue_line_does_not_stop_at_a_clause_that_points_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (i, o) in [
+            "En lugar de eso, usa un botón flotante para guardar, con el mismo color del encabezado",
+            "Going with LRU with a 300-second TTL, it is easier to reason about and to tune later on",
+        ]
+        .iter()
+        .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,1)",
+                    rusqlite::params![format!("k{i}"), o],
+                )
+                .unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        assert!(
+            c.text
+                .contains("En lugar de eso, usa un botón flotante para guardar"),
+            "{}",
+            c.text
+        );
+        assert!(
+            c.text.contains("· Going with LRU with a 300-second TTL\n"),
+            "{}",
+            c.text
         );
     }
 
