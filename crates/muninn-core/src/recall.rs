@@ -1591,16 +1591,20 @@ mod tests {
         assert!(intent_gate("add retry backoff to the webhook handler"));
         assert!(!intent_gate("/model opus"));
         assert!(intent_gate("/design dame un navbar fijo en móvil"));
-        assert!(!intent_gate("<task-notification>
-<task-id>b1</task-id>"));
+        assert!(!intent_gate(
+            "<task-notification>
+<task-id>b1</task-id>"
+        ));
         assert!(intent_gate(
             "<pasted_content id=\"9d05\">
 Ajusta el script de build, necesito que tarde menos
 </pasted_content>"
         ));
-        assert!(!intent_gate("<pasted_content id=\"1\">
+        assert!(!intent_gate(
+            "<pasted_content id=\"1\">
 ok
-</pasted_content>"));
+</pasted_content>"
+        ));
         assert_eq!(date_of(1_789_259_611_084), "2026-09-13");
     }
 
