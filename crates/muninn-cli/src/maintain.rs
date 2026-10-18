@@ -706,6 +706,12 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         }
     }
     let _ = db.record_quick_check(3_600_000);
+    // as on `Stop`: recompiled when a source file changed, never applied
+    if !crate::compile_cmd::is_up_to_date(paths, &db) {
+        if let Err(e) = crate::compile_cmd::compile(paths, &db, false) {
+            output::err(&format!("muninn maintain: compile: {e:#}"));
+        }
+    }
     st.ms = t0.elapsed().as_millis();
     if json {
         output::json(&st);

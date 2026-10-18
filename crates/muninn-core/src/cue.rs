@@ -633,7 +633,7 @@ pub fn merge(
     // newest word ranks first. `evaluate` returns them by id, and ranking in that order
     // filled every session start with the oldest invariants while newer ones were gated.
     let mut newest_first: Vec<&Hit> = cue_records.iter().collect();
-    newest_first.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+    newest_first.sort_by_key(|h| std::cmp::Reverse((h.created_at, h.id)));
     for (rank, h) in newest_first.into_iter().enumerate() {
         *score.entry(h.id).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
         by_id.insert(h.id, h);
