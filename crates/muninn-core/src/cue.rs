@@ -629,7 +629,12 @@ pub fn merge(
     let mut score: HashMap<i64, f64> = HashMap::new();
     let mut by_id: HashMap<i64, &Hit> = HashMap::new();
     let mut reason: HashMap<i64, String> = HashMap::new();
-    for (rank, h) in cue_records.iter().enumerate() {
+    // A cue says only that a record applies, not how well: among the ones that fire, the
+    // newest word ranks first. `evaluate` returns them by id, and ranking in that order
+    // filled every session start with the oldest invariants while newer ones were gated.
+    let mut newest_first: Vec<&Hit> = cue_records.iter().collect();
+    newest_first.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+    for (rank, h) in newest_first.into_iter().enumerate() {
         *score.entry(h.id).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
         by_id.insert(h.id, h);
         if let Some(c) = cue_hits.iter().find(|c| c.record_id == h.id) {
@@ -657,7 +662,7 @@ pub fn merge(
                     .partial_cmp(&score[a])
                     .unwrap_or(std::cmp::Ordering::Equal),
             )
-            .then(a.cmp(b))
+            .then(b.cmp(a))
     });
     let mut text = String::new();
     let mut ids = Vec::new();
@@ -940,6 +945,39 @@ mod tests {
             .any(|(i, r)| *i == 2 && r.starts_with("cue:")));
         let tiny = merge(&[], &recs, &[], &[], 30, &[]);
         assert!(tiny.ids.len() <= 1 && !tiny.gated.is_empty());
+    }
+
+    /// More invariants than the turn budget holds: the newest fill it. The field stores had
+    /// the oldest six fill every session start, so a rule the user stated later never
+    /// surfaced at all (one store: 39 of 78 ever delivered, the newest never).
+    #[test]
+    fn session_start_serves_the_newest_invariants_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..40i64 {
+            db.conn.execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) VALUES('invariant',?1,'must','o',?2,'user_said',3,'s',?1,?3)",
+                rusqlite::params![format!("rule {i}"), format!("user: rule number {i} must always hold, {}", "padding words ".repeat(12)), 1_000 + i],
+            ).unwrap();
+            let id = db.conn.last_insert_rowid();
+            derive(&db, id, "invariant", None, "", &[], &[]).unwrap();
+            ids.push(id);
+        }
+        let ctx = TurnContext {
+            event: "session_start".into(),
+            ..Default::default()
+        };
+        let (hits, _) = evaluate_capped(&db, &ctx, &HashSet::new(), 64).unwrap();
+        let hit_ids: Vec<i64> = hits.iter().map(|h| h.record_id).collect();
+        let recs = hits_for(&db, &hit_ids).unwrap();
+        let m = merge(&hits, &recs, &[], &[], BUDGET_TURN_TOKENS, &hit_ids);
+        assert!(!m.gated.is_empty(), "the fixture must overflow the budget");
+        let newest = *ids.last().unwrap();
+        assert!(m.ids.contains(&newest), "newest invariant missing: {:?}", m.ids);
+        let oldest_served = m.ids.iter().min().unwrap();
+        let newest_gated = m.gated.iter().max().unwrap();
+        assert!(newest_gated < oldest_served, "served {:?}, gated {:?}", m.ids, m.gated);
     }
 
     /// A cue kind with no evaluator must not be storable, and must not be treated as
