@@ -761,11 +761,7 @@ fn main() -> Result<()> {
             rescore,
             muninn,
         } => {
-            let bin = muninn.unwrap_or_else(|| {
-                let mut p = std::env::current_exe().unwrap();
-                p.set_file_name("muninn");
-                p
-            });
+            let bin = muninn.unwrap_or_else(sibling_muninn);
             anyhow::ensure!(bin.exists(), "muninn binary not found at {}", bin.display());
             experiment::run(
                 &config,
@@ -796,11 +792,7 @@ fn main() -> Result<()> {
             muninn,
             json,
         } => {
-            let bin = muninn.unwrap_or_else(|| {
-                let mut p = std::env::current_exe().unwrap();
-                p.set_file_name("muninn");
-                p
-            });
+            let bin = muninn.unwrap_or_else(sibling_muninn);
             anyhow::ensure!(bin.exists(), "muninn binary not found at {} (build it with `cargo build --release -p muninn-cli`)", bin.display());
             let work = tempfile_dir()?;
             let r = enforce::run_cmd(&cases, &bin, &work, json);
@@ -816,11 +808,7 @@ fn main() -> Result<()> {
             muninn,
             json,
         } => {
-            let bin = muninn.unwrap_or_else(|| {
-                let mut p = std::env::current_exe().unwrap();
-                p.set_file_name("muninn");
-                p
-            });
+            let bin = muninn.unwrap_or_else(sibling_muninn);
             anyhow::ensure!(bin.exists(), "muninn binary not found at {} (build it with `cargo build --release -p muninn-cli`)", bin.display());
             let tmp = tempfile_dir()?;
             let root = tmp.as_path();
@@ -1091,4 +1079,13 @@ fn embed_bench(root: &std::path::Path, reps: usize, json: bool) -> Result<()> {
         println!("  recall@10 (self-retrieval, {} queries): lexical {:.3} · vector {:.3} · hybrid RRF {:.3}", rows.len(), lex_hit as f64 / n, vec_hit as f64 / n, hyb_hit as f64 / n);
     }
     Ok(())
+}
+
+/// The `muninn` binary next to this one. `set_file_name("muninn")` dropped the `.exe`, so on
+/// Windows `perf`, `enforce` and `experiment` never found the binary they had just been
+/// built beside.
+fn sibling_muninn() -> std::path::PathBuf {
+    let mut p = std::env::current_exe().unwrap();
+    p.set_file_name(format!("muninn{}", std::env::consts::EXE_SUFFIX));
+    p
 }
