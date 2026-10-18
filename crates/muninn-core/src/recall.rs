@@ -119,9 +119,21 @@ const STOP: &[&str] = &[
 ];
 
 /// Cheap gate: bare acknowledgements and slash commands get no memory.
+///
+/// A slash command carrying a request (`/design make the navbar sticky on mobile`) is gated
+/// on that request, and a prompt that is a paste (`<pasted_content …>`) on the pasted text:
+/// both used to be dropped whole, with harness notifications and `/clear`.
 pub fn intent_gate(prompt: &str) -> bool {
-    let p = prompt.trim();
-    if p.starts_with('/') || p.starts_with('<') {
+    let mut p = prompt.trim();
+    if let Some(cmd) = p.strip_prefix('/') {
+        match cmd.split_once(char::is_whitespace) {
+            Some((_, args)) => p = args.trim(),
+            None => return false,
+        }
+    } else if p.starts_with("<pasted_content") {
+        p = p.split_once('>').map(|(_, rest)| rest).unwrap_or("").trim();
+        p = p.strip_suffix("</pasted_content>").unwrap_or(p).trim();
+    } else if p.starts_with('<') {
         return false;
     }
     let words = p.split_whitespace().count();
@@ -1577,6 +1589,18 @@ mod tests {
         assert!(!intent_gate("ok"));
         assert!(!intent_gate("/compact"));
         assert!(intent_gate("add retry backoff to the webhook handler"));
+        assert!(!intent_gate("/model opus"));
+        assert!(intent_gate("/design dame un navbar fijo en móvil"));
+        assert!(!intent_gate("<task-notification>
+<task-id>b1</task-id>"));
+        assert!(intent_gate(
+            "<pasted_content id=\"9d05\">
+Ajusta el script de build, necesito que tarde menos
+</pasted_content>"
+        ));
+        assert!(!intent_gate("<pasted_content id=\"1\">
+ok
+</pasted_content>"));
         assert_eq!(date_of(1_789_259_611_084), "2026-09-13");
     }
 
