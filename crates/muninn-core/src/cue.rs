@@ -211,17 +211,7 @@ pub fn context_log(paths: &ProjectPaths) -> std::path::PathBuf {
 
 /// PostToolUse appends; nothing else writes here.
 pub fn append_context(paths: &ProjectPaths, line: &ContextLine) {
-    use std::io::Write;
-    let _ = std::fs::create_dir_all(paths.log_dir());
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(context_log(paths))
-    {
-        if let Ok(s) = serde_json::to_string(line) {
-            let _ = writeln!(f, "{s}");
-        }
-    }
+    let _ = crate::logfold::append_line(&context_log(paths), line);
 }
 
 /// The last `CONTEXT_FILES` files and `CONTEXT_SYMBOLS` symbols of a session, newest

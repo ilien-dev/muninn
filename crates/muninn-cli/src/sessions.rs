@@ -4,7 +4,6 @@
 //! smoke lost 17 of 20 sessions that way (PREREGISTRATION.md, 2026-09-17).
 
 use muninn_core::ProjectPaths;
-use std::io::Write;
 use std::path::PathBuf;
 
 /// Transcripts older than this are not re-scanned by the write path.
@@ -19,15 +18,8 @@ pub fn note(paths: &ProjectPaths, session: &str, transcript: Option<&str>) {
     let Some(t) = transcript.filter(|t| !t.is_empty()) else {
         return;
     };
-    let _ = std::fs::create_dir_all(paths.log_dir());
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path(paths))
-    {
-        let line = serde_json::json!({ "session": session, "transcript": t });
-        let _ = writeln!(f, "{line}");
-    }
+    let line = serde_json::json!({ "session": session, "transcript": t });
+    let _ = muninn_core::logfold::append_line(&log_path(paths), &line);
 }
 
 /// The distinct transcripts noted, most recent last, at most `KEEP`, existing files only.
