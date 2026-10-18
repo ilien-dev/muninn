@@ -697,6 +697,7 @@ pub fn merge(
     let mut gated = Vec::new();
     let block_chars = (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120);
     let mut turns_seen: HashSet<String> = HashSet::new();
+    let mut bodies_seen: HashSet<(String, String)> = HashSet::new();
     for id in order {
         let h = by_id[&id];
         if !turns_seen.insert(crate::recall::turn_key(&h.subject)) {
@@ -709,6 +710,13 @@ pub fn merge(
         // full prompt hook measured 67 ms against a contract of 10.
         if tokens >= budget {
             gated.push(id);
+            continue;
+        }
+        // One sentence the user typed can be on record under two kinds, a correction and a
+        // decision, say. The higher kind is rendered (the order puts it first); its twin from
+        // the same session says nothing new, so it counts as delivered without a second block.
+        if !bodies_seen.insert((h.session_id.clone(), h.body.trim().to_lowercase())) {
+            ids.push(id);
             continue;
         }
         let short: String = h.session_id.chars().take(8).collect();
@@ -852,7 +860,7 @@ mod tests {
         .enumerate()
         {
             db.conn.execute(
-                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) VALUES(?1,?2,'is','o','body mentions verify_token here','user_said',3,?3,'s',?4,1)",
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) VALUES(?1,?2,'is','o','body mentions verify_token here ' || ?4,'user_said',3,?3,'s',?4,1)",
                 rusqlite::params![kind, format!("k{i}"), anchor, format!("h{i}")],
             ).unwrap();
             let id = db.conn.last_insert_rowid();
@@ -971,6 +979,28 @@ mod tests {
             .any(|(i, r)| *i == 2 && r.starts_with("cue:")));
         let tiny = merge(&[], &recs, &[], &[], 30, &[]);
         assert!(tiny.ids.len() <= 1 && !tiny.gated.is_empty());
+    }
+
+    /// One sentence on record as a correction and as a decision is one block, not two: a live
+    /// prompt hook delivered the same sentence twice in one turn.
+    #[test]
+    fn a_sentence_on_record_under_two_kinds_is_rendered_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        for (kind, subj) in [
+            ("correction", "correction:s#1"),
+            ("decision", "said:change:x y"),
+        ] {
+            db.conn.execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) VALUES(?1,?2,'r','o','user: no, usa rustls en lugar de openssl\n','user_said',3,'s',?2,1)",
+                rusqlite::params![kind, subj],
+            ).unwrap();
+        }
+        let recs = hits_for(&db, &[1, 2]).unwrap();
+        let m = merge(&[], &recs, &[], &[], BUDGET_TURN_TOKENS, &[]);
+        assert_eq!(m.text.matches("usa rustls").count(), 1, "{}", m.text);
+        assert!(m.text.contains("[muninn:correction]"), "{}", m.text);
+        assert_eq!(m.ids.len(), 2, "the twin counts as delivered");
     }
 
     /// The turn-context log is append-only and was read from its start, at most 1 MiB: past

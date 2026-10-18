@@ -701,7 +701,12 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let mut listed_episodes = false;
     let cap = budget * 3;
     let mut cut = 0usize;
+    // the same sentence on record under two kinds is listed once, under the first (newest) row
+    let mut objects_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (id, kind, object, anchored) in rows.iter().take(PAGE) {
+        if !objects_seen.insert(object.trim().to_lowercase()) {
+            continue;
+        }
         // The first line of the object, not the whole of it flattened. A decision made from a
         // whole message carries every line of that message, and flattening them into one
         // string spends the line's 72 characters on whatever followed the statement — in the
@@ -1576,6 +1581,28 @@ mod tests {
         );
         assert!(
             c.text.contains("· Going with LRU with a 300-second TTL\n"),
+            "{}",
+            c.text
+        );
+    }
+
+    #[test]
+    fn the_catalogue_lists_a_sentence_once_whatever_its_kinds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (kind, subj) in [("decision", "said:change:a"), ("invariant", "siempre a")] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,'r','siempre usa la rama main',?2,'user_said',3,'s',?2,1)",
+                    rusqlite::params![kind, subj],
+                )
+                .unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        assert_eq!(
+            c.text.matches("siempre usa la rama main").count(),
+            1,
             "{}",
             c.text
         );
