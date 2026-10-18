@@ -69,7 +69,11 @@ fn strip_numbering(s: &str) -> Option<&str> {
 
 /// Extract candidates from one Markdown document.
 pub fn extract(source_file: &str, content: &str) -> Vec<Candidate> {
-    extract_hashed(source_file, content, blake3::hash(content.as_bytes()).to_hex().to_string())
+    extract_hashed(
+        source_file,
+        content,
+        blake3::hash(content.as_bytes()).to_hex().to_string(),
+    )
 }
 
 /// `extract` with the hash of the file as it is on disk. The freshness checks

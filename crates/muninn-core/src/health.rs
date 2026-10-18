@@ -445,7 +445,7 @@ pub fn run(
                     format!(
                         "same invariant render two sessions running while the pool grew {pinned} → {pool}"
                     ),
-                    Some("run `muninn status --render` to inspect"),
+                    Some("run `muninn cues --event session_start --ungated` to see what a session start serves"),
                 ),
                 (Some(a), Some(b)) if a == b => check(
                     6,

@@ -974,10 +974,19 @@ mod tests {
         let m = merge(&hits, &recs, &[], &[], BUDGET_TURN_TOKENS, &hit_ids);
         assert!(!m.gated.is_empty(), "the fixture must overflow the budget");
         let newest = *ids.last().unwrap();
-        assert!(m.ids.contains(&newest), "newest invariant missing: {:?}", m.ids);
+        assert!(
+            m.ids.contains(&newest),
+            "newest invariant missing: {:?}",
+            m.ids
+        );
         let oldest_served = m.ids.iter().min().unwrap();
         let newest_gated = m.gated.iter().max().unwrap();
-        assert!(newest_gated < oldest_served, "served {:?}, gated {:?}", m.ids, m.gated);
+        assert!(
+            newest_gated < oldest_served,
+            "served {:?}, gated {:?}",
+            m.ids,
+            m.gated
+        );
     }
 
     /// A cue kind with no evaluator must not be storable, and must not be treated as
