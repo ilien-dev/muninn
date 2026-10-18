@@ -132,7 +132,7 @@ pub fn intent_gate(prompt: &str) -> bool {
         }
     } else if p.starts_with("<pasted_content") {
         p = p.split_once('>').map(|(_, rest)| rest).unwrap_or("").trim();
-        p = p.strip_suffix("</pasted_content>").unwrap_or(p).trim();
+        p = p.rfind("</pasted_content").map_or(p, |i| &p[..i]).trim();
     } else if p.starts_with('<') {
         return false;
     }

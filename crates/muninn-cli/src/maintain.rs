@@ -22,6 +22,8 @@ pub struct MaintainStats {
     pub variants_retired: usize,
     /// Records retired because the repository stopped holding the value they named.
     pub values_retired: usize,
+    /// Typed records retired because a compaction summary, not the user, put them on record.
+    pub summary_records_retired: usize,
     pub ms: u128,
 }
 
@@ -652,6 +654,10 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         }
         Err(e) => output::err(&format!("muninn maintain: git: {e}")),
     }
+    match muninn_capture::ingest::retire_summary_records(&db) {
+        Ok(n) => st.summary_records_retired = n,
+        Err(e) => output::err(&format!("muninn maintain: summary records: {e}")),
+    }
     match capture_dropped_values(paths, &db) {
         Ok(n) => st.values_retired = n,
         Err(e) => output::err(&format!("muninn maintain: dropped values: {e}")),
@@ -671,7 +677,7 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
     {
         output::err(&format!("muninn maintain: fts optimize: {e}"));
     }
-    if st.commits + st.reverts + st.values_retired > 0
+    if st.commits + st.reverts + st.values_retired + st.summary_records_retired > 0
         || db
             .meta_get("records_changed_since_project")
             .ok()

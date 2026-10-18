@@ -39,7 +39,8 @@ These come from reading the stores of several projects one person had used Munin
   them with `<artifact-content-authored-by-others/>` before "This session is being
   continued", and the check only looked at the start of the prompt. Across the projects
   70 summary sentences had become decisions and invariants at trust 3. The check now looks
-  past the notice. The measurement is extract-v1 in
+  past the notice, and `maintain` retires, once, the records already on file whose turn was
+  a summary: 19 in one store, none in three others checked. The measurement is extract-v1 in
   [muninn-experiments](https://github.com/ilien-dev/muninn-experiments). The other filters it
   tested (past-tense narrative, a question before an image placeholder, a bug report with no
   wanted behaviour, pasted code, the tail of a wrapped line) removed 23.5% of the noise on
