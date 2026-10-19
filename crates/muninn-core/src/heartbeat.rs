@@ -9,8 +9,6 @@ use crate::db::{now_ms, Db};
 use crate::error::{Error, Result};
 use crate::paths::ProjectPaths;
 use serde::{Deserialize, Serialize};
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
@@ -44,19 +42,7 @@ pub struct Heartbeat {
 }
 
 fn append(path: &Path, line: &Line) -> Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| Error::io(dir, e))?;
-    }
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| Error::io(path, e))?;
-    let mut s = serde_json::to_string(line)?;
-    s.push('\n');
-    // A single write under PIPE_BUF-ish size is atomic enough for a log line.
-    f.write_all(s.as_bytes()).map_err(|e| Error::io(path, e))?;
-    Ok(())
+    crate::logfold::append_line(path, line)
 }
 
 impl Heartbeat {

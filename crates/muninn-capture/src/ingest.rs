@@ -771,10 +771,143 @@ fn parse_rfc3339_ms(s: &str) -> Option<i64> {
     Some(days * 86_400_000 + hh * 3_600_000 + mm * 60_000 + (ss * 1000.0) as i64)
 }
 
+/// Retire, once, the typed records that came from a compaction summary.
+///
+/// Before 1.1.0 a summary that opened with a notice (`<artifact-content-authored-by-others/>`)
+/// was read as the user speaking, and its sentences went on record as decisions, invariants
+/// and corrections at trust 3: 70 of them across one person's own projects (experiment
+/// extract-v1). Refusing new ones leaves those in place, and with session starts served newest
+/// first they compete for the same six or seven slots. Each is found by re-reading the turn its
+/// `transcript_ref` names; a transcript with no summary in it is not parsed. Retired, never
+/// deleted, with the reason in `meta` like any revocation. A `meta` key keeps it to one run.
+pub fn retire_summary_records(db: &Db) -> Result<usize> {
+    const DONE: &str = "summary_typed_records_retired";
+    if db.meta_get(DONE)?.is_some() {
+        return Ok(0);
+    }
+    let rows: Vec<(i64, String)> = db
+        .conn
+        .prepare(
+            "SELECT id, transcript_ref FROM record WHERE invalid = 0 AND origin = 'user_said' \
+             AND kind IN ('decision', 'invariant', 'correction') AND transcript_ref IS NOT NULL",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    let mut by_file: std::collections::HashMap<String, Vec<(i64, u64)>> =
+        std::collections::HashMap::new();
+    for (id, tref) in rows {
+        if let Some((path, off)) = tref.rsplit_once(':') {
+            if let Ok(off) = off.parse::<u64>() {
+                by_file.entry(path.to_string()).or_default().push((id, off));
+            }
+        }
+    }
+    let mut retire = Vec::new();
+    for (path, recs) in by_file {
+        let p = Path::new(&path);
+        let Ok(bytes) = std::fs::read(p) else {
+            continue;
+        };
+        if !String::from_utf8_lossy(&bytes).contains("This session is being continued") {
+            continue;
+        }
+        let Ok(session) = parse_any(p, 0) else {
+            continue;
+        };
+        let summary_ends: std::collections::HashSet<u64> = session
+            .turns
+            .iter()
+            .filter(|t| crate::is_compaction_summary(&t.user_prompt))
+            .map(|t| t.end_offset)
+            .collect();
+        retire.extend(
+            recs.into_iter()
+                .filter(|(_, off)| summary_ends.contains(off))
+                .map(|(id, _)| id),
+        );
+    }
+    let tx = db.write_tx()?;
+    let now = now_ms();
+    for id in &retire {
+        let n = tx.execute(
+            "UPDATE record SET invalid = 1, invalid_reason = 'revoked' WHERE id = ?1 AND invalid = 0",
+            [id],
+        )?;
+        if n == 1 {
+            tx.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+                rusqlite::params![
+                    format!("revoked:{id}"),
+                    format!("{now}|compaction summary, not the user")
+                ],
+            )?;
+        }
+    }
+    if !retire.is_empty() {
+        tx.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES ('records_changed_since_project', '1')",
+            [],
+        )?;
+    }
+    tx.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+        rusqlite::params![DONE, now.to_string()],
+    )?;
+    tx.commit()?;
+    Ok(retire.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use muninn_core::db::Mode;
+
+    /// Records a summary put on record before 1.1.0 are retired by the one-time pass, and a
+    /// record the user really typed in the same transcript is not.
+    #[test]
+    fn records_from_a_summary_are_retired_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), Mode::ReadWrite).unwrap();
+        let t = transcript(
+            tmp.path(),
+            "t.jsonl",
+            &[
+                user("<artifact-content-authored-by-others/>\nNotice.\nThis session is being continued from a previous conversation that ran out of context.\n- Never edit the generated files"),
+                assistant("Continuing."),
+                user("Nunca uses pkill en este proyecto"),
+                assistant("Entendido."),
+            ],
+        );
+        let session = parse_any(&t, 0).unwrap();
+        let ends: Vec<u64> = session.turns.iter().map(|t| t.end_offset).collect();
+        for (i, (body, end)) in [
+            ("user: Never edit the generated files\n", ends[0]),
+            ("user: Nunca uses pkill en este proyecto\n", ends[1]),
+        ]
+        .iter()
+        .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,transcript_ref,dedup_hash,created_at) \
+                     VALUES('invariant',?1,'must',?2,?2,'user_said',3,'s1',?3,?1,1)",
+                    rusqlite::params![format!("k{i}"), body, format!("{}:{}", t.display(), end)],
+                )
+                .unwrap();
+        }
+        assert_eq!(retire_summary_records(&db).unwrap(), 1);
+        let active: Vec<String> = db
+            .conn
+            .prepare("SELECT body FROM record WHERE invalid = 0")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert_eq!(active, vec!["user: Nunca uses pkill en este proyecto\n"]);
+        assert_eq!(retire_summary_records(&db).unwrap(), 0, "runs once");
+    }
 
     #[test]
     fn rfc3339_roundtrip() {

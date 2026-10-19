@@ -34,6 +34,28 @@ impl Taken {
     }
 }
 
+/// Append `value` as one JSON line, newline included, in a single `write_all`.
+///
+/// Every log writer goes through here. `writeln!(f, "{s}")` on an unbuffered `File` is two
+/// writes, and `json!`'s `Display` is one per token: with parallel sessions on Windows the
+/// delivery, session and turn-context logs held lines glued together (`}{`) and, in
+/// `sessions.jsonl`, two lines interleaved character by character. The heartbeat log, the
+/// busiest of them and the only one written in one call, held none.
+pub fn append_line<T: serde::Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
+    use std::io::Write;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| Error::io(dir, e))?;
+    }
+    let mut s = serde_json::to_string(value)?;
+    s.push('\n');
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| Error::io(path, e))?;
+    f.write_all(s.as_bytes()).map_err(|e| Error::io(path, e))
+}
+
 fn rotated(log: &Path) -> PathBuf {
     log.with_extension("jsonl.1")
 }
@@ -150,6 +172,32 @@ mod tests {
             .open(p)
             .unwrap();
         f.write_all(s.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn concurrent_appenders_never_glue_or_interleave_lines() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("log").join("x.jsonl");
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let log = log.clone();
+                std::thread::spawn(move || {
+                    for i in 0..200 {
+                        let v = serde_json::json!({ "session": format!("s{t}"), "i": i, "transcript": "C:\\Users\\x\\a.jsonl" });
+                        append_line(&log, &v).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let text = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 1600);
+        for l in lines {
+            serde_json::from_str::<serde_json::Value>(l).unwrap_or_else(|e| panic!("{e}: {l}"));
+        }
     }
 
     #[test]

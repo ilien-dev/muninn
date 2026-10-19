@@ -7,7 +7,6 @@ use muninn_core::db::now_ms;
 use muninn_core::ProjectPaths;
 use regex::Regex;
 use serde::Deserialize;
-use std::io::Write;
 
 #[derive(Debug, Deserialize)]
 struct HookFile {
@@ -278,16 +277,13 @@ pub fn evaluate(paths: &ProjectPaths, input: &HookInput) -> Option<Verdict> {
     }
 
     // denominator: every evaluation leaves a line
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(paths.log_dir().join("enforce.jsonl"))
-    {
+    // only where the log directory already exists, as before: this never creates `.muninn/`
+    if paths.log_dir().is_dir() {
         let line = serde_json::json!({
             "at": now_ms(), "session": input.session_id, "tool": tool, "harness": if is_codex { "codex" } else { "claude-code" },
             "rule": verdict.as_ref().map(|v| v.rule_id.clone()), "decision": verdict.as_ref().map(|v| v.decision.clone())
         });
-        let _ = writeln!(f, "{line}");
+        let _ = muninn_core::logfold::append_line(&paths.log_dir().join("enforce.jsonl"), &line);
     }
     verdict
 }

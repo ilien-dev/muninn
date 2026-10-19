@@ -211,32 +211,48 @@ pub fn context_log(paths: &ProjectPaths) -> std::path::PathBuf {
 
 /// PostToolUse appends; nothing else writes here.
 pub fn append_context(paths: &ProjectPaths, line: &ContextLine) {
-    use std::io::Write;
-    let _ = std::fs::create_dir_all(paths.log_dir());
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(context_log(paths))
-    {
-        if let Ok(s) = serde_json::to_string(line) {
-            let _ = writeln!(f, "{s}");
-        }
-    }
+    let _ = crate::logfold::append_line(&context_log(paths), line);
 }
 
 /// The last `CONTEXT_FILES` files and `CONTEXT_SYMBOLS` symbols of a session, newest
 /// last, from a bounded tail of the log.
+/// Keep the turn-context log from growing without end: past `TRIM_AT` it is cut to its last
+/// `KEEP` bytes. Nothing folds this log, and only its tail is ever read. Write path only; a
+/// line appended between the read and the rename is lost, which costs one file of one
+/// turn's context.
+pub fn trim_context_log(paths: &ProjectPaths) -> std::io::Result<bool> {
+    const TRIM_AT: u64 = 8 << 20;
+    const KEEP: u64 = 1 << 20;
+    let log = context_log(paths);
+    if std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0) <= TRIM_AT {
+        return Ok(false);
+    }
+    let tail = crate::sanitize::read_regular_tail(&log, KEEP)?;
+    let tmp = log.with_extension("jsonl.trim");
+    std::fs::write(&tmp, tail)?;
+    std::fs::rename(&tmp, &log)?;
+    Ok(true)
+}
+
 pub fn load_context(paths: &ProjectPaths, session: &str, event: &str) -> TurnContext {
     let mut ctx = TurnContext {
         event: event.to_string(),
         ..Default::default()
     };
-    let Ok(text) = crate::sanitize::read_regular_bounded(&context_log(paths), 1 << 20) else {
+    // The log only grows, so what matters is its end: the head was read before, and past
+    // 1 MiB the session running now was never in it (one store: 5.5 MB, none of its eight
+    // latest sessions visible). Only this session's lines are parsed; parsing all of them
+    // was 4.5 ms of the prompt hook on that store.
+    let Ok(text) = crate::sanitize::read_regular_tail(&context_log(paths), 1 << 20) else {
         return ctx;
     };
+    let needle = serde_json::to_string(session).unwrap_or_default();
     let mut files: Vec<String> = Vec::new();
     let mut syms: Vec<String> = Vec::new();
     for l in text.lines() {
+        if !l.contains(&needle) {
+            continue;
+        }
         let Ok(v) = serde_json::from_str::<ContextLine>(l) else {
             continue;
         };
@@ -639,7 +655,12 @@ pub fn merge(
     let mut score: HashMap<i64, f64> = HashMap::new();
     let mut by_id: HashMap<i64, &Hit> = HashMap::new();
     let mut reason: HashMap<i64, String> = HashMap::new();
-    for (rank, h) in cue_records.iter().enumerate() {
+    // A cue says only that a record applies, not how well: among the ones that fire, the
+    // newest word ranks first. `evaluate` returns them by id, and ranking in that order
+    // filled every session start with the oldest invariants while newer ones were gated.
+    let mut newest_first: Vec<&Hit> = cue_records.iter().collect();
+    newest_first.sort_by_key(|h| std::cmp::Reverse((h.created_at, h.id)));
+    for (rank, h) in newest_first.into_iter().enumerate() {
         *score.entry(h.id).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
         by_id.insert(h.id, h);
         if let Some(c) = cue_hits.iter().find(|c| c.record_id == h.id) {
@@ -667,7 +688,7 @@ pub fn merge(
                     .partial_cmp(&score[a])
                     .unwrap_or(std::cmp::Ordering::Equal),
             )
-            .then(a.cmp(b))
+            .then(b.cmp(a))
     });
     let mut text = String::new();
     let mut ids = Vec::new();
@@ -676,6 +697,7 @@ pub fn merge(
     let mut gated = Vec::new();
     let block_chars = (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120);
     let mut turns_seen: HashSet<String> = HashSet::new();
+    let mut bodies_seen: HashSet<(String, String)> = HashSet::new();
     for id in order {
         let h = by_id[&id];
         if !turns_seen.insert(crate::recall::turn_key(&h.subject)) {
@@ -688,6 +710,13 @@ pub fn merge(
         // full prompt hook measured 67 ms against a contract of 10.
         if tokens >= budget {
             gated.push(id);
+            continue;
+        }
+        // One sentence the user typed can be on record under two kinds, a correction and a
+        // decision, say. The higher kind is rendered (the order puts it first); its twin from
+        // the same session says nothing new, so it counts as delivered without a second block.
+        if !bodies_seen.insert((h.session_id.clone(), h.body.trim().to_lowercase())) {
+            ids.push(id);
             continue;
         }
         let short: String = h.session_id.chars().take(8).collect();
@@ -831,7 +860,7 @@ mod tests {
         .enumerate()
         {
             db.conn.execute(
-                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) VALUES(?1,?2,'is','o','body mentions verify_token here','user_said',3,?3,'s',?4,1)",
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) VALUES(?1,?2,'is','o','body mentions verify_token here ' || ?4,'user_said',3,?3,'s',?4,1)",
                 rusqlite::params![kind, format!("k{i}"), anchor, format!("h{i}")],
             ).unwrap();
             let id = db.conn.last_insert_rowid();
@@ -950,6 +979,102 @@ mod tests {
             .any(|(i, r)| *i == 2 && r.starts_with("cue:")));
         let tiny = merge(&[], &recs, &[], &[], 30, &[]);
         assert!(tiny.ids.len() <= 1 && !tiny.gated.is_empty());
+    }
+
+    /// One sentence on record as a correction and as a decision is one block, not two: a live
+    /// prompt hook delivered the same sentence twice in one turn.
+    #[test]
+    fn a_sentence_on_record_under_two_kinds_is_rendered_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        for (kind, subj) in [
+            ("correction", "correction:s#1"),
+            ("decision", "said:change:x y"),
+        ] {
+            db.conn.execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) VALUES(?1,?2,'r','o','user: no, usa rustls en lugar de openssl\n','user_said',3,'s',?2,1)",
+                rusqlite::params![kind, subj],
+            ).unwrap();
+        }
+        let recs = hits_for(&db, &[1, 2]).unwrap();
+        let m = merge(&[], &recs, &[], &[], BUDGET_TURN_TOKENS, &[]);
+        assert_eq!(m.text.matches("usa rustls").count(), 1, "{}", m.text);
+        assert!(m.text.contains("[muninn:correction]"), "{}", m.text);
+        assert_eq!(m.ids.len(), 2, "the twin counts as delivered");
+    }
+
+    /// The turn-context log is append-only and was read from its start, at most 1 MiB: past
+    /// that size the session running now was never in what was read. One store's log had
+    /// reached 5.5 MB and none of its eight latest sessions was visible.
+    #[test]
+    fn the_current_session_is_found_past_the_first_megabyte() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::resolve(tmp.path());
+        std::fs::create_dir_all(paths.log_dir()).unwrap();
+        let filler = ContextLine {
+            at: 1,
+            session: "old".into(),
+            files: vec!["src/a/very/long/path/to/some/file/that/fills/the/log.rs".into()],
+            symbols: vec![],
+        };
+        for _ in 0..16_000 {
+            append_context(&paths, &filler);
+        }
+        assert!(std::fs::metadata(context_log(&paths)).unwrap().len() > 1 << 20);
+        append_context(
+            &paths,
+            &ContextLine {
+                at: 2,
+                session: "now".into(),
+                files: vec!["src/auth/jwt.rs".into()],
+                symbols: vec!["verify_token".into()],
+            },
+        );
+        let ctx = load_context(&paths, "now", "prompt");
+        assert_eq!(ctx.files, vec!["src/auth/jwt.rs"]);
+        assert_eq!(ctx.symbols, vec!["verify_token"]);
+    }
+
+    /// More invariants than the turn budget holds: the newest fill it. The field stores had
+    /// the oldest six fill every session start, so a rule the user stated later never
+    /// surfaced at all (one store: 39 of 78 ever delivered, the newest never).
+    #[test]
+    fn session_start_serves_the_newest_invariants_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..40i64 {
+            db.conn.execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) VALUES('invariant',?1,'must','o',?2,'user_said',3,'s',?1,?3)",
+                rusqlite::params![format!("rule {i}"), format!("user: rule number {i} must always hold, {}", "padding words ".repeat(12)), 1_000 + i],
+            ).unwrap();
+            let id = db.conn.last_insert_rowid();
+            derive(&db, id, "invariant", None, "", &[], &[]).unwrap();
+            ids.push(id);
+        }
+        let ctx = TurnContext {
+            event: "session_start".into(),
+            ..Default::default()
+        };
+        let (hits, _) = evaluate_capped(&db, &ctx, &HashSet::new(), 64).unwrap();
+        let hit_ids: Vec<i64> = hits.iter().map(|h| h.record_id).collect();
+        let recs = hits_for(&db, &hit_ids).unwrap();
+        let m = merge(&hits, &recs, &[], &[], BUDGET_TURN_TOKENS, &hit_ids);
+        assert!(!m.gated.is_empty(), "the fixture must overflow the budget");
+        let newest = *ids.last().unwrap();
+        assert!(
+            m.ids.contains(&newest),
+            "newest invariant missing: {:?}",
+            m.ids
+        );
+        let oldest_served = m.ids.iter().min().unwrap();
+        let newest_gated = m.gated.iter().max().unwrap();
+        assert!(
+            newest_gated < oldest_served,
+            "served {:?}, gated {:?}",
+            m.ids,
+            m.gated
+        );
     }
 
     /// A cue kind with no evaluator must not be storable, and must not be treated as

@@ -818,6 +818,25 @@ fn write_path(
             }
         }
     }
+    let now = now_ms();
+    if session_end {
+        db.meta_set("last_session_end_ms", &now.to_string())?;
+        db.meta_set("ingest_watermark_ms", &now.to_string())?;
+        // Claude Code gives a plugin's SessionEnd hooks 1.5 s in all, whatever `timeout`
+        // hooks.json sets, and cancels what is still running. This session's own transcript
+        // is ingested above; the rest — other sessions, git, embeddings, the integrity check,
+        // the rule compile — concerns no session in particular and goes to a detached
+        // `maintain`. Run inline it put SessionEnd at p99 544 ms on a 1 825-record store and
+        // 5.4 s on another, and one run was cut off unfinished.
+        //
+        // `MUNINN_SESSION_END_INLINE` keeps the whole write path here, for a caller that
+        // waits on the hook and reads the store next (the experiment runner).
+        if std::env::var_os("MUNINN_SESSION_END_INLINE").is_none() {
+            drop(db);
+            crate::maintain::spawn_detached(paths);
+            return Ok(None);
+        }
+    }
     // sessions whose own write hook was cut short (headless sessions end first)
     crate::sessions::ingest_pending(paths, &db);
     if let Err(e) = crate::maintain::capture_git(paths, &db) {
@@ -836,11 +855,6 @@ fn write_path(
         if let Err(e) = crate::compile_cmd::compile(paths, &db, false) {
             output::err(&format!("muninn: compile: {e:#}"));
         }
-    }
-    let now = now_ms();
-    if session_end {
-        db.meta_set("last_session_end_ms", &now.to_string())?;
-        db.meta_set("ingest_watermark_ms", &now.to_string())?;
     }
     Ok(None)
 }

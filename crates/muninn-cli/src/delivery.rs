@@ -3,7 +3,6 @@
 
 use muninn_core::{Db, ProjectPaths, Result};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Line {
@@ -20,16 +19,7 @@ pub fn log_path(paths: &ProjectPaths) -> std::path::PathBuf {
 }
 
 pub fn append(paths: &ProjectPaths, line: &Line) {
-    let _ = std::fs::create_dir_all(paths.log_dir());
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path(paths))
-    {
-        if let Ok(s) = serde_json::to_string(line) {
-            let _ = writeln!(f, "{s}");
-        }
-    }
+    let _ = muninn_core::logfold::append_line(&log_path(paths), line);
 }
 
 /// Ids delivered in this session and not yet folded (so the same record is not

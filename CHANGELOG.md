@@ -4,6 +4,82 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 1.1.0 — 2026-10-18
+
+These come from reading the stores of several projects one person had used Muninn in.
+
+- **A session start showed the oldest invariants, and newer ones never surfaced.** The budget
+  holds six or seven of them. `evaluate` returned its hits sorted by record id and `merge`
+  ranked them by position, so the oldest won every time. In one store only 39 of 78
+  active invariants and corrections had ever been delivered, and the last session start
+  served #209, #529, #808, #809, #1130 and #1144 while the newest was #2059. They now
+  rank newest first. On a copy of the same store the session start serves #2059, #2053
+  and #2042 first.
+- **Parallel sessions corrupted three of the logs.** `writeln!` on an unbuffered `File` makes
+  two writes, and the `Display` of `json!` makes one per token, so two hooks writing at once
+  glued lines together or interleaved them character by character. In two of the
+  stores, delivery.jsonl had 13 and 21 bad lines, sessions.jsonl 4 and 19, and
+  turn_context.jsonl 4. heartbeat.jsonl, the busiest log, had none: it was the only one
+  written in a single `write_all`. Every log now goes through one helper that does that. No
+  ingest was lost: every session in a corrupted sessions.jsonl line also appears in an
+  intact one.
+- **A CLAUDE.md with CRLF line endings read as "changed since compile" forever.** `compile`
+  hashed the text after sanitising it, which removes every `\r`, and the freshness checks hash
+  the bytes on disk. Four of the projects were RED for this, and Muninn recompiled its
+  rules on every `Stop` in each of them. The hash is now of the file as it is on disk, and `maintain`
+  recompiles too.
+- **`SessionEnd` did more than Claude Code gives it time for.** Claude Code allows a plugin's
+  SessionEnd hooks 1.5 s in all, and a `timeout` in hooks.json does not raise it. The hook's
+  p99 was 544 ms on a 1,825-record store and 5.4 s on another, and one run was cut off
+  unfinished. It now ingests its own session's transcript and leaves other sessions, git
+  capture, embeddings, the integrity check and the rule compile to a detached `maintain`.
+  `MUNINN_SESSION_END_INLINE=1` keeps the whole write path in the hook, and the experiment
+  runner sets it.
+- **Compaction summaries were typed as the user's own words.** Claude Code now opens some of
+  them with `<artifact-content-authored-by-others/>` before "This session is being
+  continued", and the check only looked at the start of the prompt. Across the projects
+  70 summary sentences had become decisions and invariants at trust 3. The check now looks
+  past the notice, and `maintain` retires, once, the records already on file whose turn was
+  a summary: 19 in one store, none in three others checked. The measurement is extract-v1 in
+  [muninn-experiments](https://github.com/ilien-dev/muninn-experiments). The other filters it
+  tested (past-tense narrative, a question before an image placeholder, a bug report with no
+  wanted behaviour, pasted code, the tail of a wrapped line) removed 23.5% of the noise on
+  the held-out split against the 30% registered, and did not ship. The `extract_dump`
+  example that produced the figures is in `muninn-capture`.
+- **File and symbol cues never fired in a large store.** The turn-context log is never folded,
+  and one store's had reached 5.5 MB. `load_context` read its first 1 MiB, so none of that
+  store's eight latest sessions was in what it read. It now reads the last 1 MiB and parses
+  only the running session's lines, and `maintain` cuts the log to its last 1 MiB once it
+  passes 8 MiB. Parsing every line had cost 4.5 ms of the prompt hook there. On a copy of that
+  store the hook went from 22.1 ms p50 and 84.5 ms p95 to 19.7 and 21.0 ms, over 60 runs on
+  Windows with process start included.
+- **A sentence on record under two kinds was shown twice.** A message that is both a
+  correction and a decision came back as two blocks in one turn, and as two catalogue lines.
+  It is now rendered once, and the twin counts as delivered. On a copy, one of the ten
+  catalogue lines a session start shows had been a repeat.
+- **The health check's fix for a stale render named a flag that does not exist.** It said
+  `muninn status --render` and now says `muninn cues --event session_start --ungated`.
+- **`muninn ledger` is readable.** A row of `fire_ledger` is one delivered record, and the
+  budget gate wrote its count into the reason, so the report split into about 60 lines of
+  `gated:budget:N`. It now prints one line per reason with events, records and the records
+  left out. The JSON keeps its rows and adds `events`.
+- **A slash command with a request, and a prompt that is a paste, get memory.** `/design make
+  the navbar sticky` is gated on its request and a `<pasted_content>` prompt on the pasted
+  text. Both were dropped whole before.
+- **A catalogue line no longer stops at a clause that only points back.** A real catalogue listed a decision titled only "En lugar de eso" ("instead of that"). None of the 890 fixture messages
+  changes title.
+- **`muninn-bench perf`, `enforce` and `experiment` find `muninn.exe` on Windows.** They looked
+  for `muninn` with no extension.
+- **The embedding sidecar's health line says it is optional.** Without a model, `muninn why`
+  searches lexically.
+- **Tried and not shipped.** Reserving session-start slots for rules the user restates: only
+  7 of 78, 4 of 47 and 4 of 26 standing rules are restated in the three largest stores, too few
+  to change what a session start shows. extract-v1's filters on 120 messages they were never
+  designed on (extract-v2): 12.8% of the noise removed, again below the 30% registered.
+- **Not fixed:** `perf --strict` still fails on Windows. SessionStart p95 is about 14 ms and the
+  full UserPromptSubmit about 15 to 17 ms against a 10 ms limit, the same as on the 1.0.5 build.
+  Starting the process alone takes 5 to 6.5 ms p95 there.
+
 ## 1.0.5 — 2026-10-08
 
 - **A write hook could give up on a store it had to migrate.** Opening the store for writing

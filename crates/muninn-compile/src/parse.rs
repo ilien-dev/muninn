@@ -69,7 +69,18 @@ fn strip_numbering(s: &str) -> Option<&str> {
 
 /// Extract candidates from one Markdown document.
 pub fn extract(source_file: &str, content: &str) -> Vec<Candidate> {
-    let hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+    extract_hashed(
+        source_file,
+        content,
+        blake3::hash(content.as_bytes()).to_hex().to_string(),
+    )
+}
+
+/// `extract` with the hash of the file as it is on disk. The freshness checks
+/// (`compile_cmd::is_up_to_date`, health check 7) hash the raw bytes; hashing the sanitised
+/// text instead, which has lost every `\r`, left each CRLF file "changed since compile"
+/// forever and recompiled it on every `Stop`.
+fn extract_hashed(source_file: &str, content: &str, hash: String) -> Vec<Candidate> {
     let mut out = Vec::new();
     let mut heading: Option<String> = None;
     let mut in_fence = false;
@@ -206,9 +217,10 @@ pub fn extract_project(root: &Path) -> Vec<Candidate> {
             .strip_prefix(root)
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| f.to_string_lossy().to_string());
-        if let Ok(content) = std::fs::read(&f) {
-            let content = muninn_core::sanitize::from_bytes_lossy(&content);
-            out.extend(extract(&rel, &content));
+        if let Ok(bytes) = std::fs::read(&f) {
+            let hash = blake3::hash(&bytes).to_hex().to_string();
+            let content = muninn_core::sanitize::from_bytes_lossy(&bytes);
+            out.extend(extract_hashed(&rel, &content, hash));
         }
     }
     out
@@ -217,6 +229,20 @@ pub fn extract_project(root: &Path) -> Vec<Candidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_hash_is_of_the_file_on_disk_even_with_crlf() {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = b"# Rules
+
+- Never run `rm -rf` outside the repo
+";
+        std::fs::write(tmp.path().join("CLAUDE.md"), raw).unwrap();
+        let c = extract_project(tmp.path());
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].source_hash, blake3::hash(raw).to_hex().to_string());
+        assert!(!c[0].text.contains('\r'));
+    }
 
     #[test]
     fn extracts_list_items_and_skips_fences() {

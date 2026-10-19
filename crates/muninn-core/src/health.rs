@@ -445,7 +445,7 @@ pub fn run(
                     format!(
                         "same invariant render two sessions running while the pool grew {pinned} → {pool}"
                     ),
-                    Some("run `muninn status --render` to inspect"),
+                    Some("run `muninn cues --event session_start --ungated` to see what a session start serves"),
                 ),
                 (Some(a), Some(b)) if a == b => check(
                     6,
@@ -663,7 +663,7 @@ pub fn run(
                 > 0;
             let model = db.meta_get("embed_model").ok().flatten();
             if !has_table || model.is_none() {
-                check(10, "embed", Status::Cold, "sidecar not enabled (no model)", None)
+                check(10, "embed", Status::Cold, "optional sidecar off (no model): `muninn why` searches lexically", None)
             } else if !live {
                 // Coverage costs a join over every vector — 3.1 ms of a 10 ms hook on a store
                 // at the schema's cap — and it says nothing about the read path, which never

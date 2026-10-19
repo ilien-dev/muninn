@@ -119,9 +119,21 @@ const STOP: &[&str] = &[
 ];
 
 /// Cheap gate: bare acknowledgements and slash commands get no memory.
+///
+/// A slash command carrying a request (`/design make the navbar sticky on mobile`) is gated
+/// on that request, and a prompt that is a paste (`<pasted_content …>`) on the pasted text:
+/// both used to be dropped whole, with harness notifications and `/clear`.
 pub fn intent_gate(prompt: &str) -> bool {
-    let p = prompt.trim();
-    if p.starts_with('/') || p.starts_with('<') {
+    let mut p = prompt.trim();
+    if let Some(cmd) = p.strip_prefix('/') {
+        match cmd.split_once(char::is_whitespace) {
+            Some((_, args)) => p = args.trim(),
+            None => return false,
+        }
+    } else if p.starts_with("<pasted_content") {
+        p = p.split_once('>').map(|(_, rest)| rest).unwrap_or("").trim();
+        p = p.rfind("</pasted_content").map_or(p, |i| &p[..i]).trim();
+    } else if p.starts_with('<') {
         return false;
     }
     let words = p.split_whitespace().count();
@@ -689,7 +701,12 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let mut listed_episodes = false;
     let cap = budget * 3;
     let mut cut = 0usize;
+    // the same sentence on record under two kinds is listed once, under the first (newest) row
+    let mut objects_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (id, kind, object, anchored) in rows.iter().take(PAGE) {
+        if !objects_seen.insert(object.trim().to_lowercase()) {
+            continue;
+        }
         // The first line of the object, not the whole of it flattened. A decision made from a
         // whole message carries every line of that message, and flattening them into one
         // string spends the line's 72 characters on whatever followed the statement — in the
@@ -715,12 +732,19 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         // than how long it is: two words, one of them four characters or more and not a
         // function word. That keeps "Apache-2.0 instead" and "https everywhere", which a
         // character floor threw away, and still refuses "Actually" and "OK so".
+        // Nor do the words of a clause that points back at what was said before: `En lugar de
+        // eso` and `En cuanto a esta parte` pass the length test on `lugar`, `cuanto` and
+        // `parte`, and a real catalogue listed clauses like these as titles.
+        const POINTING: [&str; 12] = [
+            "lugar", "cuanto", "parte", "donde", "dices", "dijiste", "esto", "esta", "este", "eso",
+            "that", "this",
+        ];
         let carries_a_value = |clause: &str| {
             let words: Vec<&str> = clause.split_whitespace().collect();
             words.len() >= 2
                 && words.iter().any(|w| {
                     let bare = w.trim_matches(|c: char| !c.is_alphanumeric());
-                    bare.chars().count() >= 4
+                    bare.chars().count() >= 4 && !POINTING.contains(&bare.to_lowercase().as_str())
                 })
         };
         // Only where the line does not fit anyway. A first line inside the display width is
@@ -1527,6 +1551,63 @@ mod tests {
         );
     }
 
+    /// A clause that only points back at what was said before names nothing: a real
+    /// catalogue listed decisions titled with nothing but such a clause.
+    #[test]
+    fn a_catalogue_line_does_not_stop_at_a_clause_that_points_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (i, o) in [
+            "En lugar de eso, usa un botón flotante para guardar, con el mismo color del encabezado",
+            "Going with LRU with a 300-second TTL, it is easier to reason about and to tune later on",
+        ]
+        .iter()
+        .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,1)",
+                    rusqlite::params![format!("k{i}"), o],
+                )
+                .unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        assert!(
+            c.text
+                .contains("En lugar de eso, usa un botón flotante para guardar"),
+            "{}",
+            c.text
+        );
+        assert!(
+            c.text.contains("· Going with LRU with a 300-second TTL\n"),
+            "{}",
+            c.text
+        );
+    }
+
+    #[test]
+    fn the_catalogue_lists_a_sentence_once_whatever_its_kinds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (kind, subj) in [("decision", "said:change:a"), ("invariant", "siempre a")] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,'r','siempre usa la rama main',?2,'user_said',3,'s',?2,1)",
+                    rusqlite::params![kind, subj],
+                )
+                .unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        assert_eq!(
+            c.text.matches("siempre usa la rama main").count(),
+            1,
+            "{}",
+            c.text
+        );
+    }
+
     /// Two active records with the same key and different values are a conflict, and the
     /// renderer has marked them since F1 was built. The catalogue did not, so the one place
     /// an agent is shown everything at once was the one place it could not see that two of
@@ -1577,6 +1658,22 @@ mod tests {
         assert!(!intent_gate("ok"));
         assert!(!intent_gate("/compact"));
         assert!(intent_gate("add retry backoff to the webhook handler"));
+        assert!(!intent_gate("/model opus"));
+        assert!(intent_gate("/design dame un navbar fijo en móvil"));
+        assert!(!intent_gate(
+            "<task-notification>
+<task-id>b1</task-id>"
+        ));
+        assert!(intent_gate(
+            "<pasted_content id=\"9d05\">
+Ajusta el script de build, necesito que tarde menos
+</pasted_content>"
+        ));
+        assert!(!intent_gate(
+            "<pasted_content id=\"1\">
+ok
+</pasted_content>"
+        ));
         assert_eq!(date_of(1_789_259_611_084), "2026-09-13");
     }
 

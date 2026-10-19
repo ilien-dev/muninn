@@ -608,16 +608,18 @@ fn main() {
         Cmd::Ledger { session } => match Db::open(&paths.db_path(), Mode::ReadOnly) {
             Ok(db) => {
                 let sql = match &session {
-                    Some(_) => "SELECT reason, count(*), coalesce(sum(tokens),0) FROM fire_ledger WHERE session_id = ?1 GROUP BY reason ORDER BY 2 DESC",
-                    None => "SELECT reason, count(*), coalesce(sum(tokens),0) FROM fire_ledger WHERE ?1 = ?1 GROUP BY reason ORDER BY 2 DESC",
+                    Some(_) => "SELECT reason, count(*), coalesce(sum(tokens),0), count(DISTINCT session_id || ':' || fired_at) FROM fire_ledger WHERE session_id = ?1 GROUP BY reason ORDER BY 2 DESC",
+                    None => "SELECT reason, count(*), coalesce(sum(tokens),0), count(DISTINCT session_id || ':' || fired_at) FROM fire_ledger WHERE ?1 = ?1 GROUP BY reason ORDER BY 2 DESC",
                 };
                 let sid = session.clone().unwrap_or_default();
-                let rows: Vec<(String, i64, i64)> = db
+                let rows: Vec<(String, i64, i64, i64)> = db
                     .conn
                     .prepare(sql)
                     .and_then(|mut st| {
-                        st.query_map([sid.as_str()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-                            .map(|it| it.filter_map(|x| x.ok()).collect())
+                        st.query_map([sid.as_str()], |r| {
+                            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                        })
+                        .map(|it| it.filter_map(|x| x.ok()).collect())
                     })
                     .unwrap_or_default();
                 let sessions = db
@@ -628,14 +630,20 @@ fn main() {
                     .unwrap_or(0);
                 if cli.json {
                     output::json(
-                        &serde_json::json!({"sessions": sessions, "prompts": prompts, "by_reason": rows.iter().map(|(r, n, t)| serde_json::json!({"reason": r, "rows": n, "tokens": t})).collect::<Vec<_>>()}),
+                        &serde_json::json!({"sessions": sessions, "prompts": prompts, "by_reason": rows.iter().map(|(r, n, t, e)| serde_json::json!({"reason": r, "rows": n, "tokens": t, "events": e})).collect::<Vec<_>>()}),
                     );
                 } else {
                     output::out(&format!(
                         "ledger: {sessions} session(s), {prompts} prompt hook(s) recorded"
                     ));
-                    for (r, n, t) in rows {
-                        output::out(&format!("  {n:>6}  {t:>7} tok  {r}"));
+                    output::out("  events  records    tokens  reason");
+                    for (r, e, n, t, cut) in ledger_lines(&rows) {
+                        let cut = if cut > 0 {
+                            format!(" ({cut} record(s) left out)")
+                        } else {
+                            String::new()
+                        };
+                        output::out(&format!("  {e:>6}  {n:>7}  {t:>8}  {r}{cut}"));
                     }
                 }
                 0
@@ -891,5 +899,51 @@ fn symbols_cmd(
             output::err(&format!("muninn symbols: {e}"));
             1
         }
+    }
+}
+
+/// The ledger's text lines. A row of `fire_ledger` is one delivered record, so `count(*)`
+/// is records, not deliveries; events are the distinct (session, time) pairs. The budget
+/// gate writes its count into the reason (`gated:budget:37`), which split the report into
+/// one line per count: those are folded into one line, with the records they left out.
+fn ledger_lines(rows: &[(String, i64, i64, i64)]) -> Vec<(String, i64, i64, i64, i64)> {
+    let mut out: Vec<(String, i64, i64, i64, i64)> = Vec::new();
+    for (reason, n, t, e) in rows {
+        let (key, cut) = match reason.rsplit_once(':') {
+            Some((head, num)) if head.ends_with("gated:budget") => match num.parse::<i64>() {
+                Ok(k) => (head.to_string(), k * e),
+                Err(_) => (reason.clone(), 0),
+            },
+            _ => (reason.clone(), 0),
+        };
+        match out.iter_mut().find(|l| l.0 == key) {
+            Some(l) => {
+                l.1 += e;
+                l.2 += n;
+                l.3 += t;
+                l.4 += cut;
+            }
+            None => out.push((key, *e, *n, *t, cut)),
+        }
+    }
+    out.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    out
+}
+
+#[cfg(test)]
+mod ledger_tests {
+    use super::ledger_lines;
+
+    #[test]
+    fn budget_gate_counts_fold_into_one_line() {
+        let rows = vec![
+            ("literal:gated:budget:4".to_string(), 8, 0, 2),
+            ("literal:gated:budget:34".to_string(), 32, 0, 1),
+            ("literal:literal".to_string(), 9, 900, 3),
+        ];
+        let l = ledger_lines(&rows);
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0], ("literal:gated:budget".to_string(), 3, 40, 0, 42));
+        assert_eq!(l[1], ("literal:literal".to_string(), 3, 9, 900, 0));
     }
 }

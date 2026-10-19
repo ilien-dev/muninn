@@ -900,6 +900,8 @@ fn run_cell(
         // make sure the write path ran even if the harness skipped SessionEnd
         let _ = Command::new(muninn)
             .env("MUNINN_ROOT", &store)
+            // the whole write path before the diff is taken, not a detached `maintain`
+            .env("MUNINN_SESSION_END_INLINE", "1")
             .current_dir(&dir)
             .args(["hook", "SessionEnd"])
             .stdin(Stdio::piped())
