@@ -704,7 +704,13 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     // the same sentence on record under two kinds is listed once, under the first (newest) row
     let mut objects_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (id, kind, object, anchored) in rows.iter().take(PAGE) {
-        if !objects_seen.insert(object.trim().to_lowercase()) {
+        // compared at the length capture cuts a correction to: a long first line is whole in the
+        // decision and cut at 160 in the correction from the same message
+        let key = object.lines().map(str::trim).find(|l| !l.is_empty());
+        let key = crate::sanitize::truncate_chars(key.unwrap_or(""), 160)
+            .trim_end()
+            .to_lowercase();
+        if !objects_seen.insert(key) {
             continue;
         }
         // The first line of the object, not the whole of it flattened. A decision made from a
@@ -908,14 +914,22 @@ pub fn show(db: &Db, ids: &[i64], budget: usize) -> Result<Delivery> {
     // id that is in no row at all was a mistake. Saying which is not a leak — no text of a
     // retired record is rendered, only the fact that it is one, which the catalogue already
     // prints beside its heir.
+    //
+    // A third case is an active record the block left out. It is neither, and calling it retired
+    // tells the agent a live decision is gone.
     let missing: Vec<i64> = ids.iter().copied().filter(|i| !d.ids.contains(i)).collect();
     if !missing.is_empty() {
+        let over_budget: Vec<i64> = hits
+            .iter()
+            .map(|h| h.id)
+            .filter(|i| missing.contains(i))
+            .collect();
         let places = std::iter::repeat_n("?", missing.len())
             .collect::<Vec<_>>()
             .join(",");
-        let mut q = db
-            .conn
-            .prepare(&format!("SELECT id FROM record WHERE id IN ({places})"))?;
+        let mut q = db.conn.prepare(&format!(
+            "SELECT id FROM record WHERE invalid = 1 AND id IN ({places})"
+        ))?;
         let params: Vec<&dyn rusqlite::ToSql> =
             missing.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
         let retired: Vec<i64> = q
@@ -931,9 +945,15 @@ pub fn show(db: &Db, ids: &[i64], budget: usize) -> Result<Delivery> {
         let unknown: Vec<i64> = missing
             .iter()
             .copied()
-            .filter(|i| !retired.contains(i))
+            .filter(|i| !retired.contains(i) && !over_budget.contains(i))
             .collect();
         let mut note = String::new();
+        if !over_budget.is_empty() {
+            note.push_str(&format!(
+                "{} on record, not shown in this block: ask for it on its own. ",
+                list(&over_budget)
+            ));
+        }
         if !retired.is_empty() {
             note.push_str(&format!(
                 "{} retired: replaced or revoked, and not served. ",
@@ -1612,6 +1632,48 @@ mod tests {
     /// renderer has marked them since F1 was built. The catalogue did not, so the one place
     /// an agent is shown everything at once was the one place it could not see that two of
     /// them disagree — and it would have picked one.
+    /// A correction keeps 160 characters of a line the decision keeps whole, and the two are
+    /// still one sentence.
+    #[test]
+    fn the_catalogue_lists_a_long_sentence_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let long = "palabra ".repeat(40);
+        let long = long.trim();
+        let cut = crate::sanitize::truncate_chars(long, 160).to_string();
+        for (id, kind, object) in [(1, "decision", long), (2, "correction", cut.as_str())] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,?1,'r',?3,?3,'user_said',3,'s',?1,1)",
+                    rusqlite::params![id, kind, object],
+                )
+                .unwrap();
+        }
+        assert_eq!(catalog(&db, 300).unwrap().ids.len(), 1);
+    }
+
+    /// The budget cutting a live record off a pull is not the record being retired.
+    #[test]
+    fn show_does_not_call_a_record_the_budget_cut_retired() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let body = "texto ".repeat(200);
+        for id in 1..=2i64 {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,'decision',?1,'r','o',?2,'user_said',3,'s',?1,1)",
+                    rusqlite::params![id, body],
+                )
+                .unwrap();
+        }
+        let d = show(&db, &[1, 2], 200).unwrap();
+        assert_eq!(d.ids.len(), 1);
+        assert!(!d.text.contains("retired"), "{}", d.text);
+        assert!(d.text.contains("on record, not shown"), "{}", d.text);
+    }
+
     #[test]
     fn the_catalogue_marks_a_record_another_active_one_contradicts() {
         let tmp = tempfile::tempdir().unwrap();

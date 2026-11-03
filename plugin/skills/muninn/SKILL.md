@@ -25,10 +25,11 @@ whether it is the whole list or a recent page of it, and that is what an absence
 complete, and a subject missing from it has nothing recorded; truncated, and it may.
 
 Pull any entry in full with `muninn show <id> [<id> …]`. A retired id returns nothing, by
-design — retired records are never served.
+design — retired records are never served. An id the output calls "on record, not shown in this
+block" is live but did not fit the budget: ask for it on its own.
 
 ## Asking
-`muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and opens with `sufficient` or `insufficient`. Quote records, do not paraphrase them into certainty.
+`muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and opens with `sufficient` or `insufficient`. Ask in the language the records are in: the search matches words, so a Spanish store answers Spanish questions (27 of 30 against 5 of 30 in English, usage-v2). Quote records, do not paraphrase them into certainty.
 
 ## Diagnosing
 `muninn status` → `MUNINN 11/11 GREEN` or one RED with its fix. `muninn doctor` lists all eleven checks with their detail.

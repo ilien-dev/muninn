@@ -239,7 +239,9 @@ Tres disparadores, todos deterministas, ninguno por similitud:
 1. **Supersesión en escritura:** nuevo `(subject, relation)` con distinto `object` →
    el anterior `invalid=1, reason=superseded, invalidated_by=nuevo`. 15–40 % de hechos
    superados servidos → ~0 % `[E1]`; 6–27 % → 98–100 % en supersesión, completitud y
-   negación `[K6]`.
+   negación `[K6]`. Un `episode` no participa, y un `correction` solo reemplaza a otro de la
+   misma sesión con al menos 10 % de palabras de contenido en común. La respuesta a una pregunta
+   de AskUserQuestion queda registrada pero no retira nada por texto.
 2. **Ancla cambiada:** validador en background compara `anchor_hash` con el contenido
    actual; si difiere, `invalid=1, reason=anchor_changed`. **No se adivina un valor
    nuevo**: se retira `[K11]`.
@@ -264,10 +266,12 @@ Tres disparadores, todos deterministas, ninguno por similitud:
    vocabulario, no un valor, salvo que el registro la escriba como un nombre (mayúscula
    interior, dígito, punto o guion) — sin esto la regla retiró un registro real de este
    proyecto porque un commit tocó una línea que contenía la palabra `delivered`. Y una palabra
-   borrada solo cuenta si un registro ya la nombraba: del diff no sale ningún tema.
+   borrada solo cuenta si un registro ya la nombraba: del diff no sale ningún tema. Solo un
+   commit posterior al registro dice algo sobre él. Los registros tipados del mismo turno caen
+   con él solo si nombran el valor (usage-v1).
 
-   Lo que el commit deja en su lugar: si algún registro activo nombra una palabra que el mismo
-   hunk añadió, ese hereda las palabras de tema del retirado (en la clave indexada, nunca en el
+   Lo que el commit deja en su lugar: si algún registro activo posterior al retirado nombra una
+   palabra nueva que el mismo hunk añadió, ese hereda las palabras de tema del retirado (en la clave indexada, nunca en el
    cuerpo). Y en todo caso se escribe lo que la línea pasó a decir, como `decision`
    `commit_linked` de confianza 2 anclada al archivo y fechada por el commit — **solo cuando
    un intercambio retiró algo**, así que el churn ordinario no crea nada.

@@ -128,3 +128,24 @@ fn a_fold_does_not_reopen_what_the_session_already_saw() {
         "and another session still does: {other}"
     );
 }
+
+#[test]
+fn a_subagent_gets_the_memory_unless_it_is_switched_off() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    run(root, &["init", "--keep-native"], "");
+    let db = root.join(".muninn/muninn.db");
+    let sql = "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+               VALUES('invariant','never edit generated','must','never edit generated files','user: never edit generated files\n','user_said',3,'s','h1',1);";
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute_batch(sql)
+        .unwrap();
+    let input = r#"{"session_id":"s","hook_event_name":"SubagentStart","agent_type":"general"}"#;
+    let out = run(root, &["hook", "SubagentStart"], input);
+    assert!(out.contains("never edit generated files"), "{out}");
+    assert!(out.contains("\"hookEventName\":\"SubagentStart\""), "{out}");
+    run(root, &["config", "subagent-delivery", "off"], "");
+    assert_eq!(run(root, &["hook", "SubagentStart"], input), "");
+}

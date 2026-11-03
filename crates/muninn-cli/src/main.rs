@@ -127,7 +127,7 @@ enum Cmd {
         #[arg(long)]
         session: Option<String>,
     },
-    /// Read or set a project setting (`cues on|off`, `prompt-delivery on|off`)
+    /// Read or set a project setting (`cues on|off`, `prompt-delivery on|off`, `subagent-delivery on|off`)
     Config { key: String, value: Option<String> },
     /// Scan the project's configuration for the three published defect classes:
     /// unpinned MCP servers, over-broad Bash allow rules, skills that pre-approve a shell

@@ -51,10 +51,12 @@ fn dedup(kind: &str, subject: &str, relation: &str, object: &str, body: &str) ->
 }
 
 /// Supersession (ENGINE.md §5.1): an active record with the same (subject, relation)
-/// and a different object is retired and points at its replacement. Kinds whose
-/// subject is unique per record (episodes, corrections, commits) never match.
+/// and a different object is retired and points at its replacement. An episode or a
+/// correction is an event, and a later event does not make an earlier one false: their
+/// subjects only name where they happened, so they never take part. Records written before
+/// the subject carried a byte offset can still share one.
 fn supersede(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<usize> {
-    if c.kind == "episode" {
+    if matches!(c.kind, "episode" | "correction") {
         return Ok(0);
     }
     let n = tx.execute(
@@ -62,6 +64,37 @@ fn supersede(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<us
          WHERE invalid=0 AND subject=?2 AND relation=?3 AND object<>?4 AND id<>?1 AND kind=?5",
         rusqlite::params![new_id, c.subject, c.relation, c.object, c.kind],
     )?;
+    Ok(n)
+}
+
+/// A correction that repeats an earlier one from the same session replaces it. Corrections of
+/// different things stand side by side.
+fn supersede_correction(tx: &rusqlite::Connection, new_id: i64, c: &Candidate) -> Result<usize> {
+    if c.kind != "correction" {
+        return Ok(0);
+    }
+    let Some((session, _)) = c.subject.split_once('#') else {
+        return Ok(0);
+    };
+    let olds: Vec<(i64, String)> = tx
+        .prepare(
+            "SELECT id, object FROM record WHERE invalid=0 AND kind='correction' AND id<>?1 \
+             AND substr(subject, 1, length(?2) + 1) = ?2 || '#'",
+        )?
+        .query_map(rusqlite::params![new_id, session], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    let mut n = 0;
+    for (id, old) in olds {
+        if crate::extract::restates(&old, &c.object) {
+            n += tx.execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?1 WHERE id=?2",
+                [new_id, id],
+            )?;
+        }
+    }
     Ok(n)
 }
 
@@ -660,9 +693,16 @@ pub fn ingest_transcript_with(
                     _ => {}
                 }
                 stats.superseded += supersede(&tx, id, &c)?;
-                stats.superseded += supersede_said(&tx, id, &c)?;
-                stats.superseded += supersede_quantity(&tx, id, &c)?;
-                stats.superseded += supersede_via_ack(&tx, id, &c)?;
+                stats.superseded += supersede_correction(&tx, id, &c)?;
+                // An answer in AskUserQuestion carries the question's wording and every word
+                // of the option picked. The choice is the person's and goes on record, but
+                // that text says nothing about which earlier record it replaces.
+                let answer = session.turns.get(c.turn_index).is_some_and(|t| t.answered);
+                if !answer {
+                    stats.superseded += supersede_said(&tx, id, &c)?;
+                    stats.superseded += supersede_quantity(&tx, id, &c)?;
+                    stats.superseded += supersede_via_ack(&tx, id, &c)?;
+                }
             } else {
                 stats.duplicates += 1;
             }
@@ -858,10 +898,190 @@ pub fn retire_summary_records(db: &Db) -> Result<usize> {
     Ok(retire.len())
 }
 
+/// One pass that puts back what two bugs retired, up to 1.1.0.
+///
+/// A correction's subject held the turn's index, which restarts at 0 on every ingest, so a
+/// correction could retire another one that had nothing to do with it. And `maintain` chose as
+/// the replacement any record sharing a word with a commit's added lines, older ones included,
+/// so a live statement ended up retired in favour of something said before it. Both leave a
+/// shape nothing else can: a correction replaced by an unrelated correction of the same subject,
+/// and a record replaced by an older one. Each restored id is noted in `meta` under `restored:<id>`.
+/// A `meta` key keeps it to one run.
+pub fn restore_false_retirements(db: &Db) -> Result<usize> {
+    const DONE: &str = "false_retirements_restored";
+    if db.meta_get(DONE)?.is_some() {
+        return Ok(0);
+    }
+    let rows: Vec<(i64, String, String, bool)> = db
+        .conn
+        .prepare(
+            "SELECT r.id, r.object, h.object, h.created_at < r.created_at \
+             FROM record r JOIN record h ON h.id = r.invalidated_by \
+             WHERE r.invalid = 1 AND r.invalid_reason = 'superseded' \
+               AND ((r.kind = 'correction' AND h.kind = 'correction' AND h.subject = r.subject) \
+                    OR h.created_at < r.created_at)",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    let ids: Vec<i64> = rows
+        .into_iter()
+        .filter(|(_, old, new, older)| *older || !crate::extract::restates(old, new))
+        .map(|(id, ..)| id)
+        .collect();
+    let tx = db.write_tx()?;
+    let now = now_ms();
+    for id in &ids {
+        tx.execute(
+            "UPDATE record SET invalid = 0, invalid_reason = NULL, invalidated_by = NULL WHERE id = ?1",
+            [id],
+        )?;
+        // retiring a row takes it out of the index; nothing puts it back on its own
+        tx.execute(
+            "INSERT INTO record_fts(rowid, subject, object, body) \
+             SELECT id, subject, object, body FROM record WHERE id = ?1",
+            [id],
+        )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+            rusqlite::params![format!("restored:{id}"), now.to_string()],
+        )?;
+    }
+    if !ids.is_empty() {
+        tx.execute(
+            "UPDATE meta SET value = CAST(CAST(value AS INTEGER) + ?1 AS TEXT) WHERE key = 'fts_rows'",
+            [ids.len() as i64],
+        )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES ('records_changed_since_project', '1')",
+            [],
+        )?;
+    }
+    tx.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+        rusqlite::params![DONE, now.to_string()],
+    )?;
+    tx.commit()?;
+    Ok(ids.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use muninn_core::db::Mode;
+
+    /// What the two bugs left is put back and found again by search; a real replacement,
+    /// newer than what it retired, stays as it was.
+    #[test]
+    fn restores_what_the_two_bugs_retired_and_nothing_else() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), Mode::ReadWrite).unwrap();
+        let ins = |id: i64, kind: &str, subject: &str, object: &str, at: i64| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,?3,'r',?4,?4,'user_said',3,'s',?1,?5)",
+                    rusqlite::params![id, kind, subject, object, at],
+                )
+                .unwrap();
+        };
+        let retire = |id: i64, by: i64| {
+            db.conn
+                .execute(
+                    "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 WHERE id=?1",
+                    [id, by],
+                )
+                .unwrap();
+        };
+        ins(
+            1,
+            "correction",
+            "correction:abc#0",
+            "el puerto del servidor",
+            10,
+        );
+        ins(
+            2,
+            "correction",
+            "correction:abc#0",
+            "los logs van aparte",
+            20,
+        );
+        retire(1, 2);
+        ins(
+            7,
+            "correction",
+            "correction:abc#0",
+            "tabla usuarios lleva indice",
+            21,
+        );
+        ins(
+            8,
+            "correction",
+            "correction:abc#0",
+            "tabla usuarios lleva indice unico",
+            22,
+        );
+        retire(7, 8);
+        ins(3, "episode", "session:s#1", "viejo", 30);
+        ins(4, "decision", "said:state:x", "zanahoria", 40);
+        retire(4, 3);
+        ins(5, "decision", "said:state:y", "antes", 50);
+        ins(6, "decision", "said:change:y", "despues", 60);
+        retire(5, 6);
+        assert_eq!(restore_false_retirements(&db).unwrap(), 2);
+        let active = |id: i64| -> i64 {
+            db.conn
+                .query_row("SELECT 1 - invalid FROM record WHERE id=?1", [id], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        assert_eq!((active(1), active(4), active(5), active(7)), (1, 1, 0, 0));
+        let found: i64 = db
+            .conn
+            .query_row(
+                "SELECT count(*) FROM record_fts WHERE record_fts MATCH 'zanahoria'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(found, 1);
+        assert_eq!(restore_false_retirements(&db).unwrap(), 0, "runs once");
+    }
+
+    /// Two batches of the same session each start counting at turn 0. Two corrections about
+    /// different things are both current, and an answer in AskUserQuestion retires nothing.
+    #[test]
+    fn a_later_batch_does_not_retire_an_earlier_correction() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), Mode::ReadWrite).unwrap();
+        let t = transcript(
+            tmp.path(),
+            "t.jsonl",
+            &[
+                user("No, el puerto del servidor es 8080"),
+                assistant("Entendido."),
+            ],
+        );
+        ingest_transcript(&db, &t, "stop").unwrap();
+        let more = serde_json::to_string(&user("No, los logs van a stderr")).unwrap()
+            + "\n"
+            + &serde_json::to_string(&assistant("Entendido.")).unwrap()
+            + "\n";
+        let mut f = std::fs::OpenOptions::new().append(true).open(&t).unwrap();
+        std::io::Write::write_all(&mut f, more.as_bytes()).unwrap();
+        ingest_transcript(&db, &t, "stop").unwrap();
+        let (active, subjects): (i64, i64) = db
+            .conn
+            .query_row(
+                "SELECT count(*), count(DISTINCT subject) FROM record WHERE kind='correction' AND invalid=0",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((active, subjects), (2, 2));
+    }
 
     /// Records a summary put on record before 1.1.0 are retired by the one-time pass, and a
     /// record the user really typed in the same transcript is not.

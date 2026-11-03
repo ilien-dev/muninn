@@ -824,6 +824,13 @@ fn main() -> Result<()> {
                 &serde_json::json!({"session_id":"b","cwd":cwd}),
                 runs,
             )?;
+            let subagent = run_hook(
+                &bin,
+                root,
+                "SubagentStart",
+                &serde_json::json!({"session_id":"b","cwd":cwd}),
+                runs,
+            )?;
             let ups_gated = run_hook(
                 &bin,
                 root,
@@ -844,6 +851,13 @@ fn main() -> Result<()> {
                 Contract {
                     name: "hook SessionStart p95",
                     value: ss.1,
+                    limit: 10.0,
+                    unit: "ms",
+                    floor: Some(start.1),
+                },
+                Contract {
+                    name: "hook SubagentStart p95",
+                    value: subagent.1,
                     limit: 10.0,
                     unit: "ms",
                     floor: Some(start.1),
@@ -897,7 +911,7 @@ fn main() -> Result<()> {
                     serde_json::json!({
                         "records": records, "cues": cues, "runs": runs, "populate_ms": populate_ms,
                         "process_start": start,
-                        "hook": { "SessionStart": ss, "UserPromptSubmit_gated": ups_gated, "UserPromptSubmit_full": ups },
+                        "hook": { "SessionStart": ss, "SubagentStart": subagent, "UserPromptSubmit_gated": ups_gated, "UserPromptSubmit_full": ups },
                         "cue_eval": { "glob": glob, "ancestor": anc },
                         "ingest_200_ms": ingest_ms,
                         "limit_scale": scale,
@@ -914,6 +928,7 @@ fn main() -> Result<()> {
                 for (n, v) in [
                     ("process start (`--version`, no work)", start),
                     ("hook SessionStart", ss),
+                    ("hook SubagentStart", subagent),
                     ("hook UserPromptSubmit (gated)", ups_gated),
                     ("hook UserPromptSubmit (full)", ups),
                     ("cue eval GLOB per file", glob),

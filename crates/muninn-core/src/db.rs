@@ -55,7 +55,7 @@ impl Db {
                     | OpenFlags::SQLITE_OPEN_NO_MUTEX
             }
         };
-        let conn = Connection::open_with_flags(path, flags)?;
+        let mut conn = Connection::open_with_flags(path, flags)?;
         match mode {
             // a read hook never spins past its own timeout: ~93 ms in total, then it
             // gives up and stays silent

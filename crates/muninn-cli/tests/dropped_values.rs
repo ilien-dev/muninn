@@ -75,6 +75,28 @@ fn active(root: &Path, needle: &str) -> bool {
     n != 0
 }
 
+/// A commit made before the statement took the word out before it was said.
+#[test]
+fn a_commit_older_than_the_statement_retires_nothing() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    decision(root, "using PgBouncer for pooling");
+    let db = root.join(".muninn/muninn.db");
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute("UPDATE record SET created_at = 9000000000000", [])
+        .unwrap();
+    run(root, BIN, &["maintain"]);
+    assert!(active(root, "PgBouncer"));
+}
+
 #[test]
 fn a_one_for_one_swap_retires_the_decision_it_replaced() {
     let tmp = project("PgBouncer");

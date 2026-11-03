@@ -1,9 +1,10 @@
 //! Claude Code transcript (`transcript_path`): one JSON object per line.
 //!
-//! Only `type: user` and `type: assistant` lines carry conversation; `isMeta`
-//! and `isSidechain` lines are skipped; everything else (`attachment`, `mode`,
-//! `file-history-*`, `cost-state`, …) is bookkeeping and ignored. Unknown
-//! shapes never fail the parse: a torn or foreign line is dropped.
+//! `type: user` and `type: assistant` lines carry conversation, and so does one kind of
+//! `attachment`: `queued_command`, a message typed while the agent was working. `isMeta` and
+//! `isSidechain` lines are skipped; everything else (`mode`, `file-history-*`, `cost-state`, …)
+//! is bookkeeping and ignored. Unknown shapes never fail the parse: a torn or foreign line is
+//! dropped.
 
 use crate::model::{Session, ToolCall, Turn};
 use muninn_core::sanitize::{clean_text, strip_harness_blocks, truncate_chars};
@@ -12,6 +13,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, Seek, SeekFrom};
 
 const RESULT_HEAD: usize = 400;
+const ANSWERED: &str = "Your questions have been answered:";
 
 fn text_of(content: &Value) -> String {
     match content {
@@ -60,7 +62,6 @@ fn tool_target(name: &str, input: &Value) -> String {
 fn user_feedback(body: &str) -> Option<String> {
     const REJECT: &str = "The user doesn't want to proceed";
     const MARK: &str = "the user said:";
-    const ANSWERED: &str = "Your questions have been answered:";
     const APPROVED: &str = "User has approved your plan";
     if body.starts_with(REJECT) {
         let i = body.find(MARK)?;
@@ -74,6 +75,25 @@ fn user_feedback(body: &str) -> Option<String> {
         return Some("User approved the plan.".to_string());
     }
     None
+}
+
+/// The text of a message the person queued while the agent worked. The same attachment also
+/// carries task notifications, peer messages and reminders, which nobody typed; only
+/// `commandMode: prompt` from a human, or from before the harness recorded an origin, counts.
+fn queued_prompt(v: &Value) -> Option<String> {
+    let a = v.get("attachment")?;
+    if a.get("type").and_then(|t| t.as_str()) != Some("queued_command")
+        || a.get("commandMode").and_then(|m| m.as_str()) != Some("prompt")
+        || a.get("isMeta").and_then(|b| b.as_bool()).unwrap_or(false)
+    {
+        return None;
+    }
+    match a.get("origin").and_then(|o| o.get("kind")) {
+        None | Some(Value::Null) => {}
+        Some(kind) if kind.as_str() == Some("human") => {}
+        Some(_) => return None,
+    }
+    Some(text_of(a.get("prompt")?))
 }
 
 pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
@@ -98,6 +118,7 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
         if n == 0 {
             break;
         }
+        let line_start = offset;
         offset += n as u64;
         if !raw.ends_with(b"\n") {
             // torn last line: leave it for the next run
@@ -118,6 +139,39 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
             }
         }
         let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        let automated = v
+            .get("entrypoint")
+            .and_then(|e| e.as_str())
+            .is_some_and(|e| e.starts_with("sdk-"));
+        if ty == "attachment" {
+            let sidechain = v
+                .get("isSidechain")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(false);
+            if let Some(text) = queued_prompt(&v).filter(|_| !sidechain) {
+                let prompt = clean_text(&strip_harness_blocks(&text));
+                if !prompt.trim().is_empty() {
+                    if let Some(mut t) = current.take() {
+                        t.end_offset = t.end_offset.max(session.end_offset);
+                        session.turns.push(t);
+                    }
+                    current = Some(Turn {
+                        index: session.turns.len(),
+                        timestamp: v
+                            .get("timestamp")
+                            .and_then(|t| t.as_str())
+                            .map(str::to_string),
+                        user_prompt: prompt,
+                        end_offset: offset,
+                        start_offset: line_start,
+                        automated,
+                        ..Default::default()
+                    });
+                    session.end_offset = offset;
+                }
+            }
+            continue;
+        }
         if ty != "user" && ty != "assistant" {
             continue;
         }
@@ -186,6 +240,7 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                     if feedback.is_empty() {
                         continue;
                     }
+                    let answered = feedback.iter().any(|f| f.starts_with(ANSWERED));
                     let prompt = clean_text(&strip_harness_blocks(&feedback.join("\n")));
                     if let Some(mut t) = current.take() {
                         t.end_offset = t.end_offset.max(session.end_offset);
@@ -197,6 +252,9 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                         timestamp: ts,
                         user_prompt: prompt,
                         end_offset: offset,
+                        start_offset: line_start,
+                        automated,
+                        answered,
                         ..Default::default()
                     });
                     continue;
@@ -217,6 +275,8 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                 timestamp: ts,
                 user_prompt: prompt,
                 end_offset: offset,
+                start_offset: line_start,
+                automated,
                 ..Default::default()
             });
         } else {
@@ -274,6 +334,53 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
     }
     session.end_offset = offset;
     Ok(session)
+}
+
+#[cfg(test)]
+mod queued_tests {
+    use super::parse;
+    use serde_json::json;
+
+    fn parsed(lines: &[serde_json::Value]) -> crate::model::Session {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+        std::fs::write(&p, text).unwrap();
+        parse(&p, 0).unwrap()
+    }
+
+    fn queued(prompt: &str, origin: serde_json::Value) -> serde_json::Value {
+        json!({"type": "attachment", "sessionId": "s", "timestamp": "2026-10-01T00:00:00Z",
+               "attachment": {"type": "queued_command", "commandMode": "prompt",
+                              "prompt": prompt, "origin": origin}})
+    }
+
+    /// A message typed while the agent worked is a turn. What else travels in the same
+    /// attachment is not: nobody typed a task notification or a peer's message.
+    #[test]
+    fn a_queued_message_is_a_turn_and_a_notification_is_not() {
+        let s = parsed(&[
+            json!({"type": "user", "sessionId": "s", "message": {"content": "primero"}}),
+            queued("nunca borres esto", json!({"kind": "human"})),
+            queued("sin origen", serde_json::Value::Null),
+            queued("de otro agente", json!({"kind": "peer"})),
+            json!({"type": "attachment", "attachment": {"type": "queued_command",
+                   "commandMode": "task-notification", "prompt": "terminó"}}),
+        ]);
+        let prompts: Vec<&str> = s.turns.iter().map(|t| t.user_prompt.as_str()).collect();
+        assert_eq!(prompts, ["primero", "nunca borres esto", "sin origen"]);
+        assert!(s.turns[1].start_offset > s.turns[0].start_offset);
+    }
+
+    #[test]
+    fn a_program_prompt_is_marked_automated() {
+        let s = parsed(&[
+            json!({"type": "user", "entrypoint": "sdk-cli", "message": {"content": "hazlo"}}),
+            json!({"type": "user", "entrypoint": "cli", "message": {"content": "hazlo tú"}}),
+        ]);
+        assert!(s.turns[0].automated);
+        assert!(!s.turns[1].automated);
+    }
 }
 
 #[cfg(test)]
