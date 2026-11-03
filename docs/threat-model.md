@@ -78,7 +78,7 @@ published defect classes before anything is applied.
 
 ## 5. Read path privilege
 
-The read hooks (`SessionStart`, `UserPromptSubmit`, `PreCompact`,
+The read hooks (`SessionStart`, `SubagentStart`, `UserPromptSubmit`, `PreCompact`,
 `PostCompact`, `InstructionsLoaded`) open the store with `query_only=1` and
 `SQLITE_OPEN_READ_ONLY`. They cannot write the database even if compromised.
 Heartbeats go to an append-only log file. Only `Stop`, `SessionEnd` and

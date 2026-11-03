@@ -258,9 +258,20 @@ fn asks_for_generated_text(s: &str) -> bool {
     open.is_match(s) && count.is_match(s)
 }
 
+/// Two corrections from one session that say the same thing again: at least 10 % of their
+/// content words are shared. In the 1.1.0 review unrelated corrections sat at 5 % or less.
+pub fn restates(a: &str, b: &str) -> bool {
+    let (a, b) = (topic_words(a), topic_words(b));
+    let shared = a.iter().filter(|w| b.contains(w)).count();
+    let all = a.len() + b.len() - shared;
+    all > 0 && shared * 100 >= all * 10
+}
+
 fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     let up = t.user_prompt.trim();
-    if up.is_empty() || is_tagged(up) || crate::is_compaction_summary(up) {
+    // A program's prompt stays on record as an episode. It is nobody's decision, and trust 3
+    // says a person stated it.
+    if up.is_empty() || t.automated || is_tagged(up) || crate::is_compaction_summary(up) {
         return;
     }
     if is_correction(up) && up.chars().count() <= 1_500 {
@@ -268,7 +279,11 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
         out.push(Candidate {
             kind: "correction",
             ack: String::new(),
-            subject: format!("correction:{}#{}", &sid[..sid.len().min(8)], t.index),
+            subject: format!(
+                "correction:{}#{}",
+                &sid[..sid.len().min(8)],
+                t.start_offset.max(t.index as u64)
+            ),
             relation: "user_said".into(),
             object: redact(&first_line(up, 160)),
             body,
@@ -2416,6 +2431,25 @@ mod paste_tests {
     #[test]
     fn a_header_is_not_a_decision() {
         assert!(decisions("Por condición de 540 registros:").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod automated_tests {
+    use super::*;
+
+    #[test]
+    fn a_program_prompt_types_nothing() {
+        let t = Turn {
+            user_prompt: "No, eso está mal. Nunca uses pkill en este proyecto.".into(),
+            automated: true,
+            ..Default::default()
+        };
+        let s = Session {
+            turns: vec![t],
+            ..Default::default()
+        };
+        assert!(extract(&s, "abcdef12").is_empty());
     }
 }
 

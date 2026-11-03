@@ -25,6 +25,14 @@ pub struct Turn {
     pub files_touched: Vec<String>,
     /// Byte offset just past the last line of this turn (for watermarks).
     pub end_offset: u64,
+    /// Byte offset of the line that opened this turn. Unlike `index`, which restarts at 0 on
+    /// every parse from a watermark, this names one turn for the life of the transcript.
+    pub start_offset: u64,
+    /// The harness says a program sent this, not a person (`entrypoint: sdk-*`).
+    pub automated: bool,
+    /// An answer picked in AskUserQuestion: the person's choice, in a wrapper of question text
+    /// that the person did not write.
+    pub answered: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -24,6 +24,8 @@ pub struct MaintainStats {
     pub values_retired: usize,
     /// Typed records retired because a compaction summary, not the user, put them on record.
     pub summary_records_retired: usize,
+    /// Records put back after a bug up to 1.1.0 retired them.
+    pub records_restored: usize,
     pub ms: u128,
 }
 
@@ -386,14 +388,14 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         return Ok(0);
     }
     // the values the store actually holds, so the diff's vocabulary is never the subject
-    let live: Vec<(i64, String)> = {
+    let live: Vec<(i64, String, i64)> = {
         let mut st = db.conn.prepare(
-            "SELECT id, object FROM record WHERE invalid=0 AND length(body) <= 700 AND ( \
+            "SELECT id, object, created_at FROM record WHERE invalid=0 AND length(body) <= 700 AND ( \
                  (kind='decision' AND origin IN ('user_said','review_accepted')) \
                  OR kind='episode') \
              ORDER BY created_at DESC, id DESC LIMIT 400",
         )?;
-        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.flatten().collect()
     };
     // every content word of the statement, not only the ones that look like a product name —
@@ -401,7 +403,7 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
     // name-shaped ones kept apart, because they are exempt from the commonness test below
     let words_of: Vec<(i64, Vec<String>, Vec<String>)> = live
         .iter()
-        .map(|(id, obj)| {
+        .map(|(id, obj, _)| {
             (
                 *id,
                 muninn_capture::extract::topic_words(obj),
@@ -411,9 +413,14 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         .collect();
     let object_of = |id: i64| -> String {
         live.iter()
-            .find(|(i, _)| *i == id)
-            .map(|(_, o)| o.clone())
+            .find(|(i, _, _)| *i == id)
+            .map(|(_, o, _)| o.clone())
             .unwrap_or_default()
+    };
+    let created_of = |id: i64| -> i64 {
+        live.iter()
+            .find(|(i, _, _)| *i == id)
+            .map_or(0, |(_, _, c)| *c)
     };
     let mut n = 0;
     let mut gone_cache: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
@@ -438,8 +445,13 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         // the number is not a word at all, so `3 attempts` → `7 attempts` leaves nothing that
         // went away. The slot is the unit and the value is the number, exactly as in the
         // conversational rule, and the hunk holds both lines.
+        //
+        // Only a commit made after the statement says anything about it. An earlier commit took
+        // the word out before it was said, so the person said it knowing what the code held.
+        let born = created_of(*id);
+        let later = || commits.iter().filter(|c| c.created_at > born);
         let quantities = muninn_capture::extract::quantity_slots(&object_of(*id));
-        let swap = commits.iter().find_map(|c| {
+        let swap = later().find_map(|c| {
             let sw = c.swaps.iter().find(|sw| {
                 words
                     .iter()
@@ -471,7 +483,7 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
                 (*c, w)
             }
             None => {
-                let Some((c, gone)) = commits.iter().find_map(|c| {
+                let Some((c, gone)) = later().find_map(|c| {
                     let w = words.iter().find(|w| c.removed.contains(w))?;
                     Some((c, w))
                 }) else {
@@ -511,9 +523,16 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
                 continue;
             }
         }
+        // A replacement comes after what it replaces and names what the commit brought in:
+        // sharing any word with the added lines was enough before, and an unrelated older record
+        // was then shown as the current word on the subject.
         let heir: Option<i64> = words_of
             .iter()
-            .find(|(other, w, _)| other != id && w.iter().any(|w| added.contains(w)))
+            .find(|(other, w, _)| {
+                other != id
+                    && created_of(*other) > born
+                    && w.iter().any(|w| added.contains(w) && !words.contains(w))
+            })
             .map(|(i, _, _)| *i);
         n += tx.execute(
             "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
@@ -521,7 +540,9 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             rusqlite::params![id, heir],
         )?;
         // the same turn's literal episode states it too, and serving that would put the
-        // dropped value back in front of the agent
+        // dropped value back in front of the agent. So does a record typed from the same
+        // sentence. A typed record of that turn that does not name the value is a separate
+        // statement, and nothing here says it stopped holding.
         let tref: Option<String> = tx
             .query_row("SELECT transcript_ref FROM record WHERE id=?1", [id], |r| {
                 r.get(0)
@@ -531,8 +552,8 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         if let Some(tref) = tref {
             tx.execute(
                 "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
-                 WHERE invalid=0 AND transcript_ref=?1 AND length(body) <= 700",
-                rusqlite::params![tref, heir],
+                 WHERE invalid=0 AND transcript_ref=?1 AND length(body) <= 700                    AND (kind='episode' OR instr(lower(body), ?3) > 0)",
+                rusqlite::params![tref, heir, gone],
             )?;
         }
         if let Some(h) = heir {
@@ -658,6 +679,10 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         Ok(n) => st.summary_records_retired = n,
         Err(e) => output::err(&format!("muninn maintain: summary records: {e}")),
     }
+    match muninn_capture::ingest::restore_false_retirements(&db) {
+        Ok(n) => st.records_restored = n,
+        Err(e) => output::err(&format!("muninn maintain: restore: {e}")),
+    }
     match capture_dropped_values(paths, &db) {
         Ok(n) => st.values_retired = n,
         Err(e) => output::err(&format!("muninn maintain: dropped values: {e}")),
@@ -677,7 +702,12 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
     {
         output::err(&format!("muninn maintain: fts optimize: {e}"));
     }
-    if st.commits + st.reverts + st.values_retired + st.summary_records_retired > 0
+    if st.commits
+        + st.reverts
+        + st.values_retired
+        + st.summary_records_retired
+        + st.records_restored
+        > 0
         || db
             .meta_get("records_changed_since_project")
             .ok()

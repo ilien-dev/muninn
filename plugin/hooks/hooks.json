@@ -5,6 +5,9 @@
       { "matcher": "startup|resume|compact|clear",
         "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-start\"", "timeout": 120 } ] }
     ],
+    "SubagentStart": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "SubagentStart"], "timeout": 2 } ] }
+    ],
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "UserPromptSubmit"], "timeout": 2 } ] }
     ],

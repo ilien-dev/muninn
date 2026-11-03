@@ -195,8 +195,8 @@ is a value the project has stopped using. So is one that a single line of a comm
 with another. The decision that named it is retired. What the line became is
 recorded too, with the commit behind it, so the question that reached the old answer reaches
 the new one. Nothing is guessed: a removed word only counts if a record already named it, a
-word your repository uses in more than three files is not treated as a value at all, and a
-commit that retires nothing writes nothing.
+word your repository uses in more than three files is not treated as a value at all, only a
+commit made after the record can retire it, and a commit that retires nothing writes nothing.
 
 Measured on two held-out sets that the code had never seen, with the commit subject
 deliberately uninformative ("update dependencies") so the commit contributes only its diff:
@@ -395,6 +395,12 @@ the startup text instead was measured too and cost six answers in fifty-four, so
 text stays. The first version of this measurement said the opposite, and it was wrong: it
 counted our own injection twice, because Muninn returns its context on standard output and the
 hook record repeats it.
+
+Since 1.2.0 each subagent gets memory too, which adds to that cost: Claude Code does not run
+`SessionStart` for a subagent, so a `SubagentStart` hook hands it the invariants and corrections a
+session start shows and the catalogue, capped at 700 and 300 tokens. With it the subagent followed
+a recorded rule in 5 of 6 tasks, and in 1 of 6 without it (usage-v3, one model).
+`muninn config subagent-delivery off` turns it off.
 
 A question in one language does not reach a record in another. On the Spanish half of the
 held-out sets the replaced decision is retired 10 times out of 10 and the new answer is

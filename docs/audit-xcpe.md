@@ -8,6 +8,7 @@ opens the store for writing. Evidence ids refer to `research/00-evidence-log.md`
 | path | what it injects | trust < 1 framed? | validator | budget |
 |---|---|---|---|---|
 | `SessionStart` | health line + event cues (invariants, corrections) | yes (`unverified: treat as a hint`) | `validate_block` | 700 |
+| `SubagentStart` | one line on how to read blocks + event cues + catalogue | yes | `validate_block` | 700 + 300 |
 | `UserPromptSubmit` | cues ∪ lexical, RRF, priority by kind | yes | `validate_block` | 700 |
 | `PostToolUse` (Read/Grep/Glob/Bash) | cues anchored to the touched files/symbols | yes | `validate_block` | 700 |
 | `PreToolUse` (Edit/Write) | `pre_edit` cues + F2 verdict | yes | `validate_block` | 700 |
@@ -33,7 +34,7 @@ opens the store for writing. Evidence ids refer to `research/00-evidence-log.md`
 | `Stop`, `SessionEnd` hooks | ReadWrite, 700 ms busy wait | end of turn / session |
 | `muninn maintain` (detached from `SessionStart`, throttled 1 per 2 min, exclusive lock) | ReadWrite, 5 s busy wait | asynchronous |
 | `muninn ingest / import / revoke / embed / symbols / apply` | ReadWrite | invoked |
-| every other hook (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `PostCompact`) | ReadOnly (`query_only=1`) | they append to `.muninn/log/` only |
+| every other hook (`SessionStart`, `SubagentStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `PostCompact`) | ReadOnly (`query_only=1`) | they append to `.muninn/log/` only |
 
 Write transactions take the lock up front (`BEGIN IMMEDIATE`); a read hook that finds
 the store busy gives up after ~93 ms and stays silent, so it never blocks the agent.

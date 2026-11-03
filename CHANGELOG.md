@@ -4,6 +4,61 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 1.2.0 — 2026-11-02
+
+These come from 773 sessions and 1,200 subagent transcripts from the ten stores one person
+had used Muninn in. The measurements are usage-v1 to usage-v3 in
+[muninn-experiments](https://github.com/ilien-dev/muninn-experiments), which publishes counts
+and record ids only. The projects stay private.
+
+- **Subagents get memory.** Before this, 1 of the 1,200 subagents had been given any, and 667 of
+  them wrote files. A new `SubagentStart` hook hands a subagent the invariants and corrections a
+  session start shows, the catalogue, and one line on how to read them. In usage-v3 there were six
+  tasks, each with an obvious default that one recorded rule forbids. The subagent followed the
+  rule in 5 of 6 with the hook and in 1 of 6 without it. That is six tasks on one model
+  (`claude-sonnet-5-5`). Over seven `perf` runs its p95 was 6.7 to 9.7 ms, and SessionStart's 7.6 to 9.8 ms. `muninn config subagent-delivery off`
+  turns it off.
+- **Fewer records retired for no reason.** The 95 typed records that had been retired with a
+  replacement were labelled without seeing the code: 2 retirements were valid, and 25 lost
+  something the user had really said. Replaying every session with each build, 1.1.0 retired 20 of those
+  25 and this build retires 9. Retirements that pointed at an unrelated record went from
+  21 to 8. Both valid ones still happen. Four causes were fixed:
+  - A correction's subject came from a turn index that two turns could share, so a new correction
+    replaced an unrelated old one. That happened 19 times in the replay and now never does. A
+    correction now replaces only one from the same session that shares at least 10 % of its
+    content words.
+  - Episodes took part in replacement by text. They are literal excerpts and no longer do.
+  - An answer picked in AskUserQuestion is recorded but retires nothing by its wording.
+  - A commit could retire a statement made after it, and hand it to an older record. Only a commit
+    made after a record can retire it now, and only a newer record that names a word the commit
+    added inherits it. Of the records the turn produced, only those that name the removed value go
+    with it. Retirements handed to an older record went from 64 to 9.
+- **`maintain` brings back what those paths retired wrongly, once.** On copies of the ten stores it
+  restores 56 records, most of them episodes. 21 are among the 95 labelled: 13 real losses, 7
+  old statements that were never facts, and 1 that had been handed to an unrelated record. It restores neither valid retirement. Of 14 losses checked
+  by hand, 7 come back.
+- **Messages typed while the agent was working were never read.** Claude Code delivers them as
+  `queued_command` attachments, not as user turns. 28 of the 31 such messages the review found
+  missing are now stored, and the change adds no record built from a task notification.
+- **Sessions the Agent SDK runs no longer produce decisions.** Their prompts are written by
+  a program, so they are kept as episodes and nothing in them is typed.
+- **A long sentence was listed twice in the catalogue.** The decision keeps the whole line and the
+  correction from the same message cuts it at 160 characters, so the two did not match. The comparison now
+  cuts both at that length.
+- **`muninn show` called a live record retired** when the budget left it out of the block. It now
+  says the record is on record, not shown in this block, and to ask for it on its own.
+- **The startup text says to ask `muninn why` in the records' language.** The search matches words.
+  On 30 Spanish records the question reached the record 27 times in Spanish and 5 in English
+  (usage-v2). A model wrote those questions from the records, so they may be closer to the records'
+  wording than a real question would be.
+- **Dependencies:** `rusqlite` 0.41.1, `serde_json` 1.0.154, `sha2` 0.11.1, `tree-sitter` 0.27.1.
+- **Held out:** on the loop7 and loop8 scenarios, which none of these fixes was written from, every
+  figure is the same as on 1.1.0, and nothing is retired on the noise arm.
+- **Not fixed:** a user statement read as a change of an earlier one on the same subject still
+  retires it. That is most of what is still retired wrongly in the replay. `perf --strict` still fails on Windows on the full
+  UserPromptSubmit: 8.9 to 11.5 ms p95 against a 10 ms limit over seven runs of each build, on 1.1.0 and on
+  this build alike. The medians are 10.6 ms on 1.1.0 and 9.7 ms on this build.
+
 ## 1.1.0 — 2026-10-18
 
 These come from reading the stores of several projects one person had used Muninn in.
