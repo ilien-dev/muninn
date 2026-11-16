@@ -517,10 +517,10 @@ def("results", {
 // packet travels one edge per 1.3 s, then rests 0.6 s on the node it reached
 // while that node's subtitle turns into a note saying what happened there.
 // The label naming what the packet carries shows only while it moves.
-const HOOKS = [["ss", "SessionStart"], ["ups", "UserPromptSubmit"], ["pre", "PreToolUse"], ["post", "PostToolUse"], ["pc", "PreCompact"], ["stop", "Stop · SessionEnd"]];
+const HOOKS = [["ss", "SessionStart"], ["ups", "UserPromptSubmit"], ["pre", "PreToolUse"], ["sub", "SubagentStart"], ["pc", "PreCompact"], ["stop", "Stop · SessionEnd"]];
 const hookY = i => 138 + i * 46;
 const FN = {
-  n_cues: [350, 100, 210, 56, "cues", "your words + files touched"], n_view: [590, 100, 210, 56, "active view", "retired cards filtered out"],
+  n_cues: [350, 100, 210, 56, "cues", "the words of your message"], n_view: [590, 100, 210, 56, "active view", "retired cards filtered out"],
   n_rules: [350, 190, 210, 56, "compiled rules", "deny · ask"], n_budget: [590, 190, 210, 56, "budget", "≤ 700 tokens + provenance"],
   n_tr: [350, 360, 140, 56, "transcript", "what was said"], n_ex: [505, 360, 140, 56, "extraction", "typed, verbatim"], n_rd: [660, 360, 140, 56, "redaction", "secrets out"],
   n_git: [350, 460, 140, 56, "git diffs", "your commits"], n_su: [505, 460, 295, 56, "supersession", "a removed value retires its card"],
@@ -532,7 +532,7 @@ const FSTEPS = [
   { hook: "h_ss", src: "n_act", payload: "catalog · 3 cards", route: [["e_vs", 1, "n_view", "reads active cards only"], ["e_sv", 1, "h_ss"]],
     cap: "A session starts. Muninn reads the active cards and hands the assistant a catalog of what is on record.", asst: ["session starts", "3 cards on record"] },
   { hook: "h_ups", payload: "compress the uploads", route: [["e_ups", 0, "n_cues", "compress · uploads"], ["e_cv", 0, "n_view", "skips retired cards"], ["e_vs", 0, "n_act"]],
-    cap: "You write a message. Muninn takes your words and the files in play and looks for them among active cards only.", asst: ["you: compress the uploads", "Muninn looks it up…"] },
+    cap: "You write a message. Muninn takes your words and looks for them among active cards only.", asst: ["you: compress the uploads", "Muninn looks it up…"] },
   { hook: "h_ups", src: "n_act", payload: "#1 compression: zstd", route: [["e_sb", 0, "n_budget", "1 card · fits in 700 tokens"], ["e_bu", 0, "h_ups"]],
     cap: "The match goes back as evidence: under 700 tokens, with its source and trust. No model runs.", asst: ["gets #1: compression zstd", "with its source + trust"] },
   { hook: "h_pre", payload: "Edit migrations/004.sql", route: [["e_pre", 0, "n_rules", "matches rule #2"], ["e_pre", 1, "h_pre", null, "deny", "em"]],
@@ -671,10 +671,10 @@ def("flow", {
 });
 
 /* 05 · SCENARIOS ---------------------------------------------------------- */
-const CAT = [["mu", "[muninn:catalog] what is on record, newest first"], ["ink", "#5 decision · compression: zstd · replaces #1"], ["ink", "#3 invariant · migrations/ is read-only"], ["ink", "#4 dead end · redis cache for sessions"], ["mu", "pull any of them in full: muninn show <id>"]];
+const CAT = [["mu", "[muninn:catalog] what is on record"], ["ink", "#3 invariant · migrations/ is read-only"], ["ink", "#6 correction · use zstd, not gzip"], ["ink", "#5 decision · compression: zstd · replaces #1"], ["mu", "pull any of them in full: muninn show <id>"]];
 def("sc-catalog", {
   w: 640, h: 360, dur: 7, poster: 5.8,
-  beats: [[.2, "Se enciende la píldora SessionStart"], [.6, "El catálogo se escribe línea a línea: vigente primero, con «replaces #1»"], [5.2, "Aparece la etiqueta: el asistente empieza sabiendo"]],
+  beats: [[.2, "Se enciende la píldora SessionStart"], [.6, "El catálogo se escribe línea a línea: reglas y correcciones primero, luego decisiones, con «replaces #1»"], [5.2, "Aparece la etiqueta: el asistente empieza sabiendo"]],
   svg() {
     let s = `<g data-k="all"><rect x="24" y="24" width="592" height="312" rx="12" class="pn sk-line" stroke-width="1.5"/>`;
     s += `<g data-k="pill"><rect x="44" y="44" width="150" height="30" rx="15" class="nf sk-am" stroke-width="1.5"/><text class="t f-am" x="119" y="64" font-size="13" font-weight="700" text-anchor="middle">SessionStart</text></g>`;
@@ -877,10 +877,10 @@ def("local", {
 });
 
 /* 07 · INSTALL -------------------------------------------------------------- */
-const INST = [["> /plugin marketplace add ilien-dev/muninn", .4, 2, 2.8], ["> /plugin install muninn@muninn", 3, 4.2, 5], ["  restart · first session fetches Muninn, about 13 MB, and checks it", 5.2, 5.2, 0], ["> /muninn:init", 6.2, 7, 7.6], ["> /muninn:status", 8, 8.6, 0]];
+const INST = [["> /plugin marketplace add ilien-dev/muninn", .4, 2, 2.8], ["> /plugin install muninn@muninn", 3, 4.2, 5], ["  restart · first session fetches Muninn, a few megabytes, and checks it", 5.2, 5.2, 0], ["> /muninn:init", 6.2, 7, 7.6], ["> /muninn:status", 8, 8.6, 0]];
 def("install", {
   w: 900, h: 360, dur: 12, poster: 10.4,
-  beats: [[.4, "/plugin marketplace add ilien-dev/muninn"], [2, "El anillo gira mientras trabaja; luego ✓"], [3, "/plugin install muninn@muninn"], [5.2, "Reinicio: descarga de unos 13 MB, verificada"], [6.2, "/muninn:init en el proyecto"], [8, "/muninn:status"], [9, "MUNINN · GREEN"]],
+  beats: [[.4, "/plugin marketplace add ilien-dev/muninn"], [2, "El anillo gira mientras trabaja; luego ✓"], [3, "/plugin install muninn@muninn"], [5.2, "Reinicio: descarga de unos pocos megabytes, verificada"], [6.2, "/muninn:init en el proyecto"], [8, "/muninn:status"], [9, "MUNINN · GREEN"]],
   svg() {
     let s = `<g data-k="all"><rect x="20" y="20" width="860" height="320" rx="12" class="pn sk-line" stroke-width="1.5"/><path d="M20 32 a12 12 0 0 1 12 -12 H868 a12 12 0 0 1 12 12 V56 H20 Z" class="f-ln" opacity=".5"/>`;
     s += [44, 64, 84].map(x => `<circle cx="${x}" cy="38" r="5" class="f-mu" opacity=".6"/>`).join("") + `<text class="t mu" x="450" y="43" font-size="12" text-anchor="middle">Claude Code</text>`;

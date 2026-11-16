@@ -128,7 +128,8 @@ Once it is set up it works in the background, and you keep talking to your assis
 It keeps what you actually said rather than a summary of it, so nothing gets rewritten into
 something you never meant. Everything stays on your computer: Muninn has no account and no cloud
 service, and it never sends your conversations anywhere. It adds a few thousandths of a second
-to each message.
+to each message. An agent the assistant starts for a side task gets your rules and corrections
+too.
 
 <table>
   <tr>
@@ -230,6 +231,11 @@ compare. [docs/why-muninn.md](docs/why-muninn.md) says why for each one.
   switch the per-message reminders off, at the cost of a few more wrong answers.
 - It notices a change best when you write a sentence. "Let's switch to zstd" is easy to catch,
   while a reply that is just the word "zstd" is harder, though Muninn now wins that case too.
+- It cannot always tell which of two statements is the newer one. Sessions are not always read
+  in the order they happened. When an older statement is read after the one that replaced it,
+  Muninn keeps both and marks them as in conflict, and the assistant is told to ask you. In
+  some of those cases neither gets the mark; the [changelog](CHANGELOG.md) lists them under
+  "Not fixed".
 - Languages don't mix well. If you ask in English about something you decided in Spanish,
   Muninn may not find it.
 - It is a personal memory. On a team, each person gets their own, built from their own
@@ -345,6 +351,17 @@ undoes exactly what `init` changed.
 
 Restart the assistant afterwards. You don't run `muninn init` again: the first session after an
 update fetches the new version, and the memory you already have stays.
+
+### From 1.x to 2.0
+
+Version 2.0 changes the format of the memory once, the first time it writes to it. Nothing you
+recorded is retired or deleted. On a copy of our largest store that took 3.5 to 3.8 seconds.
+A 1.x Muninn refuses the memory afterwards and stays silent, so update every computer that
+opens the same project folder.
+
+`muninn embed`, `muninn symbols` and the `cues` setting are gone. None of the eleven stores
+we reviewed held an embedding, and none of the 79,534 deliveries on record had come from a
+symbol or a file cue. The [changelog](CHANGELOG.md) has the full list.
 
 ## Using it
 
