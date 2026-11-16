@@ -4,6 +4,21 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 2.0.1 — 2026-11-15
+
+Documentation only. The binary is 2.0.0's.
+
+- **Three README animations showed 1.x.** The flow diagram listed `PostToolUse`, which 2.0.0
+  removed, and said a message is matched by "your words + files touched". It now lists
+  `SubagentStart` and matches by the words of the message. The catalog animation put a decision
+  first and listed a dead end; it now shows a rule, a correction and then a decision, the order
+  2.0.0 prints. The install animation said the download is about 13 MB, and now says a few
+  megabytes, as the README does.
+- **The README says what 2.0.0 changes for someone coming from 1.x**: the one-time change of
+  the store's format and the commands that are gone. It also gains a limit, that an older
+  statement read after its replacement leaves both marked as in conflict, and one sentence on
+  subagents getting rules and corrections.
+
 ## 2.0.0 — 2026-11-14
 
 These come from a second review of real use, on copies of the eleven stores one person had used
