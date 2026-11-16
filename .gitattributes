@@ -1,0 +1,3 @@
+# The boot texts are compiled into the binary and counted against a character cap.
+# A checkout that turns their line ends into CRLF adds one character a line.
+plugin/templates/* text eol=lf
