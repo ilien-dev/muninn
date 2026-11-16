@@ -1,8 +1,10 @@
 //! `muninn why` (plan, Phase 4 §5-bis). Invoked, never injected. A deterministic
-//! router picks the question's shape, lexical BM25 and the exact-kNN sidecar are fused
-//! by RRF, the F1 filter applies (invalid rows never, unless `--all`), and the answer is
+//! router picks the question's shape, lexical BM25 ranks what matches,
+//! the F1 filter applies (invalid rows never, unless `--all`), and the answer is
 //! literal records with origin, trust, transcript reference, lineage and conflicts —
 //! no synthesis. A sufficiency marker says whether a trust ≥ 2 record answers directly.
+
+mod es;
 
 use muninn_core::filter::{conflicts_of, lineage};
 use muninn_core::project::{load_all, RecordRow};
@@ -94,6 +96,12 @@ pub fn route(q: &str) -> Route {
     Route::All
 }
 
+/// Every kind `why` answers with, whatever the route.
+const ALL_KINDS: &str = "('invariant','decision','deadend','correction','claim','episode')";
+
+/// The kinds a route puts first among equal matches of the same date. A route orders, it never excludes: each
+/// one used to leave kinds out, so a correction that names a file or an invariant that says
+/// "commit" could not be found by its own words (R-16: 0 of 15 such records on two stores).
 fn kinds_for(r: Route) -> &'static str {
     match r {
         Route::Decision => "('decision','invariant','correction','claim')",
@@ -101,9 +109,7 @@ fn kinds_for(r: Route) -> &'static str {
         Route::Commit => "('decision','deadend','episode')",
         Route::File => "('decision','deadend','invariant','claim','episode')",
         Route::Rule => "('invariant','correction','decision')",
-        Route::Id | Route::All => {
-            "('invariant','decision','deadend','correction','claim','episode')"
-        }
+        Route::Id | Route::All => ALL_KINDS,
     }
 }
 
@@ -116,7 +122,6 @@ pub struct Answer {
     pub sufficiency: String,
     pub records: Vec<Found>,
     pub tokens: usize,
-    pub vector_used: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -131,7 +136,7 @@ pub struct Found {
 fn lexical(
     db: &Db,
     terms: &[String],
-    kinds: &str,
+    preferred: &str,
     include_invalid: bool,
     limit: usize,
 ) -> Result<Vec<(i64, f64)>> {
@@ -144,30 +149,132 @@ fn lexical(
     } else {
         "AND r.invalid = 0"
     };
-    // invalid rows are not in the external FTS index, so `--all` searches record directly
-    let sql = if include_invalid {
-        format!(
-            "SELECT r.id, 0.0 FROM record r WHERE r.kind IN {kinds} AND (r.subject LIKE ?1 OR r.object LIKE ?1 OR r.body LIKE ?1) ORDER BY r.id DESC LIMIT ?2"
-        )
-    } else {
-        format!(
-            "SELECT r.id, bm25(record_fts, 3.0, 2.0, 1.0) FROM record_fts JOIN record r ON r.id = record_fts.rowid \
-             WHERE record_fts MATCH ?1 {inv} AND r.kind IN {kinds} ORDER BY 2 LIMIT ?2"
-        )
-    };
+    // invalid rows are not in the external FTS index, so `--all` searches record directly.
+    // Equal scores go newest first, as in recall: memory answers with the latest statement, and
+    // FTS5 returned a tie in rowid order. After the date, the route's kinds go first: a newer
+    // statement of another kind is the one that prevails.
+    let tie =
+        format!("r.created_at DESC, CASE WHEN r.kind IN {preferred} THEN 0 ELSE 1 END, r.id DESC");
+    if include_invalid {
+        return every_word(db, terms, &tie, limit);
+    }
+    let sql = format!(
+        "SELECT r.id, bm25(record_fts, 3.0, 2.0, 1.0) FROM record_fts JOIN record r ON r.id = record_fts.rowid \
+         WHERE record_fts MATCH ?1 {inv} AND r.kind IN {ALL_KINDS} ORDER BY 2, {tie} LIMIT ?2"
+    );
     let mut stmt = db.conn.prepare(&sql)?;
-    let arg = if include_invalid {
-        format!("%{}%", terms.first().cloned().unwrap_or_default())
-    } else {
-        q
-    };
     let rows: Vec<(i64, f64)> = stmt
-        .query_map(rusqlite::params![arg, limit as i64], |r| {
+        .query_map(rusqlite::params![q, limit as i64], |r| {
             Ok((r.get(0)?, r.get(1)?))
         })?
         .filter_map(|r| r.ok())
         .collect();
     Ok(rows)
+}
+
+/// The SQL function `--all` compares record text through: `sanitize::fold`, so the text is
+/// lowercased and its accents folded as a question's words are (`fts_term`). `LIKE` alone folds
+/// ASCII case only, and "política" was searched as "politica" against "política".
+const FOLD_FN: &str = "muninn_fold";
+
+fn register_fold(db: &Db) -> Result<()> {
+    use rusqlite::functions::FunctionFlags;
+    db.conn.create_scalar_function(
+        FOLD_FN,
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            Ok(ctx
+                .get::<Option<String>>(0)?
+                .map(|s| muninn_core::sanitize::fold(&s)))
+        },
+    )?;
+    Ok(())
+}
+
+/// Whether a record's folded text holds parameter `?i`, a `like_pattern`.
+fn folded_holds(i: usize) -> String {
+    format!(
+        "({FOLD_FN}(r.subject) LIKE ?{i} ESCAPE '\\' OR {FOLD_FN}(r.object) LIKE ?{i} ESCAPE '\\' \
+         OR {FOLD_FN}(r.body) LIKE ?{i} ESCAPE '\\')"
+    )
+}
+
+/// `%word%` with `\`, `%` and `_` escaped, so `slow_path` matches itself and not `slowXpath`.
+fn like_pattern(word: &str) -> String {
+    let mut p = String::from("%");
+    for c in word.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            p.push('\\');
+        }
+        p.push(c);
+    }
+    p.push('%');
+    p
+}
+
+/// `--all`: a `LIKE` per word over `record`, retired rows included. A record scores the summed
+/// rarity of the words it holds, so every word typed counts and the rarest counts most; it used
+/// to search the first word alone, and "what about PgBouncer" searched for "what" (R-16).
+fn every_word(db: &Db, terms: &[String], tie: &str, limit: usize) -> Result<Vec<(i64, f64)>> {
+    let holds = folded_holds;
+    let n = db.count(&format!(
+        "SELECT count(*) FROM record r WHERE r.kind IN {ALL_KINDS}"
+    ))? as f64;
+    let likes: Vec<String> = terms.iter().map(|t| like_pattern(t)).collect();
+    let mut weighted = Vec::new();
+    for (i, like) in likes.iter().enumerate() {
+        let d: i64 = db.conn.query_row(
+            &format!(
+                "SELECT count(*) FROM record r WHERE r.kind IN {ALL_KINDS} AND {}",
+                holds(1)
+            ),
+            [like],
+            |r| r.get(0),
+        )?;
+        if d > 0 {
+            let w = ((n + 1.0) / (d as f64 + 1.0)).ln();
+            weighted.push(format!("CASE WHEN {} THEN {w:.6} ELSE 0 END", holds(i + 1)));
+        }
+    }
+    if weighted.is_empty() {
+        return Ok(vec![]);
+    }
+    let any: Vec<String> = (1..=likes.len()).map(holds).collect();
+    let sql = format!(
+        "SELECT r.id, {} AS score FROM record r WHERE r.kind IN {ALL_KINDS} AND ({}) \
+         ORDER BY score DESC, {tie} LIMIT {limit}",
+        weighted.join(" + "),
+        any.join(" OR ")
+    );
+    let mut stmt = db.conn.prepare(&sql)?;
+    let params: Vec<&dyn rusqlite::ToSql> =
+        likes.iter().map(|l| l as &dyn rusqlite::ToSql).collect();
+    let rows: Vec<(i64, f64)> = stmt
+        .query_map(params.as_slice(), |r| Ok((r.get(0)?, r.get(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// The question's words as `fts_term` gives them, three characters or more, each once.
+fn words(query: &str) -> Vec<String> {
+    let mut raw: Vec<String> = query
+        .split_whitespace()
+        .filter_map(muninn_core::sanitize::fts_term)
+        .filter(|t| t.chars().count() >= 3)
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    raw.retain(|t| seen.insert(t.clone()));
+    raw
+}
+
+/// `words` without the scaffolding `select_terms` never searches for.
+fn content_words(query: &str) -> Vec<String> {
+    words(query)
+        .into_iter()
+        .filter(|t| !muninn_core::recall::is_stop_word(t))
+        .collect()
 }
 
 /// Answer a question or an id. `budget_tokens` caps the rendered output (default
@@ -183,43 +290,73 @@ pub fn answer(
     let kinds = kinds_for(rt);
     let mut terms: Vec<String> = Vec::new();
     let mut ranked: Vec<(i64, f64)> = Vec::new();
-    let mut vector_used = false;
     if rt == Route::Id {
         let id: i64 = query.trim().parse().unwrap_or(0);
         ranked.push((id, 1.0));
     } else {
         terms = select_terms(db, query, 8)?;
+        // A Spanish word that changed its gender or number matches nothing: its stored forms
+        // are asked for instead (`es`, `why` only). Not under `--all`, which finds them below.
+        if !include_invalid {
+            let mut unmatched = db
+                .conn
+                .prepare("SELECT count(*) FROM record_fts WHERE record_fts MATCH ?1")?;
+            for w in content_words(query) {
+                let n: i64 = unmatched
+                    .query_row([format!("\"{w}\"")], |r| r.get(0))
+                    .unwrap_or(1);
+                if n == 0 {
+                    for f in es::indexed_forms(db, &w)? {
+                        if !terms.contains(&f) {
+                            terms.push(f);
+                        }
+                    }
+                }
+            }
+        }
         // `select_terms` drops a word no *servable* record holds, because the index it asks
         // holds only those. Under `--all` that is exactly backwards: the word you are asking
         // about — the value that was dropped — is the one word guaranteed to be missing from
         // it, so "why --all PgBouncer" found nothing about PgBouncer. Ask with the words as
         // typed instead; the query below is a LIKE over `record`, which does not need them to
         // be in any index.
+        // The scaffolding words `select_terms` never searches for are left out here too, unless
+        // they are all there is.
         if include_invalid {
-            let raw: Vec<String> = query
-                .split_whitespace()
-                .filter_map(muninn_core::sanitize::fts_term)
-                .filter(|t| t.chars().count() >= 3)
-                .collect();
-            if !raw.is_empty() {
+            let raw = words(query);
+            let content = content_words(query);
+            if !content.is_empty() {
+                terms = content;
+            } else if !raw.is_empty() {
                 terms = raw;
             }
-        }
-        let lex = lexical(db, &terms, kinds, include_invalid, 20)?;
-        let mut fused: HashMap<i64, f64> = HashMap::new();
-        for (rank, (id, _)) in lex.iter().enumerate() {
-            *fused.entry(*id).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
-        }
-        // the sidecar: loaded here, on purpose, in an invoked tool — never in a hook
-        if let Ok(emb) = muninn_embed::Embedder::load_default() {
-            if let Ok(nn) = muninn_embed::knn(db, &emb.encode_one(query), 20, &emb.model_id) {
-                vector_used = !nn.is_empty();
-                for (rank, n) in nn.iter().enumerate() {
-                    *fused.entry(n.id).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
+            // a word no record holds as typed is asked by the forms of its stem that some
+            // record, retired or not, does hold (`es`)
+            register_fold(db)?;
+            let mut forms = Vec::new();
+            for w in &terms {
+                let n = db.conn.query_row(
+                    &format!("SELECT count(*) FROM record r WHERE {}", folded_holds(1)),
+                    [like_pattern(w)],
+                    |r| r.get::<_, i64>(0),
+                )?;
+                if n == 0 {
+                    forms.extend(es::stored_forms(db, w)?);
+                }
+            }
+            for f in forms {
+                if !terms.contains(&f) {
+                    terms.push(f);
                 }
             }
         }
-        ranked = fused.into_iter().collect();
+        let lex = lexical(db, &terms, kinds, include_invalid, 20)?;
+        // a record's score is its rank in the lexical list, on the reciprocal scale (k = 60)
+        let mut by_rank: HashMap<i64, f64> = HashMap::new();
+        for (rank, (id, _)) in lex.iter().enumerate() {
+            *by_rank.entry(*id).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
+        }
+        ranked = by_rank.into_iter().collect();
         ranked.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -238,12 +375,13 @@ pub fn answer(
         if row.invalid && !include_invalid {
             continue;
         }
-        if !kinds.contains(&format!("'{}'", row.kind)) && rt != Route::Id {
+        if !ALL_KINDS.contains(&format!("'{}'", row.kind)) && rt != Route::Id {
             continue;
         }
         let t = estimate(&row.body) + 40;
+        // too long for what is left: passed over, so a shorter record further down still fits
         if tokens + t > budget_tokens && !records.is_empty() {
-            break;
+            continue;
         }
         tokens += t;
         let commit = row
@@ -316,7 +454,6 @@ pub fn answer(
         sufficiency,
         records,
         tokens,
-        vector_used,
     })
 }
 
@@ -324,16 +461,11 @@ pub fn answer(
 pub fn render(a: &Answer) -> String {
     let mut s = String::new();
     s.push_str(&format!(
-        "muninn why · route {:?} · {} record(s) · ~{} tokens · {}{}\n",
+        "muninn why · route {:?} · {} record(s) · ~{} tokens · {}\n",
         a.route,
         a.records.len(),
         a.tokens,
         a.sufficiency,
-        if a.vector_used {
-            " · lexical+vector"
-        } else {
-            " · lexical only"
-        }
     ));
     for f in &a.records {
         let r = &f.record;
@@ -362,7 +494,16 @@ pub fn render(a: &Answer) -> String {
         s.push_str(r.body.trim_end());
         s.push('\n');
         if let Some(t) = &r.transcript_ref {
-            s.push_str(&format!("  evidence: {t}\n"));
+            // a file the client has since removed is named as gone (WP-21)
+            let gone = muninn_core::recall::evidence_file(t).is_some_and(|f| !f.is_file());
+            s.push_str(&format!(
+                "  evidence: {t}{}\n",
+                if gone {
+                    muninn_core::recall::EVIDENCE_GONE
+                } else {
+                    ""
+                }
+            ));
         }
         if f.lineage.len() > 1 {
             let chain: Vec<String> = f
@@ -483,6 +624,245 @@ mod tests {
         );
     }
 
+    /// Of two records that match a question equally well, the newer one comes first: memory
+    /// answers with the most recent statement. The dates here follow neither the ids nor their
+    /// reverse, so the order cannot come from the id in either direction.
+    #[test]
+    fn equal_matches_come_newest_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        for (subject, invalid, at) in [
+            ("a", 0, 2_000),
+            ("b", 0, 3_000),
+            ("c", 0, 1_000),
+            ("d", 1, 5_000),
+            ("e", 1, 6_000),
+            ("f", 1, 4_000),
+        ] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,invalid_reason,created_at) \
+                     VALUES('decision',?1,'is','the queue uses Kestrel','the queue uses Kestrel','user_said',3,'s',?1,?2,CASE ?2 WHEN 1 THEN 'superseded' END,?3)",
+                    rusqlite::params![subject, invalid, at],
+                )
+                .unwrap();
+        }
+        let subjects = |all: bool| -> Vec<String> {
+            answer(&db, "Kestrel", all, 20, 1_500)
+                .unwrap()
+                .records
+                .into_iter()
+                .map(|f| f.record.subject)
+                .collect()
+        };
+        assert_eq!(subjects(false), ["b", "a", "c"]);
+        assert_eq!(subjects(true), ["e", "d", "f", "b", "a", "c"]);
+    }
+
+    /// A record too long for what is left of the budget is passed over, not the end of the
+    /// answer: two long episodes that match better used to stop it before the short decision
+    /// that answers the question.
+    #[test]
+    fn a_long_record_does_not_end_the_answer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        let long = "user: the retry budget and the retry backoff again, ".repeat(18);
+        for (i, (kind, body)) in [
+            ("episode", long.as_str()),
+            ("episode", long.as_str()),
+            ("decision", "the retry budget is three attempts"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,'is',?3,?3,'user_said',3,'s',?2,1)",
+                    rusqlite::params![kind, format!("session:s#{i}"), body],
+                )
+                .unwrap();
+        }
+        let a = answer(&db, "the retry budget", false, 8, 500).unwrap();
+        assert_eq!(
+            a.records[0].record.kind, "episode",
+            "the fixture must rank an episode first"
+        );
+        assert!(
+            a.records.iter().any(|f| f.record.kind == "decision"),
+            "{:?}",
+            a.records.iter().map(|f| &f.record.kind).collect::<Vec<_>>()
+        );
+    }
+
+    /// Among equal matches the date comes before the route's kinds: on the file route, which does
+    /// not prefer corrections, a newer correction with the same words still comes before the older
+    /// decision it replaces.
+    #[test]
+    fn a_newer_record_of_another_kind_comes_before_an_older_preferred_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        let text = "settings.toml holds the listen port";
+        for (kind, invalid, at) in [
+            ("decision", 0, 1_000),
+            ("correction", 0, 2_000),
+            ("decision", 1, 1_000),
+            ("correction", 1, 2_000),
+        ] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,invalid_reason,created_at) \
+                     VALUES(?1,?2,'is',?2,?2,'user_said',3,'s',?3,?4,CASE ?4 WHEN 1 THEN 'superseded' END,?5)",
+                    rusqlite::params![kind, text, format!("{kind}{invalid}"), invalid, at],
+                )
+                .unwrap();
+        }
+        for all in [false, true] {
+            let a = answer(&db, text, all, 8, 1_500).unwrap();
+            assert_eq!(a.route, Route::File);
+            assert_eq!(a.records[0].record.kind, "correction", "--all {all}");
+        }
+    }
+
+    /// The route a question takes orders what it finds and never hides a kind. A file name sends
+    /// a question to the file route, the word "commit" to the commit route, "dead end" to the
+    /// dead-end route; each of them used to leave out kinds, so a correction that names a file,
+    /// an invariant that says "commit" and a decision about a dead end could not be found by
+    /// their own words.
+    #[test]
+    fn a_route_does_not_hide_a_kind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        let cases = [
+            (
+                "correction",
+                "settings.toml holds the port, not the env file",
+            ),
+            ("invariant", "every commit is signed with the release key"),
+            (
+                "decision",
+                "the dead end with polling is why we moved to webhooks",
+            ),
+        ];
+        for (kind, text) in cases {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,'is',?2,?2,'user_said',3,'s',?2,1)",
+                    rusqlite::params![kind, text],
+                )
+                .unwrap();
+        }
+        for (kind, text) in cases {
+            let a = answer(&db, text, false, 8, 1_500).unwrap();
+            assert!(
+                a.records.iter().any(|f| f.record.kind == kind),
+                "the {kind} asked by its own words on route {:?}",
+                a.route
+            );
+        }
+    }
+
+    /// Spanish changes a word's ending for gender and number, which the English stemmer leaves
+    /// alone: asked "abierto", a store that says "abiertas" matched nothing (R-15: 0 of 69 such
+    /// pairs on one store). `why` asks for the forms of the word's stem the index holds, and a
+    /// form whose own stem is another word's does not come with it: "carta" does not reach
+    /// "cartera".
+    #[test]
+    fn a_spanish_word_reaches_its_other_gender_and_number() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        for (i, (body, invalid)) in [
+            ("las ventanas del panel quedan abiertas", 0),
+            ("los despliegues rápidos van por la noche", 0),
+            ("la cartera del cliente se guarda cifrada", 0),
+            ("el informe semanal es obligatorio", 1),
+        ]
+        .iter()
+        .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,invalid_reason,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,?3,CASE ?3 WHEN 1 THEN 'superseded' END,1)",
+                    rusqlite::params![format!("k{i}"), body, invalid],
+                )
+                .unwrap();
+        }
+        let found = |q: &str, all: bool| -> Vec<String> {
+            answer(&db, q, all, 8, 1_500)
+                .unwrap()
+                .records
+                .into_iter()
+                .map(|f| f.record.object)
+                .collect()
+        };
+        // masculine singular asked, feminine plural stored; feminine singular asked, masculine
+        // plural stored
+        assert!(found("abierto", false)
+            .iter()
+            .any(|o| o.contains("abiertas")));
+        assert!(found("rápida", false).iter().any(|o| o.contains("rápidos")));
+        // the guard: "carta" shares four letters with "cartera" and is not one of its forms
+        assert!(
+            found("carta", false).is_empty(),
+            "{:?}",
+            found("carta", false)
+        );
+        // and --all reaches the forms of a retired record's words too
+        assert!(found("informes semanales obligatoria", true)
+            .iter()
+            .any(|o| o.contains("obligatorio")));
+    }
+
+    /// `--all` reads the records' own text, accents and all, while a question's words are folded
+    /// as the index folds them: "política" was searched as "politica" and never matched the text
+    /// that says "política", and no Spanish form of an accented stem was ever found. The text is
+    /// folded the same way before it is compared, and `_` in a word is a letter, not a wildcard.
+    #[test]
+    fn all_finds_accented_words_and_their_forms() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        for (i, body) in [
+            "la política de caché expira cada hora",
+            "los despliegues rápidos van por la noche",
+            "use the slow_path for imports",
+            "use the slowXpath variant",
+        ]
+        .iter()
+        .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,invalid_reason,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,1,'superseded',1)",
+                    rusqlite::params![format!("k{i}"), body],
+                )
+                .unwrap();
+        }
+        let found = |q: &str| -> Vec<String> {
+            answer(&db, q, true, 8, 1_500)
+                .unwrap()
+                .records
+                .into_iter()
+                .map(|f| f.record.object)
+                .collect()
+        };
+        assert!(
+            found("política").iter().any(|o| o.contains("política")),
+            "{:?}",
+            found("política")
+        );
+        assert!(found("politica").iter().any(|o| o.contains("política")));
+        // a form of an accented stem: "rápida" asked, "rápidos" stored
+        assert!(
+            found("rápida").iter().any(|o| o.contains("rápidos")),
+            "{:?}",
+            found("rápida")
+        );
+        assert_eq!(found("slow_path").len(), 1, "{:?}", found("slow_path"));
+    }
+
     /// `--all` exists so a person can see what was retired. It asked the full-text index which
     /// words were worth searching for — and a retired record is not in that index, so the one
     /// word that would find it was always dropped as unknown: `why --all PgBouncer` returned
@@ -519,6 +899,39 @@ mod tests {
         assert!(
             !seen(false).iter().any(|o| o.contains("PgBouncer")),
             "and without --all it must not be served at all"
+        );
+    }
+
+    /// `--all` searched the first word typed and nothing else, so "what about PgBouncer" looked
+    /// for "what" and never found the retired value it names (R-16: 0 of 30, against 18 of 30
+    /// asked by the value alone). Every word counts, the rarest the most.
+    #[test]
+    fn all_uses_every_word_typed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), muninn_core::db::Mode::ReadWrite).unwrap();
+        let ins = |object: &str, invalid: i64| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,invalid,invalid_reason,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,?3,CASE ?3 WHEN 1 THEN 'superseded' END,1)",
+                    rusqlite::params![object, object, invalid],
+                )
+                .unwrap();
+        };
+        ins("we go with PgBouncer for the pooling layer", 1);
+        for i in 0..30 {
+            ins(&format!("what we know about the cache, note {i}"), 0);
+        }
+        let a = answer(&db, "what about PgBouncer", true, 8, 1_500).unwrap();
+        assert!(
+            a.records
+                .first()
+                .is_some_and(|f| f.record.object.contains("PgBouncer")),
+            "{:?}",
+            a.records
+                .iter()
+                .map(|f| &f.record.object)
+                .collect::<Vec<_>>()
         );
     }
 }

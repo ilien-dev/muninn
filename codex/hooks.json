@@ -36,18 +36,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit|apply_patch)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/usr/local/bin/muninn' hook PostToolUse",
-            "timeout": 2
-          }
-        ]
-      }
-    ],
     "PreCompact": [
       {
         "hooks": [

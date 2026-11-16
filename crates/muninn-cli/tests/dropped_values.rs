@@ -109,11 +109,153 @@ fn a_one_for_one_swap_retires_the_decision_it_replaced() {
     .unwrap();
     git(root, &["add", "-A"]);
     git(root, &["commit", "-qm", "update dependencies"]);
+    let events = |root: &Path| -> i64 {
+        let db = muninn_core::db::Db::open(
+            &root.join(".muninn/muninn.db"),
+            muninn_core::db::Mode::ReadOnly,
+        )
+        .unwrap();
+        db.count("SELECT count(*) FROM store_event WHERE what = 'commits'")
+            .unwrap_or(0)
+    };
+    assert_eq!(events(root), 0, "no commit took a value out yet");
     run(root, BIN, &["maintain"]);
     assert!(
         !active(root, "PgBouncer"),
         "the code stopped holding the value; the decision naming it must not be served"
     );
+    // the pass leaves an event when it opens: a record an agent's prompt had retired was not
+    // among the active ones it read, and its undo must not give that record back afterwards;
+    // and one when it closes, having decided to retire a record
+    assert_eq!(events(root), 2);
+}
+
+/// The commit pass opens (its event and its read of the active records, one transaction),
+/// works with no transaction open, and closes (its retirements, and a second event when a
+/// record of its read went during the work). A worker's turn retires the user's statement and
+/// its coordinator's turn finds the worker's prompt out; each of the two lands before the
+/// pass opens, during its work, or after it closes. Whatever the row, the statement whose
+/// value the commit took out is not served at the end, and it is retired once: by the pass,
+/// or by the worker's change and then left retired, marked.
+///
+/// The pass is held during its work by the seam in `maintain.rs`, which only a debug build
+/// has: under `cargo test --release` the test says so and does nothing.
+#[test]
+fn the_commit_pass_and_a_prompt_found_out_in_every_order() {
+    if !cfg!(debug_assertions) {
+        eprintln!("skipped: the seam that holds the commit pass is in debug builds only");
+        return;
+    }
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    enum At {
+        Before,
+        During,
+        After,
+    }
+    use At::{After, Before, During};
+    // (the worker's turn, the coordinator's turn, the statement ends marked)
+    let rows = [
+        (Before, Before, false),
+        (Before, During, true),
+        (Before, After, true),
+        (During, During, false),
+        (During, After, true),
+        (After, After, false),
+    ];
+    for (worker_at, coordinator_at, marked) in rows {
+        let tmp = project("openssl");
+        let root = tmp.path();
+        let turn = |sid: &str, ts: &str, prompt: &str| -> String {
+            format!(
+                "{}\n{}\n",
+                serde_json::json!({"type":"user","sessionId":sid,"timestamp":ts,"message":{"role":"user","content":prompt}}),
+                serde_json::json!({"type":"assistant","sessionId":sid,"message":{"role":"assistant","content":[{"type":"text","text":"Understood."}]}})
+            )
+        };
+        let task =
+            "Write the upgrade notes for the proxy. Actually, switch the TLS backend to boringssl.";
+        let own = root.join("own.jsonl");
+        std::fs::write(
+            &own,
+            turn(
+                "own",
+                "2026-11-05T10:00:00Z",
+                "We go with openssl for the TLS backend.",
+            ),
+        )
+        .unwrap();
+        let worker = root.join("w0.jsonl");
+        std::fs::write(&worker, turn("w0", "2026-11-06T09:00:00Z", task)).unwrap();
+        let coord = root.join("coord0.jsonl");
+        std::fs::write(
+            &coord,
+            format!(
+                "{}\n{}\n{}\n{}\n",
+                serde_json::json!({"type":"user","sessionId":"coord0","timestamp":"2026-11-06T08:59:00Z","message":{"role":"user","content":"Start the proxy work."}}),
+                serde_json::json!({"type":"assistant","sessionId":"coord0","message":{"role":"assistant","content":[{"type":"tool_use","id":"t0","name":"Agent","input":{"prompt":task}}]}}),
+                serde_json::json!({"type":"user","sessionId":"coord0","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t0","content":"done"}]}}),
+                serde_json::json!({"type":"assistant","sessionId":"coord0","message":{"role":"assistant","content":[{"type":"text","text":"Starting."}]}})
+            ),
+        )
+        .unwrap();
+        run(root, BIN, &["ingest", own.to_str().unwrap()]);
+        assert!(active(root, "openssl"), "the user's statement is on record");
+        // a commit takes the value out
+        std::fs::write(root.join("config/stack.json"), "{\"value\": \"rustls\"}\n").unwrap();
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-qm", "update dependencies"]);
+        let land = |at: At| {
+            if worker_at == at {
+                run(root, BIN, &["ingest", worker.to_str().unwrap()]);
+            }
+            if coordinator_at == at {
+                run(root, BIN, &["ingest", coord.to_str().unwrap()]);
+            }
+        };
+        land(Before);
+        let hold = tempfile::tempdir().unwrap();
+        let mut pass = Command::new(BIN)
+            .current_dir(root)
+            .args(["maintain"])
+            .env("MUNINN_ROOT", root)
+            .env("MUNINN_NO_PROJECT", "1")
+            .env("MUNINN_TEST_HOLD_COMMIT_PASS", hold.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        for _ in 0..600 {
+            if hold.path().join("read").exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let row = format!("worker {worker_at:?}, coordinator {coordinator_at:?}");
+        assert!(
+            hold.path().join("read").exists(),
+            "{row}: the pass opened: it had a commit that removed something"
+        );
+        land(During);
+        std::fs::write(hold.path().join("go"), "").unwrap();
+        assert!(pass.wait().unwrap().success(), "{row}");
+        land(After);
+        assert!(
+            !active(root, "openssl"),
+            "{row}: the statement the commit took the value from is not served"
+        );
+        let db = rusqlite::Connection::open(root.join(".muninn/muninn.db")).unwrap();
+        let count = |sql: &str| -> i64 { db.query_row(sql, [], |r| r.get(0)).unwrap() };
+        assert_eq!(
+            count("SELECT count(*) FROM record WHERE invalid=1 AND invalidated_via='agent_unrestored' AND kind='decision'"),
+            marked as i64,
+            "{row}: left retired by the worker's change and marked, or retired by the pass"
+        );
+        assert_eq!(
+            count("SELECT count(*) FROM record WHERE invalid=1 AND kind='decision' AND object LIKE '%openssl%'"),
+            1,
+            "{row}"
+        );
+    }
 }
 
 #[test]
@@ -176,8 +318,13 @@ fn when_nobody_says_what_replaced_it_the_file_does() {
         active(root, "Supavisor"),
         "what the file now holds is on record, with the commit behind it"
     );
-    // and the question that used to reach the old answer reaches this one
-    let out = run(root, BIN, &["recall", "pooling"]);
+    // and the question that used to reach the old answer reaches this one (four words or more:
+    // `recall` applies the prompt hook's intent gate)
+    let out = run(
+        root,
+        BIN,
+        &["recall", "what", "do", "we", "use", "for", "pooling"],
+    );
     assert!(
         out.contains("Supavisor"),
         "the new value is served for the old topic: {out}"
@@ -338,4 +485,367 @@ fn a_swaps_topic_keeps_no_part_of_the_value_that_left() {
             "no part of the retired value is the heir's topic: {subjects}"
         );
     }
+}
+
+/// I2 through the commit-diff pass: a decision said in one session and again in another, then
+/// replaced by a config swap. The swap's sweep has to reach the episode of every turn that
+/// stated it, the earlier one included; the hunk is the decision's, and the earlier episode
+/// claims no hunk of its own.
+#[test]
+fn a_restated_decision_replaced_by_a_swap_takes_its_earlier_turns() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    std::fs::write(root.join("CHANGELOG.md"), "- we once used PgBouncer\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "changelog"]);
+    for (i, sid) in ["s-one", "s-two"].iter().enumerate() {
+        let mut t = String::new();
+        t += &serde_json::json!({"type":"user","sessionId":sid,"cwd":root,
+            "timestamp":format!("2026-11-0{}T10:00:00.000Z", i + 2),
+            "message":{"role":"user","content":"We are using PgBouncer for pooling."}})
+        .to_string();
+        t.push('\n');
+        t += &serde_json::json!({"type":"assistant","sessionId":sid,
+            "timestamp":format!("2026-11-0{}T10:00:30.000Z", i + 2),
+            "message":{"role":"assistant","content":[{"type":"text","text":"Understood."}]}})
+        .to_string();
+        t.push('\n');
+        let p = root.join(format!("{sid}.jsonl"));
+        std::fs::write(&p, t).unwrap();
+        run(root, BIN, &["ingest", p.to_str().unwrap()]);
+    }
+    assert_eq!(
+        count(
+            root,
+            "SELECT count(*) FROM record WHERE kind='episode' AND invalid=0 AND body LIKE '%PgBouncer for pooling%'"
+        ),
+        2,
+        "one episode per session"
+    );
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert_eq!(
+        count(
+            root,
+            "SELECT count(*) FROM record WHERE invalid=0 AND body LIKE '%PgBouncer for pooling%'"
+        ),
+        0,
+        "neither the decision nor either session's episode is still served"
+    );
+}
+
+fn episode(root: &Path, text: &str, at: i64) {
+    rusqlite::Connection::open(root.join(".muninn/muninn.db"))
+        .unwrap()
+        .execute(
+            "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+             VALUES('episode',?1,'happened',?2,'user: ' || ?2,'tool_observed',1,'s',?1,?3)",
+            rusqlite::params![format!("session:s#{at}"), text, at],
+        )
+        .unwrap();
+}
+
+/// The hunk's one statement is a decision when one named the value, however recent an episode
+/// that mentions it; and a statement never typed as a decision is still reached through its
+/// episode, or it stays active and is served as current.
+#[test]
+fn a_swap_prefers_the_decision_and_reaches_an_untyped_statement_through_its_episode() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    std::fs::write(root.join("CHANGELOG.md"), "- we once used PgBouncer\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "changelog"]);
+    decision(root, "using PgBouncer for pooling");
+    episode(root, "the PgBouncer logs were noisy today", 5);
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        !active(root, "using PgBouncer"),
+        "the decision is the one replaced"
+    );
+    assert!(
+        active(root, "logs were noisy"),
+        "the passing mention is left"
+    );
+
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    std::fs::write(root.join("CHANGELOG.md"), "- we once used PgBouncer\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "changelog"]);
+    episode(root, "PgBouncer handles the pooling for now", 5);
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        !active(root, "handles the pooling"),
+        "with no decision on record, the episode that stated it goes"
+    );
+}
+
+/// A decision and its turn's episode are one statement. When the decision goes, the episode
+/// goes with it, and it does not then claim a second hunk and write a second observation.
+#[test]
+fn a_statement_retired_once_writes_one_observation() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    std::fs::write(root.join("CHANGELOG.md"), "- we once used PgBouncer\n").unwrap();
+    std::fs::write(
+        root.join("config/replica.json"),
+        "{\"value\": \"PgBouncer\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "changelog and replica"]);
+    decision(root, "using PgBouncer for pooling");
+    episode(root, "using PgBouncer for pooling", 1);
+    rusqlite::Connection::open(root.join(".muninn/muninn.db"))
+        .unwrap()
+        .execute("UPDATE record SET transcript_ref = 't.jsonl:10'", [])
+        .unwrap();
+    for f in ["config/stack.json", "config/replica.json"] {
+        std::fs::write(root.join(f), "{\"value\": \"Supavisor\"}\n").unwrap();
+    }
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert_eq!(
+        count(
+            root,
+            "SELECT count(*) FROM record WHERE invalid=0 AND object LIKE '%PgBouncer%'"
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            root,
+            "SELECT count(*) FROM record WHERE origin='commit_linked' AND subject LIKE 'said:%'"
+        ),
+        1,
+        "one statement, one observation"
+    );
+}
+
+/// A commit that swaps a value and its `git revert`, both seen by one `maintain`. `git log`
+/// lists newest first, so 1.2.0 handled the revert before the commit it reverts was on record
+/// and retired nothing, and then read the commit's diff as a value that changed. Every record
+/// of a reverted commit is retired, and what the commit's diff would have retired stays.
+#[test]
+fn a_revert_seen_with_its_commit_retires_the_commit_and_nothing_it_touched() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    decision(root, "using PgBouncer for pooling");
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "use Supavisor for pooling"]);
+    git(root, &["revert", "--no-edit", "HEAD"]);
+    run(root, BIN, &["maintain"]);
+    let of_it =
+        "origin='commit_linked' AND object LIKE '%Supavisor%' AND object NOT LIKE 'Revert%'";
+    let reverted = count(root, &format!("SELECT count(*) FROM record WHERE {of_it}"));
+    assert!(reverted > 0, "the reverted commit is on record");
+    assert_eq!(
+        count(
+            root,
+            &format!("SELECT count(*) FROM record WHERE {of_it} AND invalid=0"),
+        ),
+        0,
+        "and every record of it is retired"
+    );
+    assert!(
+        active(root, "using PgBouncer"),
+        "the revert put the value back, so the decision naming it holds"
+    );
+}
+
+/// The same pair seen by two runs: the first reads the commit and retires the decision its
+/// swap names, the second reads the revert. The revert retires the commit's records, its
+/// observation included, and puts back what that observation had retired.
+#[test]
+fn a_revert_seen_later_puts_back_what_its_commit_retired() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    decision(root, "using PgBouncer for pooling");
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "use Supavisor for pooling"]);
+    run(root, BIN, &["maintain"]);
+    assert!(!active(root, "using PgBouncer"), "the swap retired it");
+    git(root, &["revert", "--no-edit", "HEAD"]);
+    run(root, BIN, &["maintain"]);
+    assert_eq!(
+        count(
+            root,
+            "SELECT count(*) FROM record WHERE origin='commit_linked' AND invalid=0 \
+             AND object LIKE '%Supavisor%' AND object NOT LIKE 'Revert%'",
+        ),
+        0,
+        "the commit and the observation its swap wrote are both retired"
+    );
+    assert!(
+        active(root, "using PgBouncer"),
+        "the revert undid what retired it"
+    );
+}
+
+/// A transcript of `msgs`, each answered, written where `muninn ingest` can read it.
+fn ingest(root: &Path, msgs: &[&str]) {
+    let mut t = String::new();
+    for (i, m) in msgs.iter().enumerate() {
+        t += &serde_json::json!({"type":"user","sessionId":"s-reword","cwd":root,
+            "timestamp":format!("2026-11-02T10:0{i}:00.000Z"),
+            "message":{"role":"user","content":m}})
+        .to_string();
+        t.push('\n');
+        t += &serde_json::json!({"type":"assistant","sessionId":"s-reword",
+            "timestamp":format!("2026-11-02T10:0{i}:30.000Z"),
+            "message":{"role":"assistant","content":[{"type":"text","text":"Understood."}]}})
+        .to_string();
+        t.push('\n');
+    }
+    let p = root.join("session.jsonl");
+    std::fs::write(&p, t).unwrap();
+    run(root, BIN, &["ingest", p.to_str().unwrap()]);
+}
+
+fn count(root: &Path, sql: &str) -> i64 {
+    rusqlite::Connection::open(root.join(".muninn/muninn.db"))
+        .unwrap()
+        .query_row(sql, [], |r| r.get(0))
+        .unwrap()
+}
+
+/// WP-02. A commit that rewords one sentence of prose so an ordinary word leaves that line is
+/// not a project changing its mind about anything. 1.2.0 retired every record that held the
+/// word — the decision, the invariant and the correction typed from the same turns, and their
+/// episodes — and wrote the new prose line as three decisions of its own.
+#[test]
+fn rewording_prose_retires_nothing_and_writes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.email", "t@t"]);
+    git(root, &["config", "user.name", "t"]);
+    std::fs::write(
+        root.join("README.md"),
+        "# Demo\n\nThe heron mascot is on the cover page.\n\nSee docs/birds.md for the heron notes.\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    std::fs::write(
+        root.join("docs/birds.md"),
+        "The heron scheduler runs the nightly batch jobs.\n",
+    )
+    .unwrap();
+    std::fs::write(root.join(".gitignore"), ".muninn/\n*.jsonl\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "initial"]);
+    run(root, BIN, &["init", "--keep-native", "--no-boot-block"]);
+    ingest(
+        root,
+        &[
+            "We go with the heron scheduler for the nightly batch jobs.",
+            "Never deploy on Fridays without running the heron checklist first.",
+            "No, the heron scheduler must keep its retry budget in the config file.",
+        ],
+    );
+    let before = count(root, "SELECT count(*) FROM record WHERE invalid=0");
+    assert!(
+        before >= 6,
+        "decision, invariant, correction and their episodes: {before}"
+    );
+    std::fs::write(
+        root.join("README.md"),
+        "# Demo\n\nThe mascot is on the cover page.\n\nSee docs/birds.md for the heron notes.\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "docs: reword the cover sentence"]);
+    run(root, BIN, &["maintain"]);
+    assert_eq!(
+        count(root, "SELECT count(*) FROM record WHERE invalid=1"),
+        0,
+        "a reworded sentence of prose retires nothing"
+    );
+    assert_eq!(
+        count(
+            root,
+            "SELECT count(*) FROM record WHERE origin='commit_linked' AND subject LIKE 'said:%'"
+        ),
+        0,
+        "and no line of prose goes on record as a decision"
+    );
+}
+
+/// WP-02 and WP-12. One hunk is evidence about one value: it retires the newest record that
+/// named it and no other, and the observation it writes is that record's heir, so the
+/// retirement can be traced to the commit and the catalogue's `replaces #n` has an end.
+#[test]
+fn a_swap_retires_one_record_and_is_its_heir() {
+    let tmp = project("PgBouncer");
+    let root = tmp.path();
+    // the word survives elsewhere, so only the hunk speaks: a value gone from the whole tree
+    // is the disappearance rule's, and that one is about every record that named it
+    std::fs::write(root.join("CHANGELOG.md"), "- we once used PgBouncer\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "changelog"]);
+    decision(root, "using PgBouncer for pooling");
+    decision(root, "PgBouncer sits in front of the replicas");
+    rusqlite::Connection::open(root.join(".muninn/muninn.db"))
+        .unwrap()
+        .execute(
+            "UPDATE record SET created_at = 2 WHERE object LIKE 'PgBouncer sits%'",
+            [],
+        )
+        .unwrap();
+    std::fs::write(
+        root.join("config/stack.json"),
+        "{\"value\": \"Supavisor\"}\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "update dependencies"]);
+    run(root, BIN, &["maintain"]);
+    assert!(
+        active(root, "using PgBouncer"),
+        "the older statement is left"
+    );
+    assert!(!active(root, "PgBouncer sits"), "the newest one is retired");
+    let (via, heir_origin): (String, String) =
+        rusqlite::Connection::open(root.join(".muninn/muninn.db"))
+            .unwrap()
+            .query_row(
+                "SELECT r.invalidated_via, h.origin FROM record r JOIN record h ON h.id = r.invalidated_by \
+                 WHERE r.object LIKE 'PgBouncer sits%'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+    assert!(via.starts_with("swap:"), "{via}");
+    assert_eq!(heir_origin, "commit_linked", "the observation is the heir");
 }

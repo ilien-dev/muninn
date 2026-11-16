@@ -117,7 +117,60 @@ fn assert_clean_exit(r: &Run, what: &str) {
     assert_clean_exit_within(r, what, Duration::from_secs(2));
 }
 
+/// How long a process that does nothing takes right now: `muninn --version`, start to exit.
+fn a_process_that_does_nothing() -> Duration {
+    let t = Instant::now();
+    let _ = Command::new(BIN)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    t.elapsed()
+}
+
+/// A process that does nothing takes about 5 ms here and 1 ms on Linux. Past this the machine
+/// is not running processes in time, whatever they do.
+const STARVED: Duration = Duration::from_millis(250);
+
+/// The payload of the panic that says so: a hook missed its bound on a machine that could not
+/// run a do-nothing process in time either.
+struct Starved;
+
+/// One repetition of a scenario, on a machine able to run it.
+///
+/// Each scenario bounds its hooks by the wall clock, 2 s for most. Measured on a quiet machine
+/// over 7,600 asserted runs, a hook takes 28 ms at the median and 885 ms at most (the write
+/// hook that waits 700 ms for a locked store, by design): the hook is far below its bound. With
+/// five busy processes a core the same hooks took 4.7 to 7.7 s and every scenario failed, so
+/// under load the bound measured the machine. When a hook misses its bound and a process that
+/// does nothing is slow too, the repetition proves nothing either way: it is run again, from
+/// its own fresh project, once the machine runs processes in time. The bound is the same and
+/// every repetition still has to meet it; a hook that hangs on its fault does not slow the
+/// do-nothing process, and fails as before.
+fn on_a_machine_that_can_run_it(repetition: impl Fn()) {
+    for attempt in 0.. {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(&repetition)) {
+            Ok(()) => return,
+            Err(e) if e.downcast_ref::<Starved>().is_some() && attempt < 5 => {
+                eprintln!(
+                    "a hook missed its bound on a starved machine: repeating when it is quiet"
+                );
+                for _ in 0..600 {
+                    if a_process_that_does_nothing() < STARVED / 2 {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+            }
+            Err(e) => std::panic::resume_unwind(e),
+        }
+    }
+}
+
 fn assert_clean_exit_within(r: &Run, what: &str, bound: Duration) {
+    if (r.elapsed >= bound || r.status.is_none()) && a_process_that_does_nothing() >= STARVED {
+        std::panic::panic_any(Starved);
+    }
     assert_eq!(
         r.status,
         Some(0),
@@ -142,17 +195,19 @@ fn db_path(root: &Path) -> PathBuf {
 #[test]
 fn s01_db_locked_by_other_process() {
     for _ in 0..reps() {
-        let p = init_project();
-        let conn = rusqlite::Connection::open(db_path(p.path())).unwrap();
-        conn.execute_batch("BEGIN EXCLUSIVE").unwrap();
-        let r = hook(p.path(), "SessionStart", serde_json::json!({}));
-        assert_clean_exit(&r, "locked SessionStart");
-        let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
-        assert_clean_exit(&w, "locked SessionEnd");
-        conn.execute_batch("COMMIT").unwrap();
-        drop(conn);
-        let s = summary(p.path());
-        assert!(!s.contains("RED integrity"), "{s}");
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let conn = rusqlite::Connection::open(db_path(p.path())).unwrap();
+            conn.execute_batch("BEGIN EXCLUSIVE").unwrap();
+            let r = hook(p.path(), "SessionStart", serde_json::json!({}));
+            assert_clean_exit(&r, "locked SessionStart");
+            let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
+            assert_clean_exit(&w, "locked SessionEnd");
+            conn.execute_batch("COMMIT").unwrap();
+            drop(conn);
+            let s = summary(p.path());
+            assert!(!s.contains("RED integrity"), "{s}");
+        });
     }
 }
 
@@ -160,21 +215,23 @@ fn s01_db_locked_by_other_process() {
 #[test]
 fn s02_corrupt_db_file() {
     for _ in 0..reps() {
-        let p = init_project();
-        std::fs::write(
-            db_path(p.path()),
-            b"this is not a database at all, but it is long enough to look like one\0\0\0",
-        )
-        .unwrap();
-        for ev in ["SessionStart", "UserPromptSubmit", "SessionEnd"] {
-            let r = hook(p.path(), ev, serde_json::json!({}));
-            assert_clean_exit(&r, &format!("corrupt {ev}"));
-        }
-        let s = summary(p.path());
-        assert!(
-            s.starts_with("MUNINN RED integrity"),
-            "corruption must be RED, got: {s}"
-        );
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            std::fs::write(
+                db_path(p.path()),
+                b"this is not a database at all, but it is long enough to look like one\0\0\0",
+            )
+            .unwrap();
+            for ev in ["SessionStart", "UserPromptSubmit", "SessionEnd"] {
+                let r = hook(p.path(), ev, serde_json::json!({}));
+                assert_clean_exit(&r, &format!("corrupt {ev}"));
+            }
+            let s = summary(p.path());
+            assert!(
+                s.starts_with("MUNINN RED integrity"),
+                "corruption must be RED, got: {s}"
+            );
+        });
     }
 }
 
@@ -184,24 +241,26 @@ fn s02_corrupt_db_file() {
 fn s03_disk_full_and_readonly_store() {
     use std::os::unix::fs::PermissionsExt;
     for _ in 0..reps() {
-        let p = init_project();
-        let log = p.path().join(".muninn/log/heartbeat.jsonl");
-        let _ = std::fs::remove_file(&log);
-        std::os::unix::fs::symlink("/dev/full", &log).unwrap();
-        let r = hook(p.path(), "SessionStart", serde_json::json!({}));
-        assert_clean_exit(&r, "disk-full SessionStart");
-        assert!(
-            r.stdout.contains("MUNINN"),
-            "health line must still be delivered: {}",
-            r.stdout
-        );
-        // the detached write path may already have folded (and removed) the log
-        let _ = std::fs::remove_file(&log);
-        let dir = p.path().join(".muninn");
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert_clean_exit(&w, "readonly SessionEnd");
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let log = p.path().join(".muninn/log/heartbeat.jsonl");
+            let _ = std::fs::remove_file(&log);
+            std::os::unix::fs::symlink("/dev/full", &log).unwrap();
+            let r = hook(p.path(), "SessionStart", serde_json::json!({}));
+            assert_clean_exit(&r, "disk-full SessionStart");
+            assert!(
+                r.stdout.contains("MUNINN"),
+                "health line must still be delivered: {}",
+                r.stdout
+            );
+            // the detached write path may already have folded (and removed) the log
+            let _ = std::fs::remove_file(&log);
+            let dir = p.path().join(".muninn");
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+            let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert_clean_exit(&w, "readonly SessionEnd");
+        });
     }
 }
 
@@ -211,34 +270,36 @@ fn s03_disk_full_and_readonly_store() {
 #[test]
 fn s04_stdout_dead() {
     for _ in 0..reps() {
-        let p = init_project();
-        let full = std::fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/full")
-            .unwrap();
-        let r = hook_with(
-            p.path(),
-            "SessionStart",
-            &payload(p.path(), serde_json::json!({})),
-            &[],
-            Stdio::from(full),
-        );
-        assert_eq!(
-            r.status,
-            Some(0),
-            "stdout dead: {:?} {}",
-            r.status,
-            r.stderr
-        );
-        assert!(!r.stderr.contains("panicked"), "{}", r.stderr);
-        let w = hook_with(
-            p.path(),
-            "SessionEnd",
-            &payload(p.path(), serde_json::json!({})),
-            &[],
-            Stdio::null(),
-        );
-        assert_clean_exit(&w, "SessionEnd with null stdout");
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let full = std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/full")
+                .unwrap();
+            let r = hook_with(
+                p.path(),
+                "SessionStart",
+                &payload(p.path(), serde_json::json!({})),
+                &[],
+                Stdio::from(full),
+            );
+            assert_eq!(
+                r.status,
+                Some(0),
+                "stdout dead: {:?} {}",
+                r.status,
+                r.stderr
+            );
+            assert!(!r.stderr.contains("panicked"), "{}", r.stderr);
+            let w = hook_with(
+                p.path(),
+                "SessionEnd",
+                &payload(p.path(), serde_json::json!({})),
+                &[],
+                Stdio::null(),
+            );
+            assert_clean_exit(&w, "SessionEnd with null stdout");
+        });
     }
 }
 
@@ -246,22 +307,24 @@ fn s04_stdout_dead() {
 #[test]
 fn s05_transcript_control_chars() {
     for _ in 0..reps() {
-        let p = init_project();
-        let t = p.path().join("t.jsonl");
-        let mut bytes = br#"{"type":"user","message":{"content":"hi"#.to_vec();
-        bytes.extend_from_slice(&[0x00, 0x1b, 0x5b, 0xff, 0xfe, 0x07]);
-        bytes.extend_from_slice(
-            b"\"}}\n{\"type\":\"assistant\",\"message\":{\"content\":\"ok\"}}\n",
-        );
-        std::fs::write(&t, bytes).unwrap();
-        let r = hook(
-            p.path(),
-            "SessionEnd",
-            serde_json::json!({ "transcript_path": t }),
-        );
-        assert_clean_exit(&r, "control chars");
-        let s = summary(p.path());
-        assert!(!s.starts_with("MUNINN RED"), "{s}");
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let t = p.path().join("t.jsonl");
+            let mut bytes = br#"{"type":"user","message":{"content":"hi"#.to_vec();
+            bytes.extend_from_slice(&[0x00, 0x1b, 0x5b, 0xff, 0xfe, 0x07]);
+            bytes.extend_from_slice(
+                b"\"}}\n{\"type\":\"assistant\",\"message\":{\"content\":\"ok\"}}\n",
+            );
+            std::fs::write(&t, bytes).unwrap();
+            let r = hook(
+                p.path(),
+                "SessionEnd",
+                serde_json::json!({ "transcript_path": t }),
+            );
+            assert_clean_exit(&r, "control chars");
+            let s = summary(p.path());
+            assert!(!s.starts_with("MUNINN RED"), "{s}");
+        });
     }
 }
 
@@ -269,19 +332,21 @@ fn s05_transcript_control_chars() {
 #[test]
 fn s06_transcript_truncated() {
     for _ in 0..reps() {
-        let p = init_project();
-        let t = p.path().join("t.jsonl");
-        std::fs::write(
-            &t,
-            b"{\"type\":\"user\",\"message\":{\"content\":\"start\"}}\n{\"type\":\"assis",
-        )
-        .unwrap();
-        let r = hook(
-            p.path(),
-            "SessionEnd",
-            serde_json::json!({ "transcript_path": t }),
-        );
-        assert_clean_exit(&r, "truncated");
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let t = p.path().join("t.jsonl");
+            std::fs::write(
+                &t,
+                b"{\"type\":\"user\",\"message\":{\"content\":\"start\"}}\n{\"type\":\"assis",
+            )
+            .unwrap();
+            let r = hook(
+                p.path(),
+                "SessionEnd",
+                serde_json::json!({ "transcript_path": t }),
+            );
+            assert_clean_exit(&r, "truncated");
+        });
     }
 }
 
@@ -290,26 +355,28 @@ fn s06_transcript_truncated() {
 #[test]
 fn s07_killed_midway() {
     for _ in 0..reps() {
-        let p = init_project();
-        let mut child = Command::new(BIN)
-            .args(["hook", "SessionEnd"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(payload(p.path(), serde_json::json!({})).as_bytes())
-            .ok();
-        child.kill().ok();
-        child.wait().ok();
-        let s = summary(p.path());
-        assert!(!s.contains("RED integrity"), "store damaged by kill: {s}");
-        let r = hook(p.path(), "SessionEnd", serde_json::json!({}));
-        assert_clean_exit(&r, "SessionEnd after kill");
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let mut child = Command::new(BIN)
+                .args(["hook", "SessionEnd"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(payload(p.path(), serde_json::json!({})).as_bytes())
+                .ok();
+            child.kill().ok();
+            child.wait().ok();
+            let s = summary(p.path());
+            assert!(!s.contains("RED integrity"), "store damaged by kill: {s}");
+            let r = hook(p.path(), "SessionEnd", serde_json::json!({}));
+            assert_clean_exit(&r, "SessionEnd after kill");
+        });
     }
 }
 
@@ -317,22 +384,24 @@ fn s07_killed_midway() {
 #[test]
 fn s08_clock_backwards() {
     for _ in 0..reps() {
-        let p = init_project();
-        let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
-        assert_clean_exit(&w, "SessionEnd");
-        let r = hook_with(
-            p.path(),
-            "SessionStart",
-            &payload(p.path(), serde_json::json!({})),
-            &[("MUNINN_FAKE_NOW_MS", "1000")],
-            Stdio::piped(),
-        );
-        assert_clean_exit(&r, "clock backwards");
-        assert!(
-            r.stdout.contains("MUNINN") && !r.stdout.contains("RED"),
-            "{}",
-            r.stdout
-        );
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
+            assert_clean_exit(&w, "SessionEnd");
+            let r = hook_with(
+                p.path(),
+                "SessionStart",
+                &payload(p.path(), serde_json::json!({})),
+                &[("MUNINN_FAKE_NOW_MS", "1000")],
+                Stdio::piped(),
+            );
+            assert_clean_exit(&r, "clock backwards");
+            assert!(
+                r.stdout.contains("MUNINN") && !r.stdout.contains("RED"),
+                "{}",
+                r.stdout
+            );
+        });
     }
 }
 
@@ -340,39 +409,42 @@ fn s08_clock_backwards() {
 #[test]
 fn s09_concurrent_writers() {
     for _ in 0..reps() {
-        let p = init_project();
-        let root = p.path().to_path_buf();
-        let handles: Vec<_> = (0..4)
-            .map(|i| {
-                let root = root.clone();
-                std::thread::spawn(move || {
-                    let input = serde_json::json!({ "session_id": format!("c{i}"), "cwd": root })
-                        .to_string();
-                    hook_with(&root, "SessionEnd", &input, &[], Stdio::piped())
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let root = p.path().to_path_buf();
+            let handles: Vec<_> = (0..4)
+                .map(|i| {
+                    let root = root.clone();
+                    std::thread::spawn(move || {
+                        let input =
+                            serde_json::json!({ "session_id": format!("c{i}"), "cwd": root })
+                                .to_string();
+                        hook_with(&root, "SessionEnd", &input, &[], Stdio::piped())
+                    })
                 })
-            })
-            .collect();
-        for h in handles {
-            let r = h.join().unwrap();
-            assert_clean_exit(&r, "concurrent SessionEnd");
-        }
-        let s = summary(&root);
-        assert!(!s.starts_with("MUNINN RED"), "{s}");
-        // property: no heartbeat is lost — folded into the store, or past the fold
-        // watermark for the next fold (the live log is never renamed under appenders)
-        let conn = rusqlite::Connection::open(db_path(&root)).unwrap();
-        let n: i64 = conn
-            .query_row("SELECT count(*) FROM heartbeat", [], |r| r.get(0))
-            .unwrap();
-        let pending =
-            muninn_core::logfold::pending(&conn, &root.join(".muninn/log/heartbeat.jsonl"))
-                .iter()
-                .filter(|l| l.contains("\"ev\":\"start\""))
-                .count() as i64;
-        assert!(
-            n + pending >= 4,
-            "heartbeats folded {n} + pending {pending}"
-        );
+                .collect();
+            for h in handles {
+                let r = h.join().unwrap();
+                assert_clean_exit(&r, "concurrent SessionEnd");
+            }
+            let s = summary(&root);
+            assert!(!s.starts_with("MUNINN RED"), "{s}");
+            // property: no heartbeat is lost — folded into the store, or past the fold
+            // watermark for the next fold (the live log is never renamed under appenders)
+            let conn = rusqlite::Connection::open(db_path(&root)).unwrap();
+            let n: i64 = conn
+                .query_row("SELECT count(*) FROM heartbeat", [], |r| r.get(0))
+                .unwrap();
+            let pending =
+                muninn_core::logfold::pending(&conn, &root.join(".muninn/log/heartbeat.jsonl"))
+                    .iter()
+                    .filter(|l| l.contains("\"ev\":\"start\""))
+                    .count() as i64;
+            assert!(
+                n + pending >= 4,
+                "heartbeats folded {n} + pending {pending}"
+            );
+        });
     }
 }
 
@@ -380,32 +452,34 @@ fn s09_concurrent_writers() {
 #[test]
 fn s10_schema_versions() {
     for _ in 0..reps() {
-        // older: an empty file where the store should be
-        let p = init_project();
-        std::fs::remove_file(db_path(p.path())).unwrap();
-        std::fs::write(db_path(p.path()), b"").unwrap();
-        let r = hook(p.path(), "SessionStart", serde_json::json!({}));
-        assert_clean_exit(&r, "empty db SessionStart");
-        let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
-        assert_clean_exit(&w, "empty db SessionEnd migrates");
-        let s = summary(p.path());
-        assert!(!s.starts_with("MUNINN RED"), "after migration: {s}");
-        // newer: refuse to touch, report RED
-        // the first SessionStart spawned a detached `maintain` that may still hold the lock
-        let conn = rusqlite::Connection::open(db_path(p.path())).unwrap();
-        conn.busy_timeout(Duration::from_secs(10)).unwrap();
-        conn.execute("UPDATE meta SET value='99' WHERE key='schema_version'", [])
-            .unwrap();
-        drop(conn);
-        let r = hook(p.path(), "SessionStart", serde_json::json!({}));
-        assert_clean_exit(&r, "newer schema SessionStart");
-        assert!(
-            r.stdout.contains("RED"),
-            "newer schema must be RED: {}",
-            r.stdout
-        );
-        let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
-        assert_clean_exit(&w, "newer schema SessionEnd");
+        on_a_machine_that_can_run_it(|| {
+            // older: an empty file where the store should be
+            let p = init_project();
+            std::fs::remove_file(db_path(p.path())).unwrap();
+            std::fs::write(db_path(p.path()), b"").unwrap();
+            let r = hook(p.path(), "SessionStart", serde_json::json!({}));
+            assert_clean_exit(&r, "empty db SessionStart");
+            let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
+            assert_clean_exit(&w, "empty db SessionEnd migrates");
+            let s = summary(p.path());
+            assert!(!s.starts_with("MUNINN RED"), "after migration: {s}");
+            // newer: refuse to touch, report RED
+            // the first SessionStart spawned a detached `maintain` that may still hold the lock
+            let conn = rusqlite::Connection::open(db_path(p.path())).unwrap();
+            conn.busy_timeout(Duration::from_secs(10)).unwrap();
+            conn.execute("UPDATE meta SET value='99' WHERE key='schema_version'", [])
+                .unwrap();
+            drop(conn);
+            let r = hook(p.path(), "SessionStart", serde_json::json!({}));
+            assert_clean_exit(&r, "newer schema SessionStart");
+            assert!(
+                r.stdout.contains("RED"),
+                "newer schema must be RED: {}",
+                r.stdout
+            );
+            let w = hook(p.path(), "SessionEnd", serde_json::json!({}));
+            assert_clean_exit(&w, "newer schema SessionEnd");
+        });
     }
 }
 
@@ -413,35 +487,37 @@ fn s10_schema_versions() {
 #[test]
 fn s11_store_dir_deleted_midsession() {
     for _ in 0..reps() {
-        let p = init_project();
-        let _ = hook(p.path(), "SessionStart", serde_json::json!({}));
-        // the detached write path may still be touching the directory: retry. Windows
-        // refuses to delete a file another process holds open, so there the wait lasts
-        // until that write path finishes, up to ten seconds.
-        let tries = if cfg!(windows) { 500 } else { 50 };
-        for i in 0..tries {
-            match std::fs::remove_dir_all(p.path().join(".muninn")) {
-                Ok(()) => break,
-                Err(e) if i < tries - 1 => {
-                    let _ = e;
-                    std::thread::sleep(Duration::from_millis(20));
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let _ = hook(p.path(), "SessionStart", serde_json::json!({}));
+            // the detached write path may still be touching the directory: retry. Windows
+            // refuses to delete a file another process holds open, so there the wait lasts
+            // until that write path finishes, up to ten seconds.
+            let tries = if cfg!(windows) { 500 } else { 50 };
+            for i in 0..tries {
+                match std::fs::remove_dir_all(p.path().join(".muninn")) {
+                    Ok(()) => break,
+                    Err(e) if i < tries - 1 => {
+                        let _ = e;
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Err(e) => panic!("remove .muninn: {e}"),
                 }
-                Err(e) => panic!("remove .muninn: {e}"),
             }
-        }
-        for ev in ["UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"] {
-            let r = hook(p.path(), ev, serde_json::json!({ "prompt": "implement x" }));
-            assert_clean_exit(&r, &format!("deleted store {ev}"));
+            for ev in ["UserPromptSubmit", "PreToolUse", "Stop", "SessionEnd"] {
+                let r = hook(p.path(), ev, serde_json::json!({ "prompt": "implement x" }));
+                assert_clean_exit(&r, &format!("deleted store {ev}"));
+                assert!(
+                    r.stdout.trim().is_empty(),
+                    "must stay silent when not initialised: {}",
+                    r.stdout
+                );
+            }
             assert!(
-                r.stdout.trim().is_empty(),
-                "must stay silent when not initialised: {}",
-                r.stdout
+                !p.path().join(".muninn").exists(),
+                "hooks must not recreate the store"
             );
-        }
-        assert!(
-            !p.path().join(".muninn").exists(),
-            "hooks must not recreate the store"
-        );
+        });
     }
 }
 
@@ -472,61 +548,34 @@ fn records(root: &Path, sql: &str) -> i64 {
     conn.query_row(sql, [], |r| r.get(0)).unwrap()
 }
 
-// 12. The model on disk does not match the published checksums: the sidecar stays
-//     cold, nothing else changes, and no hook slows down.
-#[test]
-fn s12_model_checksum_mismatch() {
-    for _ in 0..reps() {
-        let p = init_project();
-        let model = p.path().join("badmodel");
-        std::fs::create_dir_all(&model).unwrap();
-        std::fs::write(model.join("config.json"), "{}").unwrap();
-        std::fs::write(model.join("tokenizer.json"), "{}").unwrap();
-        std::fs::write(model.join("model.safetensors"), vec![0u8; 4096]).unwrap();
-        let t = p.path().join("t.jsonl");
-        std::fs::write(&t, transcript_lines(3, 100)).unwrap();
-        let r = hook_with(
-            p.path(),
-            "SessionEnd",
-            &payload(p.path(), serde_json::json!({ "transcript_path": t })),
-            &[("MUNINN_MODEL_DIR", model.to_str().unwrap())],
-            Stdio::piped(),
-        );
-        assert_clean_exit(&r, "bad model");
-        assert!(records(p.path(), "SELECT count(*) FROM record") >= 3);
-        assert_eq!(records(p.path(), "SELECT count(*) FROM record_vec"), 0);
-        let d = doctor(p.path());
-        let s = d["summary"].as_str().unwrap_or("");
-        assert!(!s.starts_with("MUNINN RED"), "{s}");
-    }
-}
-
 // 13. No git on PATH and no repository history: capture is skipped, nothing fails.
 #[test]
 fn s13_git_unavailable() {
     for _ in 0..reps() {
-        let p = init_project();
-        let t = p.path().join("t.jsonl");
-        std::fs::write(&t, transcript_lines(2, 80)).unwrap();
-        let r = hook_with(
-            p.path(),
-            "SessionEnd",
-            &payload(p.path(), serde_json::json!({ "transcript_path": t })),
-            &[("PATH", "/nonexistent")],
-            Stdio::piped(),
-        );
-        assert_clean_exit(&r, "no git");
-        let out = Command::new(BIN)
-            .args(["--cwd", p.path().to_str().unwrap(), "maintain"])
-            .env("PATH", "/nonexistent")
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        assert!(records(p.path(), "SELECT count(*) FROM record") >= 2);
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let t = p.path().join("t.jsonl");
+            std::fs::write(&t, transcript_lines(2, 80)).unwrap();
+            let r = hook_with(
+                p.path(),
+                "SessionEnd",
+                &payload(p.path(), serde_json::json!({ "transcript_path": t })),
+                &[("PATH", "/nonexistent")],
+                Stdio::piped(),
+            );
+            assert_clean_exit(&r, "no git");
+            let out = Command::new(BIN)
+                .args(["--cwd", p.path().to_str().unwrap(), "maintain"])
+                .env("PATH", "/nonexistent")
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(records(p.path(), "SELECT count(*) FROM record") >= 2);
+        });
     }
 }
 
@@ -535,23 +584,24 @@ fn s13_git_unavailable() {
 #[test]
 fn s14_maintain_and_stop_concurrent() {
     for _ in 0..reps() {
-        let p = init_project();
-        let t = p.path().join("t.jsonl");
-        std::fs::write(&t, transcript_lines(20, 300)).unwrap();
-        // one clean ingest tells us the expected count
-        let expect = {
-            let q = init_project();
-            let r = hook(
-                q.path(),
-                "Stop",
-                serde_json::json!({ "transcript_path": t }),
-            );
-            assert_clean_exit(&r, "reference ingest");
-            records(q.path(), "SELECT count(*) FROM record")
-        };
-        let root = p.path().to_path_buf();
-        let tt = t.clone();
-        let handles: Vec<_> = (0..4)
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let t = p.path().join("t.jsonl");
+            std::fs::write(&t, transcript_lines(20, 300)).unwrap();
+            // one clean ingest tells us the expected count
+            let expect = {
+                let q = init_project();
+                let r = hook(
+                    q.path(),
+                    "Stop",
+                    serde_json::json!({ "transcript_path": t }),
+                );
+                assert_clean_exit(&r, "reference ingest");
+                records(q.path(), "SELECT count(*) FROM record")
+            };
+            let root = p.path().to_path_buf();
+            let tt = t.clone();
+            let handles: Vec<_> = (0..4)
             .map(|i| {
                 let root = root.clone();
                 let tt = tt.clone();
@@ -575,17 +625,18 @@ fn s14_maintain_and_stop_concurrent() {
                 })
             })
             .collect();
-        // Stop and maintain are the write path: Stop runs in the background with a 30 s
-        // timeout in both harnesses. On a Windows CI runner a Stop waiting on maintain's
-        // lock took over 3 s, so there the bound is the 10 s the test waits.
-        let bound = Duration::from_secs(if cfg!(windows) { 10 } else { 2 });
-        for h in handles {
-            let r = h.join().unwrap();
-            assert_clean_exit_within(&r, "maintain/Stop concurrent", bound);
-        }
-        assert_eq!(records(p.path(), "SELECT count(*) FROM record"), expect);
-        let s = summary(p.path());
-        assert!(!s.starts_with("MUNINN RED"), "{s}");
+            // Stop and maintain are the write path: Stop runs in the background with a 30 s
+            // timeout in both harnesses. On a Windows CI runner a Stop waiting on maintain's
+            // lock took over 3 s, so there the bound is the 10 s the test waits.
+            let bound = Duration::from_secs(if cfg!(windows) { 10 } else { 2 });
+            for h in handles {
+                let r = h.join().unwrap();
+                assert_clean_exit_within(&r, "maintain/Stop concurrent", bound);
+            }
+            assert_eq!(records(p.path(), "SELECT count(*) FROM record"), expect);
+            let s = summary(p.path());
+            assert!(!s.starts_with("MUNINN RED"), "{s}");
+        });
     }
 }
 
@@ -593,23 +644,25 @@ fn s14_maintain_and_stop_concurrent() {
 #[test]
 fn s15_huge_single_turn() {
     for _ in 0..reps() {
-        let p = init_project();
-        let t = p.path().join("t.jsonl");
-        std::fs::write(&t, transcript_lines(1, 200_000)).unwrap();
-        let r = hook(
-            p.path(),
-            "SessionEnd",
-            serde_json::json!({ "transcript_path": t }),
-        );
-        assert_clean_exit(&r, "huge turn");
-        assert!(records(p.path(), "SELECT count(*) FROM record WHERE kind='episode'") >= 12);
-        assert_eq!(
-            records(
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            let t = p.path().join("t.jsonl");
+            std::fs::write(&t, transcript_lines(1, 200_000)).unwrap();
+            let r = hook(
                 p.path(),
-                "SELECT count(*) FROM record WHERE length(body) > 2000"
-            ),
-            0
-        );
+                "SessionEnd",
+                serde_json::json!({ "transcript_path": t }),
+            );
+            assert_clean_exit(&r, "huge turn");
+            assert!(records(p.path(), "SELECT count(*) FROM record WHERE kind='episode'") >= 12);
+            assert_eq!(
+                records(
+                    p.path(),
+                    "SELECT count(*) FROM record WHERE length(body) > 2000"
+                ),
+                0
+            );
+        });
     }
 }
 
@@ -670,10 +723,6 @@ fn drive_serving_hooks(root: &Path) -> String {
         ("SessionStart", serde_json::json!({})),
         ("UserPromptSubmit", serde_json::json!({ "prompt": prompt })),
         (
-            "PostToolUse",
-            serde_json::json!({ "tool_name": "Read", "tool_input": {"file_path": "src/faultcodec.rs"} }),
-        ),
-        (
             "PostCompact",
             serde_json::json!({ "compact_summary": prompt }),
         ),
@@ -690,19 +739,21 @@ fn drive_serving_hooks(root: &Path) -> String {
 #[test]
 fn s16_retired_never_reaches_stdout() {
     for _ in 0..reps() {
-        let p = init_project();
-        seed_replaced_pair(p.path());
-        let out = drive_serving_hooks(p.path());
-        assert!(
-            !out.contains(OLD_VALUE),
-            "retired value served: {}",
-            out.replace('\n', " ")
-        );
-        assert!(
-            out.contains(NEW_VALUE),
-            "the replacement was never delivered, so the test proves nothing: {}",
-            out.replace('\n', " ")
-        );
+        on_a_machine_that_can_run_it(|| {
+            let p = init_project();
+            seed_replaced_pair(p.path());
+            let out = drive_serving_hooks(p.path());
+            assert!(
+                !out.contains(OLD_VALUE),
+                "retired value served: {}",
+                out.replace('\n', " ")
+            );
+            assert!(
+                out.contains(NEW_VALUE),
+                "the replacement was never delivered, so the test proves nothing: {}",
+                out.replace('\n', " ")
+            );
+        });
     }
 }
 
@@ -711,38 +762,40 @@ fn s16_retired_never_reaches_stdout() {
 #[test]
 fn s17_retired_never_reaches_stdout_under_fault() {
     for _ in 0..reps() {
-        // unknown schema version (s10): the binary must not read a store it cannot vouch for
-        let p = init_project();
-        seed_replaced_pair(p.path());
-        {
-            let c = rusqlite::Connection::open(db_path(p.path())).unwrap();
-            c.execute("UPDATE meta SET value='99' WHERE key='schema_version'", [])
-                .unwrap();
-        }
-        let out = drive_serving_hooks(p.path());
-        assert!(!out.contains(OLD_VALUE), "schema-too-new: {out}");
+        on_a_machine_that_can_run_it(|| {
+            // unknown schema version (s10): the binary must not read a store it cannot vouch for
+            let p = init_project();
+            seed_replaced_pair(p.path());
+            {
+                let c = rusqlite::Connection::open(db_path(p.path())).unwrap();
+                c.execute("UPDATE meta SET value='99' WHERE key='schema_version'", [])
+                    .unwrap();
+            }
+            let out = drive_serving_hooks(p.path());
+            assert!(!out.contains(OLD_VALUE), "schema-too-new: {out}");
 
-        // clock moved backwards (s8)
-        let p = init_project();
-        seed_replaced_pair(p.path());
-        let r = hook_with(
-            p.path(),
-            "UserPromptSubmit",
-            &payload(
+            // clock moved backwards (s8)
+            let p = init_project();
+            seed_replaced_pair(p.path());
+            let r = hook_with(
                 p.path(),
-                serde_json::json!({ "prompt": "which faultcodec transport codec?" }),
-            ),
-            &[("MUNINN_FAKE_NOW_MS", "1000")],
-            Stdio::piped(),
-        );
-        assert_clean_exit(&r, "clock-back UserPromptSubmit");
-        assert!(!r.stdout.contains(OLD_VALUE), "clock back: {}", r.stdout);
+                "UserPromptSubmit",
+                &payload(
+                    p.path(),
+                    serde_json::json!({ "prompt": "which faultcodec transport codec?" }),
+                ),
+                &[("MUNINN_FAKE_NOW_MS", "1000")],
+                Stdio::piped(),
+            );
+            assert_clean_exit(&r, "clock-back UserPromptSubmit");
+            assert!(!r.stdout.contains(OLD_VALUE), "clock back: {}", r.stdout);
 
-        // corrupt store (s2): silence is fine, the retired value is not
-        let p = init_project();
-        seed_replaced_pair(p.path());
-        std::fs::write(db_path(p.path()), b"not a database, but long enough\0\0\0").unwrap();
-        let out = drive_serving_hooks(p.path());
-        assert!(!out.contains(OLD_VALUE), "corrupt store: {out}");
+            // corrupt store (s2): silence is fine, the retired value is not
+            let p = init_project();
+            seed_replaced_pair(p.path());
+            std::fs::write(db_path(p.path()), b"not a database, but long enough\0\0\0").unwrap();
+            let out = drive_serving_hooks(p.path());
+            assert!(!out.contains(OLD_VALUE), "corrupt store: {out}");
+        });
     }
 }

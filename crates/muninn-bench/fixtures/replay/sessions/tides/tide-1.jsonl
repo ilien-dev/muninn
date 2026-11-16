@@ -1,0 +1,6 @@
+{"type":"user","sessionId":"tide-1","timestamp":"2026-10-01T09:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"We go with SQLite for the tide cache. Never commit the generated tables under out/."}}
+{"type":"assistant","sessionId":"tide-1","timestamp":"2026-10-01T09:00:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"The cache is on SQLite and out/ is ignored."}]}}
+{"type":"user","sessionId":"tide-1","timestamp":"2026-10-01T09:02:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"The harbour list looks fine, thanks."}}
+{"type":"assistant","sessionId":"tide-1","timestamp":"2026-10-01T09:02:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Good."}]}}
+{"type":"user","sessionId":"tide-1","timestamp":"2026-10-01T09:04:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"No, heights are in metres, not feet, in every table."}}
+{"type":"assistant","sessionId":"tide-1","timestamp":"2026-10-01T09:04:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Heights are in metres now."}]}}

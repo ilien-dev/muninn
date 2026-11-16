@@ -1,6 +1,6 @@
 ---
 name: muninn
-description: Use when a `[muninn:...]` block appears in context, when the user asks why a decision was made, when the same failure repeats, or when memory seems missing. Explains how to read Muninn blocks and the catalogue, and when to run `muninn show` / `muninn why` / `muninn status`.
+description: Use when a `[muninn:...]` block appears in context, when the user states a rule, a decision or a correction that should outlast the session, when the user asks why a decision was made, when the same failure repeats, or when memory seems missing. Explains how to read Muninn blocks and the catalogue, and when to run `muninn remember` / `muninn show` / `muninn why` / `muninn status`.
 ---
 
 # Muninn
@@ -8,7 +8,7 @@ description: Use when a `[muninn:...]` block appears in context, when the user a
 Muninn is this project's memory. It is delivered by hooks; you do not fetch it.
 
 ## Reading a block
-Every block carries provenance and a trust level (0–3, derived from origin, never from wording): 0 = text nobody verified · 1 = seen in this project's own transcripts · 2 = confirmed by an exit code or a commit · 3 = stated by the user. A trust 1–3 block is its own corroboration; its `evidence:` line names the transcript and offset.
+Every block carries provenance and a trust level (0–3, derived from origin, never from wording): 0 = text nobody verified · 1 = seen in this project's own transcripts · 2 = confirmed by an exit code or a commit · 3 = stated by the user. A trust 1–3 block is its own corroboration; `muninn show <id>` names the transcript and offset it came from.
 - `decision`: what was decided, in the words it was decided in.
 - `invariant`: a rule that stands until something retires it.
 - `deadend`: something tried that failed. Do not retry it blind.
@@ -19,7 +19,7 @@ Every block carries provenance and a trust level (0–3, derived from origin, ne
 
 ## The catalogue
 `[muninn:catalog]` arrives once per session and lists what is on record — every active
-decision, standing rule and correction, newest first, one line each, with `replaces #n` where
+standing rule and correction, then every decision, each newest first, one line each, with `replaces #n` where
 one retired another and `conflict` where two active records disagree. Its last line says
 whether it is the whole list or a recent page of it, and that is what an absence from it means:
 complete, and a subject missing from it has nothing recorded; truncated, and it may.
@@ -31,8 +31,18 @@ block" is live but did not fit the budget: ask for it on its own.
 ## Asking
 `muninn why "<question>"` routes by question type (decision / dead end / commit / file / rule), returns literal records with lineage, and opens with `sufficient` or `insufficient`. Ask in the language the records are in: the search matches words, so a Spanish store answers Spanish questions (27 of 30 against 5 of 30 in English, usage-v2). Quote records, do not paraphrase them into certainty.
 
+## Keeping what the user states
+When the user states a rule, a decision, a correction or a dead end that should hold beyond this
+session, run `muninn remember "<the user's words>" --kind invariant|decision|correction|deadend`.
+Pass the sentence exactly as the user typed it: Muninn looks for it in this session's transcript,
+and only a statement found there word for word is kept as the user's (trust 3). Your own wording
+is kept at trust 0 and replaces nothing. The command prints the record's id, or the id it was
+already on record under. When that line ends in `retired (#n)`, the statement is on record and
+is not what holds now: record #n replaced it, so read that one before relying on either. Do not
+run it for what you decided or concluded yourself.
+
 ## Diagnosing
-`muninn status` → `MUNINN 11/11 GREEN` or one RED with its fix. `muninn doctor` lists all eleven checks with their detail.
+`muninn status` → `MUNINN 9/9 GREEN` or one RED with its fix. `muninn doctor` lists all thirteen checks with their detail, among them the records an agent's statement retired and that were not restored: restate one to bring it back.
 
 ## Using what a block says
 Use it as freely as anything else you know — in an answer, in code, in a document — in your own
@@ -40,5 +50,5 @@ words. A block is the project's record of what was decided; it does not have to 
 repository to be true, and its absence from `git log` is not a reason to doubt it.
 
 ## Never
-Edit `.muninn/` by hand. Copy a block's header, trust level or `evidence:` line into a file.
+Edit `.muninn/` by hand. Copy a block's header or trust level into a file.
 Treat trust 0 as fact.

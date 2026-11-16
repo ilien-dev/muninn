@@ -32,11 +32,18 @@ struct InitState {
     #[serde(default)]
     auto_memory_was: Option<bool>,
     codex_hooks_written: bool,
+    /// The project had no `.codex/hooks.json` before `init` wrote one: `clean` may remove the
+    /// file, where otherwise it only takes Muninn's handlers out of it.
+    #[serde(default)]
+    codex_hooks_file_created: bool,
 }
 
 pub struct InitOpts {
     pub keep_native: bool,
     pub refresh: bool,
+    /// Write the Codex hooks whether or not Codex is found on this machine, and fail where
+    /// they cannot be written. Without it they are written where Codex is found, and a
+    /// reason not to is a line of output.
     pub codex: bool,
     /// Write the long boot block into CLAUDE.md / AGENTS.md (opt-in; the default
     /// injects the compact summary from the SessionStart hook and touches no file).
@@ -303,40 +310,70 @@ fn shell_quote_binary(binary: &Path) -> Result<String> {
     Ok(format!("'{s}'"))
 }
 
-/// Quote the binary path for `commandWindows`, which Codex runs through `cmd.exe /C`.
-/// Double quotes keep spaces and `&|<>^` literal there; a double quote cannot be escaped
-/// inside them and `%` expands even inside them, so both are refused, as are control
-/// characters.
-fn cmd_quote_binary(binary: &Path) -> Result<String> {
+/// The binary as `commandWindows` names it, in a spelling both Windows shells run.
+///
+/// Codex hands a hook's command line to the session's shell, and to `cmd.exe /C` only when
+/// the session has none. On Windows the session's shell is PowerShell (codex-cli 0.166.0),
+/// where a double-quoted path followed by arguments is a string and an error, not a command:
+/// the hooks this wrote before, `"C:\…\muninn.exe" hook Stop`, ran under cmd.exe and did
+/// nothing in a real session. Run through both shells with a hook's stdin: a bare path runs in
+/// both and breaks at a space; `cmd /c "<path>"` runs in both with one.
+///
+/// So a path made of letters, digits and `\ / : . _ - ~` is written bare, and any other goes
+/// through `cmd /c`. What that cannot hold is refused: a double quote, `%` and `$`, which
+/// expand inside double quotes in one shell or the other, a backtick, and `& < > ( ) @ ^ |`,
+/// any of which makes cmd.exe drop the quotes around the program.
+fn windows_program(binary: &Path) -> Result<String> {
     let s = binary.to_str().with_context(|| {
         format!(
             "the muninn binary path is not valid UTF-8: {}",
             binary.display()
         )
     })?;
-    if let Some(bad) = s.chars().find(|c| *c == '"' || *c == '%' || c.is_control()) {
+    let bare = |c: char| c.is_alphanumeric() || r"\/:._-~".contains(c);
+    if s.chars().all(bare) {
+        return Ok(s.to_string());
+    }
+    if let Some(bad) = s
+        .chars()
+        .find(|c| "\"%$`&<>()@^|".contains(*c) || c.is_control())
+    {
         bail!(
             "refusing to write .codex/hooks.json: the muninn binary path contains {bad:?}, \
-             which cannot be quoted safely for cmd.exe ({s}). Install the binary somewhere \
-             without it and re-run `muninn init --codex`."
+             which neither cmd.exe nor PowerShell can be handed safely ({s}). Install the \
+             binary somewhere without it and re-run `muninn init --codex`."
         );
     }
-    Ok(format!("\"{s}\""))
+    Ok(format!("cmd /c \"{s}\""))
 }
 
 pub fn codex_hooks_json(binary: &Path) -> Result<serde_json::Value> {
     let bin = shell_quote_binary(binary)?;
-    // Codex runs `command` through sh on macOS and Linux and `commandWindows`, when there
-    // is one, through cmd.exe on Windows, where the single quotes above mean nothing.
+    // Codex runs `command` through the user's shell on macOS and Linux and `commandWindows`,
+    // when there is one, through PowerShell or cmd.exe on Windows, where the single quotes
+    // above mean nothing.
     let win = if cfg!(windows) {
-        Some(cmd_quote_binary(binary)?)
+        Some(format!("{} {{args}}", windows_program(binary)?))
     } else {
         None
     };
     Ok(codex_hooks(&bin, win.as_deref()))
 }
 
-/// The Codex hooks, given the binary already quoted for sh and, optionally, for cmd.exe.
+/// How the Codex plugin's file names its binary on Windows, `{args}` standing for the hook's
+/// own words. The plugin's root reaches the command as an environment variable whose value
+/// nobody knows when the file is written, so it cannot be spelt bare as `init` spells a path
+/// with nothing to quote; and `cmd /c "%PLUGIN_ROOT%\…" hook X`, which both shells run for a
+/// path written out, loses its quotes in PowerShell when the text between them holds no
+/// space, and then breaks on a root that does. After `--%` PowerShell passes the rest as it
+/// stands, and cmd.exe takes the outer quotes off: run through both shells with the root in a
+/// directory with a space and in one without, this is the spelling of seven tried that runs
+/// in all four (`scripts/ci-windows-hooks.py` runs it in both shells on every push).
+#[cfg(test)]
+const CODEX_PLUGIN_WINDOWS: &str = r#"cmd --% /c ""%PLUGIN_ROOT%\bin\muninn.exe" {args}""#;
+
+/// The Codex hooks, given the binary already spelt for sh and, optionally, the Windows
+/// command with `{args}` where the hook's own words go.
 fn codex_hooks(bin: &str, win: Option<&str>) -> serde_json::Value {
     // The per-turn hooks get 2 seconds and the per-session ones 5, the same split the Claude
     // plugin ships and the same the committed `codex/hooks.json` template describes. This
@@ -345,7 +382,7 @@ fn codex_hooks(bin: &str, win: Option<&str>) -> serde_json::Value {
     // and the contracts say these run in under a millisecond.
     let with_win = |mut h: serde_json::Value, ev: &str| {
         if let Some(w) = win {
-            h["commandWindows"] = format!("{w} hook {ev}").into();
+            h["commandWindows"] = w.replace("{args}", &format!("hook {ev}")).into();
         }
         h
     };
@@ -368,7 +405,6 @@ fn codex_hooks(bin: &str, win: Option<&str>) -> serde_json::Value {
             "UserPromptSubmit": [{ "hooks": [cmd("UserPromptSubmit", 2)] }],
             // Codex edits files through `apply_patch`; the hook reshapes it into Edit/Write
             "PreToolUse":       [{ "matcher": "^(Bash|Edit|Write|MultiEdit|Read|apply_patch)$", "hooks": [cmd("PreToolUse", 2)] }],
-            "PostToolUse":      [{ "matcher": "^(Bash|Read|Edit|Write|Grep|Glob|MultiEdit|apply_patch)$", "hooks": [cmd("PostToolUse", 2)] }],
             "PreCompact":       [{ "hooks": [cmd("PreCompact", 5)] }],
             "PostCompact":      [{ "hooks": [cmd("PostCompact", 5)] }],
             "Stop":             [{ "hooks": [cmd_async("Stop")] }],
@@ -377,24 +413,60 @@ fn codex_hooks(bin: &str, win: Option<&str>) -> serde_json::Value {
     })
 }
 
+/// How to get the hooks when this binary is a plugin's.
+const CODEX_PLUGIN_HINT: &str = "The Codex plugin installs these hooks: `codex plugin \
+     marketplace add ilien-dev/muninn`, then `codex plugin add muninn@muninn`.";
+
+/// A plugin's binary lives in a directory named after its version, which the next update
+/// replaces: hooks pinned to it stop at the first upgrade, and the Codex plugin already runs
+/// the same hooks, so the project file would fire every one twice.
+fn belongs_to_a_plugin(bin: &Path) -> bool {
+    bin.parent().and_then(Path::parent).is_some_and(|root| {
+        root.join(".codex-plugin").is_dir() || root.join(".claude-plugin").is_dir()
+    })
+}
+
+/// Put Muninn's hooks in the project's `.codex/hooks.json`, beside any the user has there.
+/// Returns whether the file was written; an error when it is not a hooks file.
+fn install_codex_hooks(paths: &ProjectPaths, bin: &Path, st: &mut InitState) -> Result<bool> {
+    let file = crate::codex_install::file(&paths.root);
+    // Only a file that is not there is no file. One that cannot be read as text (UTF-16, as
+    // PowerShell 5.1 writes a redirected file; no permission; a directory of that name) is the
+    // user's, and taking it for absent wrote Muninn's file over it and let `clean` delete it.
+    let existing = match std::fs::read_to_string(&file) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => bail!(".codex/hooks.json is left as it is: it cannot be read ({e})"),
+    };
+    let next = crate::codex_install::merged(existing.as_deref(), &codex_hooks_json(bin)?)
+        .map_err(|e| anyhow::anyhow!(".codex/hooks.json is left as it is: {e}"))?;
+    st.codex_hooks_written = true;
+    let Some(next) = next else {
+        return Ok(false);
+    };
+    if existing.is_none() {
+        st.codex_hooks_file_created = true;
+    }
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&file, next)?;
+    Ok(true)
+}
+
 pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
-    if opts.codex {
-        let bin = std::env::current_exe().context("locating muninn binary")?;
-        // A plugin's binary lives in a directory named after its version, which the next
-        // update replaces: hooks pinned to it stop at the first upgrade, and the Codex plugin
-        // already runs the same hooks, so the project file would fire every one twice.
-        if let Some(root) = bin.parent().and_then(Path::parent) {
-            if root.join(".codex-plugin").is_dir() || root.join(".claude-plugin").is_dir() {
-                bail!(
-                    "--codex is for a binary installed with install.sh; this one belongs to the \
-                     plugin ({}). The Codex plugin already installs these hooks: `codex plugin \
-                     marketplace add ilien-dev/muninn`, then `codex plugin add muninn@muninn`.",
-                    bin.display()
-                );
-            }
-        }
+    let bin = std::env::current_exe().context("locating muninn binary")?;
+    let plugin_binary = belongs_to_a_plugin(&bin);
+    if opts.codex && plugin_binary {
+        bail!(
+            "--codex is for a binary installed with install.sh; this one belongs to the plugin \
+             ({}). {CODEX_PLUGIN_HINT}",
+            bin.display()
+        );
     }
     let mut touched: Vec<String> = Vec::new();
+    // what was found and not done, each with its reason
+    let mut notes: Vec<String> = Vec::new();
     let mut st = load_state(paths);
     for d in paths.all_dirs() {
         std::fs::create_dir_all(&d).with_context(|| format!("creating {}", d.display()))?;
@@ -467,26 +539,54 @@ pub fn run(paths: &ProjectPaths, opts: InitOpts, json: bool) -> Result<()> {
         }
     }
 
-    if opts.codex {
-        let bin = std::env::current_exe().context("locating muninn binary")?;
-        let dir = paths.root.join(".codex");
-        std::fs::create_dir_all(&dir)?;
-        let file = dir.join("hooks.json");
-        std::fs::write(
-            &file,
-            serde_json::to_string_pretty(&codex_hooks_json(&bin)?)? + "\n",
-        )?;
-        st.codex_hooks_written = true;
-        touched.push(".codex/hooks.json".into());
+    // Codex: its hooks go in the project where Codex is found on this machine or in this
+    // project, without being asked. Found by looking at the file system, never by running it.
+    if opts.codex || crate::codex_install::present(&paths.root) {
+        // the Codex plugin, when it is installed, already runs these hooks in every project:
+        // a second set in the project file would run each of them twice
+        let plugin = crate::codex_install::plugin_install().filter(|_| !opts.codex);
+        if let Some(plugin) = plugin {
+            notes.push(format!(
+                "Codex found; .codex/hooks.json not written, the Codex plugin installed at {} \
+                 runs these hooks (`muninn init --codex` writes the file all the same).",
+                plugin.display()
+            ));
+        } else if plugin_binary {
+            notes.push(format!(
+                "Codex found; .codex/hooks.json not written, this binary belongs to the plugin. \
+                 {CODEX_PLUGIN_HINT}"
+            ));
+        } else {
+            match install_codex_hooks(paths, &bin, &mut st) {
+                Ok(true) => touched.push(
+                    ".codex/hooks.json (Muninn's hooks; Codex runs them once this project is \
+                     trusted and you have reviewed them with /hooks. The file names this \
+                     machine's muninn binary by its full path: do not commit it, or run \
+                     `muninn init` again on each machine)"
+                        .into(),
+                ),
+                Ok(false) => {}
+                Err(e) if opts.codex => {
+                    save_state(paths, &st)?;
+                    return Err(e);
+                }
+                Err(e) => notes.push(format!("Codex found; {e:#}")),
+            }
+        }
     }
 
     save_state(paths, &st)?;
     if json {
-        output::json(&serde_json::json!({ "root": paths.root, "touched": touched }));
+        output::json(
+            &serde_json::json!({ "root": paths.root, "touched": touched, "notes": notes }),
+        );
     } else {
         output::out(&format!("muninn initialised in {}", paths.root.display()));
         for t in &touched {
             output::out(&format!("  touched {t}"));
+        }
+        for n in &notes {
+            output::out(&format!("  {n}"));
         }
         if opts.keep_native {
             output::out("  native memory left enabled (--keep-native)");
@@ -556,8 +656,22 @@ pub fn clean(paths: &ProjectPaths, yes: bool, json: bool) -> Result<()> {
         }
     }
     if st.codex_hooks_written {
-        let _ = std::fs::remove_file(paths.root.join(".codex/hooks.json"));
-        undone.push(".codex/hooks.json".into());
+        // Muninn's handlers only. The file goes when `init` made it and nothing of the
+        // user's is in it; one that is not a hooks file any more is left as it stands.
+        let file = crate::codex_install::file(&paths.root);
+        let ours = codex_hooks("", None);
+        let was = std::fs::read_to_string(&file).unwrap_or_default();
+        match crate::codex_install::without_ours(&was, &ours["description"]) {
+            Ok((_, true)) if st.codex_hooks_file_created => {
+                std::fs::remove_file(&file)?;
+                undone.push(".codex/hooks.json".into());
+            }
+            Ok((text, _)) if text != was => {
+                std::fs::write(&file, text)?;
+                undone.push(".codex/hooks.json (Muninn's hooks only)".into());
+            }
+            _ => {}
+        }
     }
     std::fs::remove_dir_all(&paths.muninn_dir)?;
     undone.push(paths.muninn_dir.display().to_string());
@@ -608,15 +722,18 @@ mod tests {
     /// SessionStart through the script that downloads the binary on first use.
     #[test]
     fn the_codex_plugin_hooks_match_the_generator() {
-        let mut generated = codex_hooks(
-            "'${PLUGIN_ROOT}/bin/muninn'",
-            Some(r#""%PLUGIN_ROOT%\bin\muninn.exe""#),
-        );
+        let mut generated = codex_hooks("'${PLUGIN_ROOT}/bin/muninn'", Some(CODEX_PLUGIN_WINDOWS));
         // Windows has no sh for the script, so PowerShell downloads the binary and cmd.exe
-        // then runs it with the hook's stdin untouched; a failed download still exits 0
+        // then runs it with the hook's stdin untouched; a failed download still exits 0.
+        // The download script starts only when the binary is not there yet: starting it on
+        // every session cost 145.9 ms against 16.4 ms without it (p50, 12 runs each, the line
+        // run by cmd.exe as it then stood). Inside `cmd --% /c`, with the binary there, the
+        // line reads 32.0 ms under cmd.exe, where the line before it read 19.8, and 130.0 ms
+        // under PowerShell, where the line before it ran nothing and PowerShell alone takes
+        // 105.3 to start and exit (p50, 12 runs each; the binary alone 8.1).
         generated["hooks"]["SessionStart"][0]["hooks"][0] = serde_json::json!({
             "type": "command", "command": "'${PLUGIN_ROOT}/scripts/session-start'",
-            "commandWindows": r#"powershell -NoProfile -ExecutionPolicy Bypass -File "%PLUGIN_ROOT%\scripts\session-start.ps1" <NUL && "%PLUGIN_ROOT%\bin\muninn.exe" hook SessionStart || exit /b 0"#,
+            "commandWindows": r#"cmd --% /c "(if not exist "%PLUGIN_ROOT%\bin\muninn.exe" powershell -NoProfile -ExecutionPolicy Bypass -File "%PLUGIN_ROOT%\scripts\session-start.ps1" <NUL) && "%PLUGIN_ROOT%\bin\muninn.exe" hook SessionStart || exit /b 0""#,
             "timeout": 120
         });
         let shipped: serde_json::Value =
@@ -626,6 +743,94 @@ mod tests {
             serde_json::from_str(include_str!("../../../plugin/.codex-plugin/plugin.json"))
                 .unwrap();
         assert_eq!(manifest["hooks"], "./hooks/codex.json");
+    }
+
+    /// Three files say which hooks Codex runs: the template that documents them
+    /// (`codex/hooks.json`), the plugin's (`plugin/hooks/codex.json`) and what `init` writes.
+    /// They agree on every event, matcher, timeout and background mark, and on the words the
+    /// binary is given. They differ in how the binary is named, by these rules and no other:
+    /// outside Windows `init` and the template single-quote a path and the plugin
+    /// single-quotes `${PLUGIN_ROOT}/bin/muninn`; on Windows `init` writes the path bare or,
+    /// when it needs quoting, inside `cmd /c "…"`, and the plugin writes
+    /// [`CODEX_PLUGIN_WINDOWS`]; and the plugin's SessionStart goes through the script that
+    /// downloads the binary, on Windows the same download-then-run line inside `cmd --% /c`.
+    #[test]
+    fn the_three_codex_hook_sources_agree_and_differ_only_in_how_the_binary_is_named() {
+        let read = |s: &str| serde_json::from_str::<serde_json::Value>(s).unwrap();
+        let template = read(include_str!("../../../codex/hooks.json"));
+        let plugin = read(include_str!("../../../plugin/hooks/codex.json"));
+        let bare = r"C:\Users\ab\.local\bin\muninn.exe";
+        let spaced = r"C:\Users\A B\.local\bin\muninn.exe";
+        let written = |path: &str| {
+            let win = format!("{} {{args}}", windows_program(Path::new(path)).unwrap());
+            codex_hooks("'/usr/local/bin/muninn'", Some(&win))
+        };
+        let events: Vec<String> = template["hooks"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(events.len(), 7);
+        for source in [&plugin, &written(bare)] {
+            let theirs: Vec<String> = source["hooks"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect();
+            assert_eq!(theirs, events);
+        }
+        for ev in &events {
+            let words = format!("hook {ev}");
+            let (t, p) = (&template["hooks"][ev][0], &plugin["hooks"][ev][0]);
+            let (i, s) = (
+                &written(bare)["hooks"][ev][0],
+                &written(spaced)["hooks"][ev][0],
+            );
+            for other in [p, i] {
+                assert_eq!(other["matcher"], t["matcher"], "{ev}: matcher");
+                assert_eq!(
+                    other["hooks"][0]["async"], t["hooks"][0]["async"],
+                    "{ev}: async"
+                );
+            }
+            let (t, p, i, s) = (
+                &t["hooks"][0],
+                &p["hooks"][0],
+                &i["hooks"][0],
+                &s["hooks"][0],
+            );
+            assert_eq!(i["timeout"], t["timeout"], "{ev}: timeout");
+            assert_eq!(
+                i["command"], t["command"],
+                "{ev}: the template is what init writes"
+            );
+            assert_eq!(i["command"], format!("'/usr/local/bin/muninn' {words}"));
+            assert_eq!(i["commandWindows"], format!("{bare} {words}"));
+            assert_eq!(s["commandWindows"], format!("cmd /c \"{spaced}\" {words}"));
+            let plugin_line = CODEX_PLUGIN_WINDOWS.replace("{args}", &words);
+            if ev == "SessionStart" {
+                // the one event that may have to fetch the binary first, with time to do it
+                assert_eq!(p["timeout"], 120);
+                assert_eq!(p["command"], "'${PLUGIN_ROOT}/scripts/session-start'");
+                let line = p["commandWindows"].as_str().unwrap();
+                assert!(line.starts_with("cmd --% /c \"(if not exist "), "{line}");
+                assert!(
+                    line.ends_with(
+                        r#"&& "%PLUGIN_ROOT%\bin\muninn.exe" hook SessionStart || exit /b 0""#
+                    ),
+                    "{line}"
+                );
+            } else {
+                assert_eq!(p["timeout"], t["timeout"], "{ev}: timeout");
+                assert_eq!(
+                    p["command"],
+                    format!("'${{PLUGIN_ROOT}}/bin/muninn' {words}")
+                );
+                assert_eq!(p["commandWindows"], plugin_line);
+            }
+        }
     }
 
     /// A marketplace install reads the version from the manifests in the repository, and the
@@ -775,9 +980,10 @@ mod tests {
             "/tmp/a`id`/muninn",
             "/tmp/a|id/muninn",
         ] {
-            let cmd = codex_hooks_json(Path::new(bad))
-                .unwrap_or_else(|e| panic!("{bad} is quotable, not refused: {e}"))["hooks"]
-                ["SessionStart"][0]["hooks"][0]["command"]
+            // the command sh is given; what Windows is given has rules of its own, below
+            let quoted = shell_quote_binary(Path::new(bad))
+                .unwrap_or_else(|e| panic!("{bad} is quotable, not refused: {e}"));
+            let cmd = codex_hooks(&quoted, None)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
                 .as_str()
                 .expect("a command string")
                 .to_string();
@@ -795,23 +1001,42 @@ mod tests {
         }
     }
 
-    /// On Windows Codex runs `commandWindows` through cmd.exe, where single quotes mean
-    /// nothing: the path is double-quoted, and what double quotes cannot hold is refused.
+    /// On Windows Codex hands `commandWindows` to the session's shell, PowerShell unless the
+    /// session has none, and then to cmd.exe. A path with nothing to quote is written bare,
+    /// which both run; one with a space goes through `cmd /c "…"`, which both run too; and
+    /// what neither spelling can hold is refused. A double-quoted path alone, which this
+    /// wrote before, runs under cmd.exe and does nothing under PowerShell.
     #[test]
-    fn codex_windows_path_is_double_quoted_and_cmd_metacharacters_refused() {
-        let q = cmd_quote_binary(Path::new(r"C:\Users\A B\.local\bin\muninn.exe")).unwrap();
-        assert_eq!(q, r#""C:\Users\A B\.local\bin\muninn.exe""#);
-        let h = codex_hooks("'x'", Some(&q));
+    fn codex_windows_command_is_one_both_shells_run() {
+        let plain = windows_program(Path::new(r"C:\Users\ab\.local\bin\muninn.exe")).unwrap();
+        assert_eq!(plain, r"C:\Users\ab\.local\bin\muninn.exe");
+        let spaced = windows_program(Path::new(r"C:\Users\A B\.local\bin\muninn.exe")).unwrap();
+        assert_eq!(spaced, r#"cmd /c "C:\Users\A B\.local\bin\muninn.exe""#);
+        let h = codex_hooks("'x'", Some(&format!("{spaced} {{args}}")));
         assert_eq!(
             h["hooks"]["Stop"][0]["hooks"][0]["commandWindows"],
-            format!("{q} hook Stop")
+            r#"cmd /c "C:\Users\A B\.local\bin\muninn.exe" hook Stop"#
+        );
+        // a letter outside ASCII needs no quoting; a comma or a quote mark does
+        assert_eq!(
+            windows_program(Path::new(r"C:\Users\José\muninn.exe")).unwrap(),
+            r"C:\Users\José\muninn.exe"
+        );
+        assert_eq!(
+            windows_program(Path::new(r"C:\it's,here\muninn.exe")).unwrap(),
+            r#"cmd /c "C:\it's,here\muninn.exe""#
         );
         for bad in [
             r#"C:\a"b\muninn.exe"#,
             r"C:\%PATH%\muninn.exe",
             "C:\\a\nb\\muninn.exe",
+            r"C:\Program Files (x86)\muninn.exe",
+            r"C:\a&b\muninn.exe",
+            r"C:\a^b\muninn.exe",
+            r"C:\$HOME\muninn.exe",
+            r"C:\a`b\muninn.exe",
         ] {
-            assert!(cmd_quote_binary(Path::new(bad)).is_err(), "{bad:?}");
+            assert!(windows_program(Path::new(bad)).is_err(), "{bad:?}");
         }
     }
 }

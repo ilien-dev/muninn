@@ -1,8 +1,6 @@
 //! Hard caps and budgets. Every number here has a measured or published reason;
 //! see design/ENGINE.md §3–§4 and the evidence ids next to each.
 
-/// Active `invariant` records per project [K4].
-pub const MAX_INVARIANTS: i64 = 60;
 /// Active records of any kind [O5].
 pub const MAX_ACTIVE_RECORDS: i64 = 20_000;
 /// Characters of `record.body`; the rest stays in `transcript_ref`.

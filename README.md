@@ -111,10 +111,10 @@ a small database in your project, and writes to it only when a session ends.
 
 1. **A session starts.** The assistant gets a short catalog of what is on record, so it knows
    what it can ask for.
-2. **You write a message.** Muninn takes your words and the files in play and looks for them among
-   the decisions that still stand. Retired ones are not in the list it searches.
-3. **The matches go back as evidence**, capped at 700 tokens, each with where it came from and how
-   much to trust it. No AI model runs in this step, so the same question gets the same answer.
+2. **You write a message.** Muninn takes your words and looks for them among the decisions that
+   still stand. Retired ones are not in the list it searches.
+3. **The matches go back as evidence**, capped at 700 tokens, each with its date and how much to
+   trust it. No AI model runs in this step, so the same question gets the same answer.
 4. **The assistant reaches for something a rule forbids.** If you turned that rule into a setting,
    the tool refuses before anything changes.
 5. **The session ends.** Muninn reads the conversation and keeps the decisions, rules, corrections
@@ -135,7 +135,7 @@ to each message.
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="assets/motion/catalog-dark.gif">
-        <img src="assets/motion/catalog-light.gif" width="100%" alt="SessionStart prints the catalog of what is on record, newest first.">
+        <img src="assets/motion/catalog-light.gif" width="100%" alt="SessionStart prints the catalog of what is on record.">
       </picture>
       <b>A new session starts.</b> The assistant knows what is on record before you ask anything.
     </td>
@@ -262,8 +262,8 @@ Type these two lines in Claude Code, one at a time:
 /plugin install muninn@muninn
 ```
 
-Restart Claude Code. The first session downloads Muninn itself, about 13 MB, and checks the
-download before using it.
+Restart Claude Code. The first session downloads Muninn itself, a single file of a few
+megabytes (5.5 MB on Windows), and checks the download before using it.
 
 ### Codex
 
@@ -330,6 +330,9 @@ What `init` changes in the project:
   on.
 - It lets the assistant run `muninn why`, `muninn status` and `muninn show` without asking you
   each time.
+- If you use Codex without Muninn's Codex plugin, it writes `.codex/hooks.json`. That file names
+  the `muninn` program by its full path on this computer, so do not commit it. On another
+  computer, run `muninn init` there.
 
 Running it twice is harmless. To remove Muninn from a project, run `muninn clean --yes`: it
 undoes exactly what `init` changed.
@@ -352,6 +355,10 @@ what it knows:
 muninn why "why did we pick zstd"   # what stands now, and what it replaced
 muninn status                        # is everything healthy
 ```
+
+When you state a rule or a decision, the assistant can also keep it on the spot with
+`muninn remember`. It counts as yours only when the sentence is found, word for word, in a
+message you typed in that session.
 
 ## Questions
 
@@ -386,9 +393,10 @@ before it runs.
 <details>
 <summary><b>Will it slow my assistant down?</b></summary>
 
-Not noticeably. The hooks are held to hard limits in CI with a full store of 20 000 records:
-2.8 ms for a session start and 4.0 ms for a message (95th percentile). No AI model runs while it
-answers the assistant.
+Not noticeably. The hooks are held to hard limits in CI with a full store of 20 000 records. On
+a Linux machine a session start took 5 to 6 ms and a message that gets an answer 4 to 5 ms
+(95th percentile). On Windows, where starting any program takes longer, they took about 14 ms
+and 15 ms. No AI model runs while it answers the assistant.
 </details>
 
 <details>

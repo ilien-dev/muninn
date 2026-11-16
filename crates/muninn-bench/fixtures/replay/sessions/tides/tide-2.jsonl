@@ -1,0 +1,6 @@
+{"type":"user","sessionId":"tide-2","timestamp":"2026-10-03T09:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"From now on the tide cache is on Postgres, not SQLite."}}
+{"type":"assistant","sessionId":"tide-2","timestamp":"2026-10-03T09:00:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Moved the tide cache to Postgres."}]}}
+{"type":"user","sessionId":"tide-2","timestamp":"2026-10-03T09:02:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"Always run the harbour tests before a release."}}
+{"type":"assistant","sessionId":"tide-2","timestamp":"2026-10-03T09:02:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"I will run them before each release."}]}}
+{"type":"user","sessionId":"tide-2","timestamp":"2026-10-03T09:04:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"It should never rain on the demo day."}}
+{"type":"assistant","sessionId":"tide-2","timestamp":"2026-10-03T09:04:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Fingers crossed."}]}}

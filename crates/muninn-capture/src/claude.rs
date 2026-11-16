@@ -96,7 +96,51 @@ fn queued_prompt(v: &Value) -> Option<String> {
     Some(text_of(a.get("prompt")?))
 }
 
+/// The exit code of a Bash call, from the shape of its result: Claude Code writes no
+/// `exitCode` for Bash (0 of 9,254 calls in the review of 1.2.0's real use). A result that is
+/// neither an error nor interrupted, and carries the Bash tool's result object, ran to exit 0.
+/// A failed run has no code here: the number is only in the result's text, and an exit code
+/// is evidence that is read from structure, never from wording, so a failure stays `error`.
+fn bash_exit(line: &Value, is_error: bool) -> Option<i64> {
+    let interrupted = line
+        .get("toolUseResult")
+        .and_then(|t| t.get("interrupted"))
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    if interrupted {
+        return None;
+    }
+    if is_error {
+        return None;
+    }
+    // a result object with neither `stdout` nor `interrupted` is not the Bash tool's; one with
+    // a `backgroundTaskId` came back before the command ran, and one with a
+    // `returnCodeInterpretation` exited with a code the harness read as no error
+    line.get("toolUseResult")
+        .and_then(|t| t.as_object())
+        .filter(|o| o.contains_key("stdout") || o.contains_key("interrupted"))
+        .filter(|o| {
+            !o.contains_key("backgroundTaskId") && !o.contains_key("returnCodeInterpretation")
+        })
+        .map(|_| 0)
+}
+
 pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
+    parse_with(path, start_offset, false)
+}
+
+/// As [`parse`], and every tool call also carries the hashes of the task it hands to another
+/// agent (`agent::task_hashes`). Only the write path wants them; a read hook that parses a
+/// transcript (PostCompact) does not pay for them.
+pub fn parse_with_tasks(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
+    parse_with(path, start_offset, true)
+}
+
+fn parse_with(
+    path: &std::path::Path,
+    start_offset: u64,
+    with_tasks: bool,
+) -> std::io::Result<Session> {
     let mut f = std::fs::File::open(path)?;
     if start_offset > 0 {
         f.seek(SeekFrom::Start(start_offset))?;
@@ -221,7 +265,11 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                             };
                             if let Some(tc) = target {
                                 tc.is_error = is_error;
-                                tc.exit_code = exit;
+                                tc.exit_code = exit.or_else(|| {
+                                    (tc.name == "Bash")
+                                        .then(|| bash_exit(&v, is_error))
+                                        .flatten()
+                                });
                                 tc.result_head = clean_text(truncate_chars(&body, RESULT_HEAD));
                             }
                         }
@@ -270,13 +318,20 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                 session.turns.push(t);
             }
             let index = session.turns.len();
+            // The harness names who sent a line in the user's role: a task notification or a
+            // peer's message carries an `origin` other than `human`, and nobody typed it.
+            let sent_by_no_person = v
+                .get("origin")
+                .and_then(|o| o.get("kind"))
+                .and_then(|k| k.as_str())
+                .is_some_and(|k| k != "human");
             current = Some(Turn {
                 index,
                 timestamp: ts,
                 user_prompt: prompt,
                 end_offset: offset,
                 start_offset: line_start,
-                automated,
+                automated: automated || (sent_by_no_person && crate::measure::on("harness_origin")),
                 ..Default::default()
             });
         } else {
@@ -315,9 +370,15 @@ pub fn parse(path: &std::path::Path, start_offset: u64) -> std::io::Result<Sessi
                                 .unwrap_or("")
                                 .to_string();
                             pending.insert(id, (t.index, t.tools.len()));
+                            let task_hashes = if with_tasks {
+                                crate::agent::task_hashes(&name, &input)
+                            } else {
+                                Vec::new()
+                            };
                             t.tools.push(ToolCall {
                                 name,
                                 target,
+                                task_hashes,
                                 ..Default::default()
                             });
                         }
@@ -370,6 +431,76 @@ mod queued_tests {
         let prompts: Vec<&str> = s.turns.iter().map(|t| t.user_prompt.as_str()).collect();
         assert_eq!(prompts, ["primero", "nunca borres esto", "sin origen"]);
         assert!(s.turns[1].start_offset > s.turns[0].start_offset);
+    }
+
+    /// Claude Code writes no `exitCode` for Bash. The result says it by its shape: a result
+    /// that is not an error and not interrupted ran to exit 0. A failure's number is only in
+    /// its text, which is not read: it stays an error with no code.
+    #[test]
+    fn a_bash_result_carries_its_exit_code() {
+        let call = |id: &str| {
+            json!({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": id, "name": "Bash", "input": {"command": "cargo test"}}]}})
+        };
+        let result = |id: &str, body: &str, err: bool, interrupted: bool| {
+            json!({"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": id, "content": body, "is_error": err}]},
+                "toolUseResult": {"stdout": "", "stderr": "", "interrupted": interrupted}})
+        };
+        let s = parsed(&[
+            json!({"type": "user", "message": {"content": "corre las pruebas"}}),
+            call("a"),
+            result(
+                "a",
+                "Exit code 101\nerror[E0308]: mismatched types",
+                true,
+                false,
+            ),
+            call("b"),
+            result("b", "test result: ok. 3 passed", false, false),
+            call("c"),
+            result("c", "", false, true),
+            call("d"),
+            result("d", "permission denied by a hook", true, false),
+        ]);
+        let codes: Vec<Option<i64>> = s.turns[0].tools.iter().map(|t| t.exit_code).collect();
+        assert_eq!(codes, [None, Some(0), None, None]);
+        assert!(s.turns[0].tools[0].is_error);
+
+        // a command sent to the background has not run when its result arrives, and a result
+        // the harness had to interpret exited with a code other than 0
+        let shaped = |id: &str, extra: serde_json::Value| {
+            let mut r = json!({"stdout": "", "stderr": "", "interrupted": false, "isImage": false});
+            for (k, v) in extra.as_object().unwrap() {
+                r[k] = v.clone();
+            }
+            json!({"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": id, "content": "", "is_error": false}]},
+                "toolUseResult": r})
+        };
+        let s = parsed(&[
+            json!({"type": "user", "message": {"content": "lanza el servidor"}}),
+            call("e"),
+            shaped("e", json!({"backgroundTaskId": "b1"})),
+            call("f"),
+            shaped("f", json!({"returnCodeInterpretation": "No matches found"})),
+        ]);
+        let codes: Vec<Option<i64>> = s.turns[0].tools.iter().map(|t| t.exit_code).collect();
+        assert_eq!(codes, [None, None]);
+    }
+
+    /// A line in the user's role whose `origin` names something other than a person (a task
+    /// notification, a peer's message) is not the user: the harness says who sent it.
+    #[test]
+    fn a_prompt_the_harness_says_no_person_sent_is_automated() {
+        let s = parsed(&[
+            json!({"type": "user", "origin": {"kind": "human"}, "message": {"content": "primero"}}),
+            json!({"type": "user", "origin": {"kind": "task-notification"},
+                   "message": {"content": "La tarea de respaldo terminó sin errores."}}),
+            json!({"type": "user", "message": {"content": "sin origen"}}),
+        ]);
+        let flags: Vec<bool> = s.turns.iter().map(|t| t.automated).collect();
+        assert_eq!(flags, [false, true, false]);
     }
 
     #[test]

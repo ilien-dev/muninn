@@ -118,6 +118,11 @@ const STOP: &[&str] = &[
     "things",
 ];
 
+/// Whether `term` (as `fts_term` gives it) is scaffolding that `select_terms` never searches for.
+pub fn is_stop_word(term: &str) -> bool {
+    STOP.contains(&term)
+}
+
 /// Cheap gate: bare acknowledgements and slash commands get no memory.
 ///
 /// A slash command carrying a request (`/design make the navbar sticky on mobile`) is gated
@@ -190,14 +195,12 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
         Some(v) if v >= 0.0 => v,
         _ => db.count("SELECT count(*) FROM record WHERE invalid=0")? as f64,
     };
-    let mut stmt = db
-        .conn
-        .prepare("SELECT sum(doc) FROM record_vocab WHERE term = ?1")?;
-    // `record_vocab` holds the tokens as the index stores them — stemmed, since schema 2 —
-    // so a query word that is not its own stem ("releases", "pooler") is absent from it and
-    // used to be dropped as unknown. The fallback asks the index itself, which applies the
-    // same tokenizer to the query word; it runs only for words the vocab misses, so the
-    // common case still costs one lookup.
+    // A term's document frequency is the number of records the index matches it in. It was
+    // read from `record_vocab`, which counts per column, summed: a typed record repeats its
+    // value in subject, object and body, so its words counted three times and some were
+    // dropped as too common (R-18: 7,195 of 17,781 terms of one store over their real count).
+    // The index also applies the query's own tokenizer, so a word that is not its own stem
+    // ("releases", "pooler") is counted as the query will match it.
     let mut matched = db
         .conn
         .prepare("SELECT count(*) FROM record_fts WHERE record_fts MATCH ?1")?;
@@ -208,21 +211,15 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     // for every word of the prompt, `STOP` words included.
     let mut df_of: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     let df = |t: &str,
-              stmt: &mut rusqlite::Statement,
               matched: &mut rusqlite::Statement,
               cache: &mut std::collections::HashMap<String, f64>|
      -> Result<f64> {
         if let Some(v) = cache.get(t) {
             return Ok(*v);
         }
-        let mut d: f64 = stmt
-            .query_row([t], |r| r.get::<_, Option<f64>>(0))?
-            .unwrap_or(0.0);
-        if d <= 0.0 {
-            d = matched
-                .query_row([format!("\"{t}\"")], |r| r.get::<_, i64>(0))
-                .unwrap_or(0) as f64;
-        }
+        let d = matched
+            .query_row([format!("\"{t}\"")], |r| r.get::<_, i64>(0))
+            .unwrap_or(0) as f64;
         cache.insert(t.to_string(), d);
         Ok(d)
     };
@@ -230,7 +227,7 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
     let too_common = |d: f64| n >= 50.0 && d > n / 3.0;
     let mut scored: Vec<(f64, String)> = Vec::new();
     for t in &terms {
-        let d = df(t, &mut stmt, &mut matched, &mut df_of)?;
+        let d = df(t, &mut matched, &mut df_of)?;
         if d <= 0.0 || too_common(d) {
             continue;
         }
@@ -252,7 +249,7 @@ pub fn select_terms(db: &Db, prompt: &str, k: usize) -> Result<Vec<String>> {
             // the rarity guard still applies: a word in a third of the store buys a long
             // posting list and no signal, and without this the full hook went past its
             // latency contract (11.9 ms against a limit of 10)
-            let d = df(t, &mut stmt, &mut matched, &mut df_of)?;
+            let d = df(t, &mut matched, &mut df_of)?;
             if d > 0.0 && !too_common(d) {
                 scored.push((((n + 1.0) / (d + 1.0)).ln(), t.clone()));
             }
@@ -280,8 +277,11 @@ pub const SERVED_COLS: &str =
 #[derive(Debug, Clone, Serialize)]
 pub struct Hit {
     pub id: i64,
-    /// Public because the read path appends `:conflict with #n` before rendering.
     pub kind: String,
+    /// The active records this one disagrees with (F1), set by the read path and rendered as
+    /// `:conflict with #n` after the kind. Kept apart from `kind`: written into it, a marked
+    /// decision ranked as an episode (R-06).
+    pub conflict: Vec<i64>,
     pub(crate) subject: String,
     pub(crate) object: String,
     pub(crate) body: String,
@@ -301,6 +301,7 @@ impl Hit {
         Ok(Hit {
             id: r.get(0)?,
             kind: r.get(1)?,
+            conflict: Vec::new(),
             subject: r.get(2)?,
             object: r.get(3)?,
             body: r.get(4)?,
@@ -311,6 +312,30 @@ impl Hit {
             score,
             transcript_ref: r.get(9).unwrap_or(None),
         })
+    }
+
+    /// The kind as a block header shows it: with `:conflict with #n,#m` when there is one.
+    pub fn shown_kind(&self) -> String {
+        if self.conflict.is_empty() {
+            return self.kind.clone();
+        }
+        let ids: Vec<String> = self.conflict.iter().map(|i| format!("#{i}")).collect();
+        format!("{}:conflict with {}", self.kind, ids.join(","))
+    }
+
+    /// Mark the records this one disagrees with (F1), unless the arm switches marking off.
+    pub fn mark_conflicts(db: &Db, hits: &mut [Hit]) {
+        let mark = std::env::var("MUNINN_ARM")
+            .map(|a| a != "unfiltered")
+            .unwrap_or(true);
+        if !mark {
+            return;
+        }
+        for h in hits.iter_mut().filter(|h| h.kind != "episode") {
+            if let Ok(c) = crate::filter::conflicts_of(db, h.id) {
+                h.conflict = c;
+            }
+        }
     }
 }
 
@@ -335,14 +360,38 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     // subject is ordinary ("update dependencies"). They stay in the store, `muninn why`
     // still reaches them, and what the *diff* observed — the record naming the value the file
     // now holds — is not one of them and is still served.
+    //
+    // Equal scores go newest first. With the score alone FTS5 returned a tie in rowid order,
+    // oldest first, so of two records that say the same thing the older one took the slot
+    // (R-07: the delivered set changed on 47 of 209 replayed prompts of one 1.2.0 store).
     let mut stmt = db.conn.prepare(&format!(
         "SELECT {SERVED_COLS}, r.transcript_ref, bm25(record_fts, 3.0, 2.0, 1.0) AS score \
          FROM record_fts JOIN served_record r ON r.id = record_fts.rowid \
-         WHERE record_fts MATCH ?1 AND r.subject NOT LIKE 'commit:%' ORDER BY score LIMIT ?2"
+         WHERE record_fts MATCH ?1 AND r.subject NOT LIKE 'commit:%' \
+         ORDER BY score, r.created_at DESC, r.id DESC LIMIT ?2"
     ))?;
-    let rows = stmt.query_map(rusqlite::params![q, (limit + exclude.len()) as i64], |r| {
-        Hit::from_served_row(r, r.get("score")?)
-    })?;
+    // How many rows the loop below reads. Rows skipped as stale twins are read past it, from
+    // the slack, so a skipped twin costs no slot and every other row is read as before.
+    let reads = limit + exclude.len();
+    let rows: Vec<Hit> = stmt
+        .query_map(rusqlite::params![q, (reads + limit) as i64], |r| {
+            Hit::from_served_row(r, r.get("score")?)
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    // A statement replaced by a newer one is retired, and the episode of the turn that said it
+    // is not: 1.2.0 stopped replacing episodes by their text. That episode holds the same
+    // sentence and matches the same words, so the retired statement was served through it — on
+    // 13 of 210 replayed prompts of one 1.2.0 store and 4 of 49 of another (R-05). It reads
+    // `record` because what it asks about is a retired row; it returns no text of one. The
+    // write path retires a short episode with its statement and keeps a long one, and a store
+    // written before it did neither; neither may serve the retired sentence.
+    //
+    // One statement for every episode row read, excluded or not, rather than a probe per row: a
+    // long session excludes hundreds of rows, and probing each of them one at a time cost more
+    // than the rest of the query.
+    let stale = stale_turns(db, &rows)?;
+    let mut read = 0usize;
     // `best` is the best match this query has, not the best one left after exclusion. The
     // difference shows on a repeat: ask the same question twice and everything the first
     // answer used is excluded, so the second call's best remaining hit becomes the reference
@@ -355,7 +404,20 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
     // the newest of everything this query reached, excluded or not — see the floor below
     let mut newest: Option<(i64, i64)> = None;
     let mut hits: Vec<Hit> = Vec::new();
-    for h in rows.filter_map(|r| r.ok()) {
+    for h in rows {
+        // a stale twin, excluded or not, counts toward neither the rows read, nor the floor's
+        // reference, nor the newest the query reached
+        if h.kind == "episode"
+            && h.transcript_ref
+                .as_deref()
+                .is_some_and(|t| stale.contains(t))
+        {
+            continue;
+        }
+        if read == reads {
+            break;
+        }
+        read += 1;
         if best.is_none() {
             best = Some(h.score);
         }
@@ -409,8 +471,126 @@ pub fn recall(db: &Db, terms: &[String], limit: usize, exclude: &HashSet<i64>) -
             })
             .map(|(_, id)| id);
         hits.retain(|h| h.score <= floor || h.trust >= 3 || Some(h.id) == keep);
+        absolute_floor(db, terms, &mut hits, keep)?;
+        beside_the_rules(&mut hits, keep);
     }
     Ok(hits)
+}
+
+/// How many matches a block holds beside its rules, its corrections and the newest record.
+///
+/// What passes both floors still came four blocks a prompt, and on the design half of usage-v4's
+/// labelled prompts every useful block was among the first two by score; the third and fourth were
+/// what the budget had room for. Rules and the newest record do not count against this: the
+/// newest fact prevails, and a rule that matches is not cut for a better-scoring episode.
+const OTHER_MATCHES: usize = 2;
+
+/// Keep, in score order, the rules, corrections and `keep`, and the first `OTHER_MATCHES` turns
+/// of everything else (chunks of one turn are one block, see `cue::merge`).
+fn beside_the_rules(hits: &mut Vec<Hit>, keep: Option<i64>) {
+    let mut turns: HashSet<String> = HashSet::new();
+    hits.retain(|h| {
+        if matches!(h.kind.as_str(), "invariant" | "correction") || Some(h.id) == keep {
+            return true;
+        }
+        let t = turn_key(&h.subject);
+        turns.contains(&t) || (turns.len() < OTHER_MATCHES && turns.insert(t))
+    });
+}
+
+/// The share of a question's selected words a record must hold to be served: a third, rounded
+/// up, so one word of up to three, two of four to six, three of seven or eight.
+///
+/// The floor above is relative to the best match, and when the best match is weak everything
+/// passes it: one rare word in common was enough, and on one 1.2.0 store 39 % of the blocks
+/// delivered for questions of four or more words held exactly one of them (R-08). Tuned on the
+/// design half of usage-v4's labelled prompts only.
+fn needed_terms(selected: usize) -> usize {
+    selected.div_ceil(3).max(1)
+}
+
+/// Cut the hits that hold fewer of `terms` than `needed_terms` asks, with two exceptions, both
+/// for the newest fact to prevail: the newest record the query reached (`keep`, see `recall`),
+/// and a rule or correction that scores at least as well as a record this keeps — a floor on
+/// words must not make a current rule lose its place to a weaker match.
+fn absolute_floor(db: &Db, terms: &[String], hits: &mut Vec<Hit>, keep: Option<i64>) -> Result<()> {
+    let need = needed_terms(terms.len());
+    if need <= 1 || hits.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<i64> = hits.iter().map(|h| h.id).collect();
+    let held = matched_terms(db, terms, &ids)?;
+    let enough = |h: &Hit| held.get(&h.id).copied().unwrap_or(0) >= need || Some(h.id) == keep;
+    // bm25 is negative and better is more negative: the weakest kept record has the largest score
+    let weakest = hits
+        .iter()
+        .filter(|h| enough(h))
+        .map(|h| h.score)
+        .fold(None, |w: Option<f64>, s| Some(w.map_or(s, |w| w.max(s))));
+    let rule = |h: &Hit| matches!(h.kind.as_str(), "invariant" | "correction");
+    hits.retain(|h| enough(h) || (rule(h) && weakest.is_some_and(|w| h.score <= w)));
+    Ok(())
+}
+
+/// The turns among `rows`' episodes whose typed statement is retired as superseded (`recall`).
+/// Statements only: a dead end is retired the same way when its command passes later or fails
+/// again, and that says nothing about what the person wrote in its turn.
+fn stale_turns(db: &Db, rows: &[Hit]) -> Result<HashSet<String>> {
+    let refs: Vec<&str> = rows
+        .iter()
+        .filter(|h| h.kind == "episode")
+        .filter_map(|h| h.transcript_ref.as_deref())
+        .collect();
+    let mut out = HashSet::new();
+    for chunk in refs.chunks(500) {
+        let places = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut st = db.conn.prepare(&format!(
+            "SELECT DISTINCT transcript_ref FROM record WHERE transcript_ref IN ({places}) \
+               AND invalid = 1 AND invalid_reason = 'superseded' \
+               AND kind IN ('decision', 'invariant', 'correction')"
+        ))?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            chunk.iter().map(|t| t as &dyn rusqlite::ToSql).collect();
+        out.extend(
+            st.query_map(params.as_slice(), |r| r.get::<_, String>(0))?
+                .flatten(),
+        );
+    }
+    Ok(out)
+}
+
+/// For each of `ids`, how many of `terms` it holds, as the index matches them (the same
+/// tokenizer and stemming as the query, so a count here agrees with what MATCH found). One
+/// statement per term, restricted to the candidates' rowids.
+pub fn matched_terms(
+    db: &Db,
+    terms: &[String],
+    ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    let mut out: std::collections::HashMap<i64, usize> = ids.iter().map(|i| (*i, 0)).collect();
+    if ids.is_empty() {
+        return Ok(out);
+    }
+    let places = std::iter::repeat_n("?", ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut st = db.conn.prepare(&format!(
+        "SELECT rowid FROM record_fts WHERE record_fts MATCH ?1 AND rowid IN ({places})"
+    ))?;
+    for t in terms {
+        let phrase = format!("\"{t}\"");
+        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&phrase];
+        params.extend(ids.iter().map(|i| i as &dyn rusqlite::ToSql));
+        for id in st
+            .query_map(params.as_slice(), |r| r.get::<_, i64>(0))?
+            .flatten()
+        {
+            *out.entry(id).or_default() += 1;
+        }
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -459,6 +639,38 @@ pub fn turn_key(subject: &str) -> String {
     }
 }
 
+/// The file a record's `transcript_ref` names (`<path>:<byte offset>`), when it names one: a
+/// commit's reference (`git:<hash>`) names none.
+pub fn evidence_file(transcript_ref: &str) -> Option<&std::path::Path> {
+    if transcript_ref.starts_with("git:") {
+        return None;
+    }
+    let path = match transcript_ref.rsplit_once(':') {
+        Some((p, off)) if !off.is_empty() && off.bytes().all(|b| b.is_ascii_digit()) => p,
+        _ => transcript_ref,
+    };
+    (!path.is_empty()).then(|| std::path::Path::new(path))
+}
+
+/// What an evidence line ends with when its file is gone (WP-21). The client removes old
+/// transcripts; the record keeps what was stored and is served as before.
+pub const EVIDENCE_GONE: &str =
+    " (this file is no longer on disk; the text above is what was kept)";
+
+/// The evidence line of a record someone pulled by hand (`show`, `why`): as a block's, and
+/// saying so when the file is gone. Not for a hook: it looks at the file system.
+pub fn evidence_line_checked(r: &Option<String>) -> String {
+    let line = evidence_line(r);
+    let gone = r
+        .as_deref()
+        .and_then(evidence_file)
+        .is_some_and(|f| !f.is_file());
+    match line.strip_suffix('\n') {
+        Some(head) if gone => format!("{head}{EVIDENCE_GONE}\n"),
+        _ => line,
+    }
+}
+
 /// The evidence line of a block: where the literal text can be opened.
 pub fn evidence_line(r: &Option<String>) -> String {
     match r {
@@ -502,7 +714,7 @@ pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
         let ev = evidence_line(&h.transcript_ref);
         let mut block = format!(
             "[muninn:{}] #{} · {} · session {} · origin: {} · trust {}{}\n{}\n{}",
-            h.kind,
+            h.shown_kind(),
             h.id,
             date_of(h.created_at),
             short,
@@ -518,7 +730,7 @@ pub fn render(hits: &[Hit], budget: usize, terms: &[String]) -> Delivery {
             let keep = truncate_chars(body, (BUDGET_BLOCK_TOKENS * 3).saturating_sub(120));
             block = format!(
                 "[muninn:{}] #{} · {} · session {} · origin: {} · trust {}{}\n{}…\n{}",
-                h.kind,
+                h.shown_kind(),
                 h.id,
                 date_of(h.created_at),
                 short,
@@ -577,9 +789,8 @@ pub fn best_passage(body: &str, terms: &[String], max_chars: usize) -> String {
 }
 
 /// The whole read path for one prompt.
-/// A catalogue row: id, kind, the record's own text, and the file a commit confirmation is
-/// anchored to.
-type CatalogRow = (i64, String, String, Option<String>);
+/// A catalogue row: id, kind, the record's own text.
+type CatalogRow = (i64, String, String);
 
 /// One line per active decision, newest first: what it says, and which record it retired.
 ///
@@ -599,19 +810,65 @@ type CatalogRow = (i64, String, String, Option<String>);
 const PAGE: usize = 120;
 
 pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
+    catalog_beside(db, budget, &[])
+}
+
+/// Every word of `line` is an acknowledgement (`ok, yes`, `vale, gracias`): it names nothing.
+fn only_acknowledges(line: &str) -> bool {
+    const ACK: [&str; 26] = [
+        "ok", "okay", "yes", "yeah", "yep", "no", "sure", "thanks", "thank", "you", "fine", "good",
+        "great", "perfect", "done", "si", "sí", "vale", "gracias", "perfecto", "genial", "bien",
+        "dale", "listo", "hecho", "claro",
+    ];
+    let words: Vec<String> = line
+        .split_whitespace()
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .filter(|w| !w.is_empty())
+        .collect();
+    !words.is_empty() && words.iter().all(|w| ACK.contains(&w.as_str()))
+}
+
+/// The catalogue, delivered beside blocks that already show the records `shown`: those are
+/// not listed again. A line naming a record whose full block sits next to it spent a slot on
+/// nothing new — 19 % of catalogue lines on one 1.2.0 store, 24 % on another (R-13).
+pub fn catalog_beside(db: &Db, budget: usize, shown: &[i64]) -> Result<Delivery> {
+    // What a commit's diff observed (`said:change:…`, `commit_linked`: "this file now reads this
+    // line") is typed as a decision and is nobody's decision, so it is not listed. It stays on
+    // record and a prompt that names it is still answered with it, so a list that left one out
+    // is not the whole of what is on record (`left_out`). The page is the one read before, the
+    // newest rows of the three kinds with the observations among them: an observation in it is
+    // skipped, and no older row is read in its place.
     let mut stmt = db.conn.prepare(&format!(
-        "SELECT r.id, r.kind, r.object, \
-                CASE WHEN r.origin = 'commit_linked' THEN r.anchor_path END AS anchored \
+        "SELECT r.id, r.kind, r.object, r.origin = 'commit_linked' \
          FROM served_record r \
          WHERE +r.kind IN ('decision', 'invariant', 'correction') \
            AND r.subject NOT LIKE 'commit:%' \
          ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
         PAGE + 1
     ))?;
-    let mut rows: Vec<CatalogRow> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+    let page: Vec<(CatalogRow, bool)> = stmt
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?, r.get(2)?), r.get(3)?)))?
         .filter_map(|r| r.ok())
         .collect();
+    let past_page = page.len() > PAGE;
+    let left_out = page.iter().any(|(_, observed)| *observed);
+    let mut rows: Vec<CatalogRow> = page
+        .into_iter()
+        .take(PAGE)
+        .filter(|(_, observed)| !observed)
+        .map(|(row, _)| row)
+        .collect();
+    // Of the page, the rules that stand and the corrections come first, then the decisions,
+    // each still newest first. Newest first over all three kinds, a store's list was its latest
+    // requests typed as decisions: on usage-v4's labelled design session starts 6 % of those
+    // lines were worth their place, and the rules and corrections on record were mostly neither
+    // shown nor listed (R-04). Within the page that was read, so it costs no query: reading the
+    // rules on their own, scattered through the store, cost about 3 ms of a cold SessionStart
+    // on the bench store.
+    rows.sort_by_key(|(_, kind, _)| kind == "decision");
     // A store can hold almost nothing this list is made of. Where a person types the value and
     // nothing else — `gzip`, then later `zstd` — no sentence carries a decision verb, capture
     // types nothing unless the reply states the replacement, and the one channel that tells an
@@ -633,7 +890,7 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let typed = rows.len();
     if typed < SPARSE {
         let mut ep = db.conn.prepare(&format!(
-            "SELECT r.id, r.kind, r.object, NULL AS anchored FROM served_record r \
+            "SELECT r.id, r.kind, r.object FROM served_record r \
              WHERE +r.kind = 'episode' AND length(r.object) <= 120 \
              ORDER BY r.created_at DESC, r.id DESC LIMIT {}",
             PAGE + 1
@@ -643,10 +900,10 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         // repeated line spends the budget that the next distinct value needs.
         let mut seen: std::collections::HashSet<String> = rows
             .iter()
-            .map(|(_, _, o, _): &CatalogRow| o.trim().to_lowercase())
+            .map(|(_, _, o): &CatalogRow| o.trim().to_lowercase())
             .collect();
         let extra: Vec<CatalogRow> = ep
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
             .filter_map(|r| r.ok())
             .collect();
         for row in extra {
@@ -688,7 +945,10 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     // `+o.kind` for the same reason as the page query above: with a bare equality the planner
     // takes `record_kind` and walks every active decision in the store to find one that shares
     // a subject, once per emitted line — 15.7 ms of a 10 ms hook at the schema's cap, against
-    // 0.02 ms through `record_active_key`.
+    // 0.02 ms through the key. `record_active_kind_key` holds the kind too, so the kind is
+    // tested in the index: through `record_active_key` every row with the same subject was read
+    // to learn its kind, which on the bench store cost about 1 ms a line for the invariants the
+    // catalogue lists first. A store not yet migrated falls back to `record_active_key`.
     let mut clash_q = db.conn.prepare(
         "SELECT EXISTS(SELECT 1 FROM record r JOIN record o \
                          ON o.subject = r.subject AND o.relation = r.relation \
@@ -702,15 +962,35 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     let cap = budget * 3;
     let mut cut = 0usize;
     // the same sentence on record under two kinds is listed once, under the first (newest) row
-    let mut objects_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (id, kind, object, anchored) in rows.iter().take(PAGE) {
-        // compared at the length capture cuts a correction to: a long first line is whole in the
-        // decision and cut at 160 in the correction from the same message
+    // compared at the length capture cuts a correction to: a long first line is whole in the
+    // decision and cut at 160 in the correction from the same message
+    let key_of = |object: &str| {
         let key = object.lines().map(str::trim).find(|l| !l.is_empty());
-        let key = crate::sanitize::truncate_chars(key.unwrap_or(""), 160)
+        crate::sanitize::truncate_chars(key.unwrap_or(""), 160)
             .trim_end()
-            .to_lowercase();
-        if !objects_seen.insert(key) {
+            .to_lowercase()
+    };
+    let mut objects_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // A record shown in full beside the list claims its sentence before the list starts, so its
+    // twin under another kind is not listed either, whichever of the two is newer.
+    if !shown.is_empty() {
+        let places = std::iter::repeat_n("?", shown.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut st = db.conn.prepare(&format!(
+            "SELECT r.object FROM served_record r WHERE r.id IN ({places})"
+        ))?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            shown.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        for o in st
+            .query_map(params.as_slice(), |r| r.get::<_, String>(0))?
+            .flatten()
+        {
+            objects_seen.insert(key_of(&o));
+        }
+    }
+    for (id, kind, object) in rows.iter().take(PAGE) {
+        if !objects_seen.insert(key_of(object)) || shown.contains(id) {
             continue;
         }
         // The first line of the object, not the whole of it flattened. A decision made from a
@@ -753,6 +1033,16 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
                     bare.chars().count() >= 4 && !POINTING.contains(&bare.to_lowercase().as_str())
                 })
         };
+        // A question, or an acknowledgement (`ok, yes`), typed as a decision is not what is on
+        // record, and its line is the next record's. Labelled in usage-v4's design session
+        // starts, lines like these were noise or fragments, never a rule or a decision. Only a
+        // decision, and only words that are all acknowledgements: a short rule or correction
+        // (`use uv`) is the rule, and `Yes, use LFU` names its value in short words.
+        if kind == "decision"
+            && (first.contains('?') || first.contains('\u{bf}') || only_acknowledges(first))
+        {
+            continue;
+        }
         // Only where the line does not fit anyway. A first line inside the display width is
         // shown whole — on a real store those are ordinary prose and the clause before their
         // first comma is not what they are about. A line that is going to be cut is cut at
@@ -770,19 +1060,17 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         };
         let short = crate::sanitize::truncate_chars(&flat, 72);
         let one = if short.len() < flat.len() {
-            format!("{short}\u{2026}")
+            // on the last whole word, unless that leaves less than half the line: a title cut
+            // mid-word reads as a different word
+            let whole = match short.rfind(char::is_whitespace) {
+                Some(i) if flat[i..].starts_with(char::is_whitespace) && i >= short.len() / 2 => {
+                    short[..i].trim_end()
+                }
+                _ => short,
+            };
+            format!("{whole}\u{2026}")
         } else {
             short.to_string()
-        };
-        // a commit confirmation's `object` is the source line it found (`"value": "semver"`),
-        // which names nothing on its own; the file it is anchored to is what names the subject
-        let one = match anchored
-            .as_deref()
-            .and_then(|a| std::path::Path::new(a).file_stem())
-            .and_then(|st| st.to_str())
-        {
-            Some(stem) => format!("{stem}: {one}"),
-            None => one,
         };
         let repl = match heirs.get(id) {
             Some(r) => {
@@ -797,7 +1085,11 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
             cut += 1;
             continue;
         }
-        let clashes = clash_q.query_row([id], |r| r.get::<_, i64>(0)).unwrap_or(0) != 0;
+        let clashes = clash_q.query_row([id], |r| r.get::<_, i64>(0)).unwrap_or(0) != 0
+            || (kind != "episode"
+                && !crate::filter::marked_conflicts(db, *id)
+                    .unwrap_or_default()
+                    .is_empty());
         let line = if clashes {
             format!("#{id} {kind} \u{b7} {one}{repl}{CLASH}\n")
         } else {
@@ -822,7 +1114,7 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
     // was read gives a number that is wrong, which is worse than none: a store holding twelve
     // thousand records reported "and 107 older". One row past the page answers the question
     // an agent actually has.
-    let truncated = cut > 0 || rows.len() > PAGE;
+    let truncated = cut > 0 || past_page || left_out;
     let more = if truncated {
         "\u{2026} and more, not listed \u{2014} a subject missing from this list may still be on \
          record; ask `muninn why \"<question>\"`. "
@@ -870,11 +1162,11 @@ pub fn catalog(db: &Db, budget: usize) -> Result<Delivery> {
         "That is all of it: a subject missing from this list has nothing on record. ".to_string()
     };
     let head = if listed_episodes {
-        "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
-         corrections, then what was said"
+        "[muninn:catalog] what is on record: rules that stand and corrections, then decisions, \
+         then what was said, each newest first"
     } else {
-        "[muninn:catalog] what is on record, newest first \u{2014} decisions, rules that stand, \
-         corrections"
+        "[muninn:catalog] what is on record: rules that stand and corrections, then decisions, \
+         each newest first"
     };
     let text = format!(
         "{head}\n{text}{more}Ask for any of them by id: `muninn show <id> [<id> \u{2026}]`.\n"
@@ -908,6 +1200,17 @@ pub fn show(db: &Db, ids: &[i64], budget: usize) -> Result<Delivery> {
         .filter_map(|r| r.ok())
         .collect();
     let mut d = render(&hits, budget, &[]);
+    // A pull is where someone goes on to open the evidence: a line whose file is gone says so
+    // (WP-21). Looked up here and not in `render`, which the hooks share.
+    for h in hits.iter().filter(|h| d.ids.contains(&h.id)) {
+        let (plain, checked) = (
+            evidence_line(&h.transcript_ref),
+            evidence_line_checked(&h.transcript_ref),
+        );
+        if plain != checked {
+            d.text = d.text.replace(&plain, &checked);
+        }
+    }
     // An agent that asks for five ids and is handed three cannot tell which two it did not
     // get, and the two cases mean opposite things: a retired record was replaced by
     // something, and the catalogue's `replaces #n` is where those ids come from, while an
@@ -954,10 +1257,33 @@ pub fn show(db: &Db, ids: &[i64], budget: usize) -> Result<Delivery> {
                 list(&over_budget)
             ));
         }
+        // of the retired, the ones an agent's prompt retired while it read as the user's and
+        // nothing gave back; a store an older binary wrote has no cause column, and none of these
+        let unrestored: Vec<i64> = db
+            .conn
+            .prepare(&format!(
+                "SELECT id FROM record WHERE invalid = 1 AND invalidated_via = '{}' AND id IN ({places})",
+                crate::db::AGENT_UNRESTORED
+            ))
+            .and_then(|mut q| {
+                q.query_map(params.as_slice(), |r| r.get(0))
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            })
+            .unwrap_or_default();
+        let retired: Vec<i64> = retired
+            .into_iter()
+            .filter(|i| !unrestored.contains(i))
+            .collect();
         if !retired.is_empty() {
             note.push_str(&format!(
                 "{} retired: replaced or revoked, and not served. ",
                 list(&retired)
+            ));
+        }
+        if !unrestored.is_empty() {
+            note.push_str(&format!(
+                "{} retired by an agent's prompt that read as the user's, and not given back because the store changed before that was known: not served; say it again only if it still holds. ",
+                list(&unrestored)
             ));
         }
         if !unknown.is_empty() {
@@ -979,19 +1305,7 @@ pub fn deliver(db: &Db, prompt: &str, exclude: &HashSet<i64>) -> Result<Delivery
     // F1: an unresolved conflict is served as two marked records, never ranked away.
     // The render-matched control arm of the experiment [X1] keeps the layout and
     // switches this marking off together with invalidation.
-    let mark = std::env::var("MUNINN_ARM")
-        .map(|a| a != "unfiltered")
-        .unwrap_or(true);
-    for h in hits.iter_mut() {
-        if mark && h.kind != "episode" {
-            if let Ok(c) = crate::filter::conflicts_of(db, h.id) {
-                if !c.is_empty() {
-                    let ids: Vec<String> = c.iter().map(|i| format!("#{i}")).collect();
-                    h.kind = format!("{}:conflict with {}", h.kind, ids.join(","));
-                }
-            }
-        }
-    }
+    Hit::mark_conflicts(db, &mut hits);
     Ok(render(&hits, BUDGET_TURN_TOKENS, &terms))
 }
 
@@ -1043,6 +1357,421 @@ mod tests {
             second.is_empty(),
             "everything left is weaker than half the best match: {:?}",
             second.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>()
+        );
+    }
+
+    /// A dead end is retired as `superseded` when its command passes later, or when a later
+    /// failure of the same command takes its place. Neither says the turn's statement was
+    /// replaced: the episode of that turn, the person's message and the reply, is still served.
+    /// A statement of the turn retired the same way still hides it.
+    #[test]
+    fn a_retired_dead_end_does_not_hide_the_episode_of_its_turn() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |id: i64, kind: &str, text: &str, tref: &str| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at,transcript_ref) \
+                     VALUES(?1,?2,?3,'is',?4,?4,'tool_observed',1,'s',?3,1,?5)",
+                    rusqlite::params![id, kind, format!("k{id}"), text, tref],
+                )
+                .unwrap();
+        };
+        ins(
+            1,
+            "episode",
+            "user: the tide tables come from the almanac, check the parser",
+            "t:1",
+        );
+        ins(2, "deadend", "cargo test tides failed", "t:1");
+        ins(
+            3,
+            "episode",
+            "user: the ferry timetable comes from the almanac, check the parser",
+            "t:2",
+        );
+        ins(4, "deadend", "cargo test ferry failed", "t:2");
+        ins(5, "deadend", "cargo test ferry failed again", "t:3");
+        ins(
+            6,
+            "episode",
+            "user: the signal lamp codes come from the almanac, check the parser",
+            "t:4",
+        );
+        ins(
+            7,
+            "decision",
+            "the signal lamp codes come from the almanac",
+            "t:4",
+        );
+        db.conn
+            .execute_batch(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_via='succeeded' WHERE id=2; \
+                 UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_via='key', invalidated_by=5 WHERE id=4; \
+                 UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_via='said', invalidated_by=1 WHERE id=7;",
+            )
+            .unwrap();
+        let terms = vec!["almanac".to_string(), "parser".to_string()];
+        let ids: HashSet<i64> = recall(&db, &terms, 8, &HashSet::new())
+            .unwrap()
+            .iter()
+            .map(|h| h.id)
+            .collect();
+        assert!(ids.contains(&1), "its command passed later: {ids:?}");
+        assert!(ids.contains(&3), "a later failure replaced it: {ids:?}");
+        assert!(!ids.contains(&6), "its statement was replaced: {ids:?}");
+    }
+
+    /// An excluded stale twin is as absent as a served one: it does not become the floor's
+    /// reference, so a record the floor keeps without it is still kept.
+    #[test]
+    fn an_excluded_stale_twin_does_not_set_the_floor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |id: i64, kind: &str, text: &str, tref: Option<&str>| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at,transcript_ref) \
+                     VALUES(?1,?2,?3,'is',?4,?4,'tool_observed',1,'s',?3,1,?5)",
+                    rusqlite::params![id, kind, format!("k{id}"), text, tref],
+                )
+                .unwrap();
+        };
+        ins(1, "decision", "the pooler is pgpool", Some("t:1"));
+        ins(
+            2,
+            "episode",
+            "pooler pooler pooler pooler connection connection pooler",
+            Some("t:1"),
+        );
+        ins(
+            3,
+            "decision",
+            "the pooler is pgbouncer, set by hand on every node of the cluster after a long review of the old setup and its failures, written down in the notes of the team that runs the database and the services around it every week of the year",
+            None,
+        );
+        ins(
+            4,
+            "decision",
+            "the pooler is pgcat, set by hand on every node of the cluster after a long review of the old setup and its failures, written down in the notes of the team that runs the database and the services around it every week of the year",
+            None,
+        );
+        for i in 5..12 {
+            ins(
+                i,
+                "decision",
+                &format!("filler record number {i} about nothing"),
+                None,
+            );
+        }
+        db.conn
+            .execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=3 WHERE id=1",
+                [],
+            )
+            .unwrap();
+        let terms = vec!["pooler".to_string(), "connection".to_string()];
+        let ids = |ex: &[i64]| -> Vec<i64> {
+            let ex: HashSet<i64> = ex.iter().copied().collect();
+            recall(&db, &terms, 8, &ex)
+                .unwrap()
+                .iter()
+                .map(|h| h.id)
+                .collect()
+        };
+        let fresh = ids(&[]);
+        assert_eq!(fresh, ids(&[2]), "excluding the twin changes nothing");
+        assert!(fresh.contains(&4), "{fresh:?}");
+    }
+
+    fn insert_at(db: &Db, id: i64, kind: &str, text: &str, at: i64) {
+        db.conn
+            .execute(
+                "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                 VALUES(?1,?2,?3,'is',?4,?4,'tool_observed',1,'s',?3,?5)",
+                rusqlite::params![id, kind, format!("k{id}"), text, at],
+            )
+            .unwrap();
+    }
+
+    fn six_terms() -> Vec<String> {
+        [
+            "pooler", "replica", "failover", "quorum", "lease", "fencing",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    /// R-08: a record that shares one word of a long question is not an answer to it, however
+    /// rare the word. Before, the only floor was half the best match, and one rare word in a
+    /// short record scores as well as anything.
+    #[test]
+    fn one_word_of_a_long_question_is_not_enough() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        insert_at(
+            &db,
+            1,
+            "episode",
+            "the pooler sends writes to the replica after failover",
+            1,
+        );
+        insert_at(&db, 2, "episode", "lease", 1);
+        insert_at(&db, 3, "episode", "fencing", 1);
+        insert_at(&db, 4, "episode", "quorum", 1);
+        for i in 5..30 {
+            insert_at(&db, i, "episode", &format!("filler note {i}"), 0);
+        }
+        let got: Vec<i64> = recall(&db, &six_terms(), 8, &HashSet::new())
+            .unwrap()
+            .iter()
+            .map(|h| h.id)
+            .collect();
+        assert_eq!(got, vec![1]);
+    }
+
+    /// The floor must not make a rule or correction that matches the question lose to a weaker
+    /// record: one that scores at least as well as a record the floor keeps is kept, however few
+    /// of the question's words it holds.
+    #[test]
+    fn a_correction_as_strong_as_what_is_kept_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        insert_at(
+            &db,
+            1,
+            "episode",
+            "the pooler sends writes to the replica after failover",
+            3,
+        );
+        insert_at(
+            &db,
+            2,
+            "correction",
+            "fencing: fencing tokens, always fencing",
+            1,
+        );
+        insert_at(
+            &db,
+            3,
+            "episode",
+            "a note that named the pooler and the replica among other things",
+            2,
+        );
+        for i in 5..30 {
+            insert_at(&db, i, "episode", &format!("filler note {i}"), 0);
+        }
+        let hits = recall(&db, &six_terms(), 8, &HashSet::new()).unwrap();
+        let got: Vec<i64> = hits.iter().map(|h| h.id).collect();
+        let score = |id: i64| hits.iter().find(|h| h.id == id).map(|h| h.score);
+        assert!(got.contains(&3), "{got:?}");
+        assert!(
+            score(2) <= score(3),
+            "the correction scores better than the kept record"
+        );
+        assert!(got.contains(&2), "{got:?}");
+    }
+
+    /// The newest record the query reached keeps its exemption under the absolute floor too: a
+    /// later correction is often worded more briefly than the statement it changes.
+    #[test]
+    fn a_later_correction_is_served_however_briefly_worded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        insert_at(
+            &db,
+            1,
+            "decision",
+            "the pooler sends writes to the replica after failover with a quorum lease",
+            1,
+        );
+        insert_at(
+            &db,
+            2,
+            "correction",
+            "no: the writes wait for fencing, said much later than the first \
+             statement and in a longer sentence than it, so it scores below it",
+            9,
+        );
+        for i in 5..30 {
+            insert_at(&db, i, "episode", &format!("filler note {i}"), 0);
+        }
+        let got: Vec<i64> = recall(&db, &six_terms(), 8, &HashSet::new())
+            .unwrap()
+            .iter()
+            .map(|h| h.id)
+            .collect();
+        assert_eq!(got, vec![1, 2]);
+    }
+
+    /// Beside the rules and corrections that pass the floors and the newest record the query
+    /// reached, a block holds the two best other matches and no more.
+    #[test]
+    fn a_block_holds_two_matches_beside_its_rules_and_the_newest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        // every record holds the same three of the six words; the shorter, the better it scores
+        let pad = |n: usize| " and".repeat(n);
+        insert_at(&db, 1, "episode", "pooler replica failover", 5);
+        insert_at(
+            &db,
+            2,
+            "episode",
+            &format!("pooler replica failover{}", pad(1)),
+            4,
+        );
+        insert_at(
+            &db,
+            3,
+            "episode",
+            &format!("pooler replica failover{}", pad(2)),
+            3,
+        );
+        insert_at(
+            &db,
+            4,
+            "correction",
+            &format!("pooler replica failover{}", pad(3)),
+            2,
+        );
+        insert_at(
+            &db,
+            5,
+            "episode",
+            &format!("pooler replica failover{}", pad(4)),
+            1,
+        );
+        insert_at(
+            &db,
+            6,
+            "episode",
+            &format!("pooler replica failover{}", pad(5)),
+            9,
+        );
+        for i in 10..40 {
+            insert_at(&db, i, "episode", &format!("filler note {i}"), 0);
+        }
+        let mut got: Vec<i64> = recall(&db, &six_terms(), 8, &HashSet::new())
+            .unwrap()
+            .iter()
+            .map(|h| h.id)
+            .collect();
+        got.sort_unstable();
+        assert_eq!(got, vec![1, 2, 4, 6]);
+    }
+
+    /// R-07: two records that match a question equally well are served newest first.
+    #[test]
+    fn equal_scores_go_newest_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (id, at) in [(1, 30), (2, 10), (3, 20)] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,'decision',?2,'is','the pooler is set','the pooler is set','user_said',3,'s',?2,?3)",
+                    rusqlite::params![id, format!("k{id}"), at],
+                )
+                .unwrap();
+        }
+        let got: Vec<i64> = recall(&db, &["pooler".to_string()], 8, &HashSet::new())
+            .unwrap()
+            .iter()
+            .map(|h| h.id)
+            .collect();
+        // two of the three: a block holds two matches beside its rules and the newest
+        assert_eq!(got, vec![1, 3]);
+    }
+
+    /// R-05: a statement replaced by a newer one is not served through the episode of the turn
+    /// that said it. A twin whose statement left for another reason (the invariant cap) still
+    /// is, and so is the newer statement.
+    #[test]
+    fn a_replaced_statement_is_not_served_through_its_episode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |id: i64, kind: &str, text: &str, tref: &str, at: i64| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at,transcript_ref) \
+                     VALUES(?1,?2,?3,'is',?4,?4,'user_said',3,'s',?3,?5,?6)",
+                    rusqlite::params![id, kind, format!("k{id}"), text, at, tref],
+                )
+                .unwrap();
+        };
+        ins(1, "decision", "the connection pooler is pgpool", "t:1", 1);
+        ins(
+            2,
+            "episode",
+            "user: the connection pooler is pgpool",
+            "t:1",
+            1,
+        );
+        ins(
+            3,
+            "decision",
+            "the connection pooler is pgbouncer now",
+            "t:2",
+            2,
+        );
+        ins(
+            4,
+            "invariant",
+            "the connection pooler must stay pgcat",
+            "t:3",
+            3,
+        );
+        ins(
+            5,
+            "episode",
+            "user: the connection pooler must stay pgcat",
+            "t:3",
+            3,
+        );
+        db.conn
+            .execute_batch(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=3 WHERE id=1; \
+                 UPDATE record SET invalid=1, invalid_reason='cap' WHERE id=4;",
+            )
+            .unwrap();
+        let terms = vec!["pooler".to_string(), "connection".to_string()];
+        let mut got: Vec<i64> = recall(&db, &terms, 8, &HashSet::new())
+            .unwrap()
+            .iter()
+            .map(|h| h.id)
+            .collect();
+        got.sort_unstable();
+        assert_eq!(got, vec![3, 5]);
+    }
+
+    /// A word's document frequency is the number of records that hold it, not the sum over the
+    /// three columns: a typed record repeats its value in subject, object and body and so counted
+    /// three times, and a word in 12 of 60 records was dropped as "in more than a third of the
+    /// store" (R-18).
+    #[test]
+    fn a_word_counts_once_per_record_whatever_the_columns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for i in 0..60 {
+            let text = if i < 12 {
+                format!("kestrel queue {i}")
+            } else {
+                format!("unrelated note {i}")
+            };
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?1,?1,'user_said',3,'s',?1,1)",
+                    rusqlite::params![text],
+                )
+                .unwrap();
+        }
+        assert!(
+            select_terms(&db, "the kestrel setup", 8)
+                .unwrap()
+                .contains(&"kestrel".to_string()),
+            "12 of 60 records is not a third of the store"
         );
     }
 
@@ -1179,7 +1908,8 @@ mod tests {
                 .join(" | ")
         };
         let page = plan(
-            "SELECT r.id FROM served_record r \
+            "SELECT r.id, r.kind, r.object, r.origin = 'commit_linked' \
+             FROM served_record r \
              WHERE +r.kind IN ('decision', 'invariant', 'correction') \
                AND r.subject NOT LIKE 'commit:%' \
              ORDER BY r.created_at DESC, r.id DESC LIMIT 121",
@@ -1187,14 +1917,19 @@ mod tests {
         assert!(page.contains("record_recent"), "{page}");
         assert!(!page.contains("TEMP B-TREE"), "{page}");
 
-        let clash = plan(
-            "SELECT EXISTS(SELECT 1 FROM record r JOIN record o \
+        let clash_sql = "SELECT EXISTS(SELECT 1 FROM record r JOIN record o \
                              ON o.subject = r.subject AND o.relation = r.relation \
                             AND +o.kind = r.kind \
                            WHERE r.id = 1 AND o.id <> r.id AND o.invalid = 0 \
-                             AND o.object <> r.object AND r.kind <> 'episode')",
-        );
-        assert!(clash.contains("record_active_key"), "{clash}");
+                             AND o.object <> r.object AND r.kind <> 'episode')";
+        let clash = plan(clash_sql);
+        assert!(clash.contains("record_active_kind_key"), "{clash}");
+        // a store the write path has not opened since keeps the key, never the kind alone
+        db.conn
+            .execute_batch("DROP INDEX record_active_kind_key")
+            .unwrap();
+        let old = plan(clash_sql);
+        assert!(old.contains("record_active_key"), "{old}");
     }
 
     /// A commit log entry matches a question through the file list in its body and says
@@ -1462,6 +2197,97 @@ mod tests {
         assert!(r.text.contains(&format!("#{old} retired")), "{}", r.text);
     }
 
+    /// What a commit's diff observed (`said:change:…`, `commit_linked`: "this file now reads
+    /// this line") is on record as a decision and nobody decided it. The catalogue is the list
+    /// of what the person stated, so it leaves the observation out, and then it is not the whole
+    /// of what is on record and its last line says so.
+    #[test]
+    fn the_catalogue_does_not_list_what_a_commit_diff_observed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let ins = |subject: &str, origin: &str, object: &str, anchor: Option<&str>, at: i64| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?3,?3,?2,2,?4,'s',?1,?5)",
+                    rusqlite::params![subject, origin, object, anchor, at],
+                )
+                .unwrap();
+            db.conn.last_insert_rowid()
+        };
+        ins(
+            "said:state:hashing",
+            "user_said",
+            "We hash with blake3",
+            None,
+            1,
+        );
+        let whole = catalog(&db, 300).unwrap();
+        assert!(whole.text.contains("That is all of it"), "{}", whole.text);
+        let observed = ins(
+            "said:change:test runner",
+            "commit_linked",
+            "\"vitest\": \"2.1.0\"",
+            Some("package.json"),
+            2,
+        );
+        let c = catalog(&db, 300).unwrap();
+        assert!(c.text.contains("We hash with blake3"), "{}", c.text);
+        assert!(
+            !c.text.contains("vitest") && !c.ids.contains(&observed),
+            "an observation of a file is not listed among the decisions:\n{}",
+            c.text
+        );
+        assert!(
+            c.text.contains("and more, not listed") && !c.text.contains("That is all of it"),
+            "and a list that left one out does not say it is whole:\n{}",
+            c.text
+        );
+        // it is still on record: a question that names it is answered with it
+        let d = deliver(&db, "which test runner, vitest?", &HashSet::new()).unwrap();
+        assert!(d.ids.contains(&observed), "{}", d.text);
+    }
+
+    /// Leaving the observations out changes nothing else about the list: the page it is made
+    /// from is the one it read before, the newest rows of the three kinds, and an observation in
+    /// it is skipped. Read past them instead, the page reached older rules, and since rules are
+    /// listed first they took the lines of the newest decisions: on usage-v4's design session
+    /// starts one labelled decision line of 18 went that way.
+    #[test]
+    fn an_observation_left_out_does_not_give_its_place_in_the_page_to_an_older_rule() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        {
+            let tx = db.conn.unchecked_transaction().unwrap();
+            let ins = |kind: &str, origin: &str, i: i64| {
+                tx.execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,'is',?3,?3,?4,3,'s',?2,?5)",
+                    rusqlite::params![kind, format!("said:change:{kind} {origin} {i}"), format!("{kind} {origin} number {i}"), origin, i],
+                )
+                .unwrap();
+            };
+            for i in 0..60 {
+                ins("invariant", "user_said", i);
+            }
+            for i in 100..200 {
+                ins("decision", "commit_linked", i);
+            }
+            for i in 200..230 {
+                ins("decision", "user_said", i);
+            }
+            tx.commit().unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        assert!(
+            c.text.contains("decision user_said number 229"),
+            "the newest decision is listed:\n{}",
+            c.text
+        );
+        assert!(!c.text.contains("commit_linked"), "{}", c.text);
+        assert!(c.text.contains("and more, not listed"), "{}", c.text);
+    }
+
     /// The catalogue's last line decides what an absence from it means, so it has to be right
     /// about completeness on a store of any size. It said "and 107 older, not listed" on a
     /// store holding twelve thousand of them, because it counted the page it had read; and the
@@ -1604,6 +2430,151 @@ mod tests {
             "{}",
             c.text
         );
+    }
+
+    /// A question and an acknowledgement typed as a decision are not what is on record: the
+    /// catalogue leaves them out and spends their line on the next record. A one-word value is
+    /// still listed.
+    #[test]
+    fn the_catalogue_leaves_out_questions_and_acknowledgements() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (i, o) in [
+            "the cache layer is redis",
+            "should the cache layer be redis?",
+            "ok, yes",
+            "zstd",
+        ]
+        .iter()
+        .enumerate()
+        {
+            db.conn
+                .execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES('decision',?1,'is',?2,?2,'user_said',3,'s',?1,?3)",
+                    rusqlite::params![format!("k{i}"), o, i as i64],
+                )
+                .unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        assert_eq!(c.ids, vec![4, 1], "{}", c.text);
+    }
+
+    /// The rules that stand and the corrections are listed before the decisions, even when
+    /// every decision is newer: the newest records of a store were mostly requests typed as
+    /// decisions, and the rules on record were neither shown nor listed.
+    #[test]
+    fn the_catalogue_lists_rules_and_corrections_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (id, kind, object, at) in [
+            (1, "invariant", "never push to main without review", 1),
+            (2, "correction", "no, the tests run with nextest", 2),
+            (3, "decision", "we pool connections with pgbouncer", 3),
+            (4, "decision", "the cache layer is redis", 4),
+        ] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,?1,'r',?3,?3,'user_said',3,'s',?1,?4)",
+                    rusqlite::params![id, kind, object, at],
+                )
+                .unwrap();
+        }
+        let c = catalog(&db, 300).unwrap();
+        assert_eq!(c.ids, vec![2, 1, 4, 3]);
+        // and its header says so: a reader told "newest first" would take the rule for the
+        // latest word
+        assert!(
+            c.text.starts_with(
+                "[muninn:catalog] what is on record: rules that stand and corrections, then \
+                 decisions, each newest first\n"
+            ),
+            "{}",
+            c.text
+        );
+    }
+
+    /// Only decisions are left out for saying nothing, and only when every word is an
+    /// acknowledgement: a short rule or correction is the rule, and a decision that names its
+    /// value in short words (`Yes, use LFU`) is the value.
+    #[test]
+    fn the_catalogue_keeps_short_rules_and_short_values() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (id, kind, object) in [
+            (1, "correction", "use uv"),
+            (2, "invariant", "why npm? use pnpm"),
+            (3, "decision", "Yes, use LFU"),
+            (4, "decision", "ok, yes"),
+            (5, "decision", "should the cache be redis?"),
+            (6, "decision", "the cache layer is redis"),
+        ] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,?1,'r',?3,?3,'user_said',3,'s',?1,?1)",
+                    rusqlite::params![id, kind, object],
+                )
+                .unwrap();
+        }
+        let mut ids = catalog(&db, 300).unwrap().ids;
+        ids.sort_unstable();
+        assert_eq!(ids, vec![1, 2, 3, 6]);
+    }
+
+    /// A title cut to the line's width ends on a whole word, then the ellipsis.
+    #[test]
+    fn a_cut_title_ends_on_a_whole_word() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        let o =
+            "the release pipeline publishes every artefact to the internal registry before tagging";
+        db.conn
+            .execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                 VALUES('decision','k','is',?1,?1,'user_said',3,'s','k',1)",
+                [o],
+            )
+            .unwrap();
+        let c = catalog(&db, 300).unwrap();
+        assert!(
+            c.text.contains(
+                "· the release pipeline publishes every artefact to the internal registry…\n"
+            ),
+            "{}",
+            c.text
+        );
+    }
+
+    /// R-13: beside the blocks of a session start, the catalogue does not list what those blocks
+    /// already show in full, nor that sentence's twin under another kind.
+    #[test]
+    fn the_catalogue_does_not_list_what_the_blocks_beside_it_show() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), crate::db::Mode::ReadWrite).unwrap();
+        for (id, kind, object, at) in [
+            (1, "invariant", "never push to main without review", 3),
+            (2, "decision", "never push to main without review", 2),
+            (3, "decision", "we pool connections with pgbouncer", 1),
+            (4, "decision", "always rebase before merging", 5),
+            (5, "invariant", "always rebase before merging", 4),
+        ] {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,?2,?1,'r',?3,?3,'user_said',3,'s',?1,?4)",
+                    rusqlite::params![id, kind, object, at],
+                )
+                .unwrap();
+        }
+        // rules first, so a sentence on record as a rule and a decision is listed as the rule
+        assert_eq!(catalog(&db, 300).unwrap().ids, vec![5, 1, 3]);
+        // the twin of a shown record is left out when it is older (#2) and when it is newer (#4)
+        let c = catalog_beside(&db, 300, &[1, 5]).unwrap();
+        assert_eq!(c.ids, vec![3], "{}", c.text);
+        assert!(!c.text.contains("push to main"), "{}", c.text);
+        assert!(!c.text.contains("rebase"), "{}", c.text);
     }
 
     #[test]

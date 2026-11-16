@@ -12,6 +12,10 @@ pub struct ToolCall {
     pub exit_code: Option<i64>,
     /// First bytes of the result, sanitised.
     pub result_head: String,
+    /// Hashes of the long strings in the input of a tool that is not a file or shell tool:
+    /// the task it hands to another agent, if it hands one (`agent::task_hashes`).
+    #[serde(default)]
+    pub task_hashes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -33,6 +37,10 @@ pub struct Turn {
     /// An answer picked in AskUserQuestion: the person's choice, in a wrapper of question text
     /// that the person did not write.
     pub answered: bool,
+    /// The prompt is a task another session's tool call handed over: an agent wrote it, though
+    /// the harness logged it in the user's role (`agent::mark_agent_written`).
+    #[serde(default)]
+    pub agent_written: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

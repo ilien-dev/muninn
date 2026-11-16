@@ -8,11 +8,11 @@
 
 mod enforce;
 mod experiment;
+mod replay;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use muninn_core::{Db, Mode};
-use rusqlite::Connection;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -98,18 +98,19 @@ enum Cmd {
         #[arg(long)]
         muninn: Option<PathBuf>,
     },
-    /// Performance contracts
-    /// Embedding sidecar measurements on an existing store: load, encode 200, kNN
-    /// bit-identity over 1 000 repetitions, recall@10 lexical vs hybrid (self-retrieval)
-    EmbedBench {
-        /// Project root with a populated .muninn store
+    /// A labelled fixture (extraction or delivery) run against this build: prints the counts
+    /// its section of the usage-v4 experiment reads. See `fixtures/replay/` for the format
+    Replay {
+        /// The fixture: a JSON file whose paths are relative to itself
+        fixture: PathBuf,
+        /// Read only the items that carry this split
         #[arg(long)]
-        root: PathBuf,
-        #[arg(long, default_value_t = 1000)]
-        reps: usize,
+        split: Option<String>,
+        /// muninn binary a delivery fixture asks (default: next to this one)
         #[arg(long)]
-        json: bool,
+        muninn: Option<PathBuf>,
     },
+    /// Performance contracts
     Perf {
         /// Fail on any contract violation
         #[arg(long)]
@@ -121,9 +122,6 @@ enum Cmd {
         /// was 10.5 ms at the cap, against its 10 ms limit.
         #[arg(long, default_value_t = 20_000)]
         records: usize,
-        /// Cues in the synthetic store
-        #[arg(long, default_value_t = 15000)]
-        cues: usize,
         /// Hook invocations per measurement
         #[arg(long, default_value_t = 300)]
         runs: usize,
@@ -198,6 +196,7 @@ const WORDS: &[&str] = &[
     "flag",
     "cli",
 ];
+/// The directories the synthetic records are anchored under.
 const DIRS: &[&str] = &[
     "src/auth",
     "src/api",
@@ -216,7 +215,7 @@ fn pct(v: &mut [f64], p: f64) -> f64 {
     v[((v.len() as f64 * p) as usize).min(v.len() - 1)]
 }
 
-fn populate(root: &Path, records: usize, cues: usize) -> Result<()> {
+fn populate(root: &Path, records: usize) -> Result<()> {
     std::fs::create_dir_all(root.join(".git"))?;
     let m = root.join(".muninn");
     for d in ["", "records", "compiled", "log", "compact"] {
@@ -227,11 +226,17 @@ fn populate(root: &Path, records: usize, cues: usize) -> Result<()> {
     let t = Instant::now();
     let tx = db.write_tx()?;
     {
+        // Decisions and invariants are the person's, as most typed records of a store are: the
+        // catalogue lists what the person stated and leaves out what a commit observed, so with
+        // every record `commit_linked` it listed none of them and the session-start contracts
+        // timed the sparse list of episodes instead. Trust follows the origin.
         let mut st = tx.prepare(
             "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) \
-             VALUES(?1,?2,?3,?4,?5,'commit_linked',2,?6,'bench',?7,?8)",
+             VALUES(?1,?2,?3,?4,?5,\
+                    CASE WHEN ?1 IN ('decision','invariant') THEN 'user_said' ELSE 'commit_linked' END,\
+                    CASE WHEN ?1 IN ('decision','invariant') THEN 3 ELSE 2 END,\
+                    ?6,'bench',?7,?8)",
         )?;
-        let mut cue = tx.prepare("INSERT INTO cue(record_id,kind,key,grp) VALUES(?1,?2,?3,0)")?;
         let kinds = ["decision", "deadend", "episode", "claim", "invariant"];
         for i in 0..records {
             let kind = if i % 50 == 0 {
@@ -262,33 +267,42 @@ fn populate(root: &Path, records: usize, cues: usize) -> Result<()> {
                 format!("h{i}"),
                 1_700_000_000_000i64 + i as i64
             ])?;
-            let id = tx.last_insert_rowid();
-            // dir cue on every record; symbol cue on half; extra dir cues to reach the target
-            cue.execute(rusqlite::params![id, "dir", dir])?;
+            // Every other record used to get a symbol cue with a word drawn here. The draw
+            // stays so that the records and the ledger seed below are the ones every earlier
+            // build was measured on: the store differs only by the cue rows it no longer has.
             if i % 2 == 0 {
-                cue.execute(rusqlite::params![id, "symbol", rng.pick(WORDS)])?;
-            }
-        }
-        let mut n = db
-            .conn
-            .query_row("SELECT count(*) FROM cue", [], |r| r.get::<_, i64>(0))
-            .unwrap_or(0) as usize;
-        let mut i = 0usize;
-        while n < cues {
-            let id = (rng.next() as usize % records) as i64 + 1;
-            cue.execute(rusqlite::params![
-                id,
-                "dir",
-                format!("{}/{}", rng.pick(DIRS), rng.pick(WORDS))
-            ])?;
-            n += 1;
-            i += 1;
-            if i > cues * 2 {
-                break;
+                rng.next();
             }
         }
     }
     tx.commit()?;
+    // The ledger of a long session, under the session id the hooks are run with: every read
+    // hook asks it what the session was already delivered. The largest session of a 1.2.0 store
+    // held 8 336 rows, most of them budget cuts and compaction reinjections, a few deliveries;
+    // so does this one. Without it the lookup read an empty ledger and no contract saw its cost.
+    {
+        let tx = db.write_tx()?;
+        {
+            let mut st = tx.prepare(
+                "INSERT INTO fire_ledger(session_id, compaction_epoch, record_id, fired_at, tokens, reason) \
+                 VALUES('b', 0, ?1, ?2, 0, ?3)",
+            )?;
+            for i in 0..8_336usize {
+                let reason = match i % 10 {
+                    0..=7 => "literal:gated:budget:54",
+                    8 => "literal:cue:event:post_compact",
+                    _ => "literal:literal",
+                };
+                let id = (rng.next() as usize % records) as i64 + 1;
+                st.execute(rusqlite::params![
+                    id,
+                    1_700_000_000_000i64 + i as i64,
+                    reason
+                ])?;
+            }
+        }
+        tx.commit()?;
+    }
     // The index a store actually has, not the one a bulk load leaves.
     //
     // Everything above goes in one transaction and was followed by an `optimize`, which is
@@ -358,6 +372,64 @@ fn process_start(bin: &Path, runs: usize) -> Result<(f64, f64, f64)> {
     ))
 }
 
+/// Whether a session-start context holds the catalogue made of typed records: its heading as
+/// the normal path writes it, and at least one line naming a decision or a rule. A store whose
+/// typed records the catalogue leaves out gets the sparse list of what was said instead, a
+/// different path, and the two session-start contracts would then time that one.
+fn lists_typed_records(context: &str) -> bool {
+    let heading = context.lines().any(|l| {
+        l.starts_with("[muninn:catalog]") && l.ends_with("then decisions, each newest first")
+    });
+    let line = context.lines().any(|l| {
+        l.strip_prefix('#')
+            .and_then(|rest| rest.split_once(' '))
+            .is_some_and(|(id, rest)| {
+                id.chars().all(|c| c.is_ascii_digit())
+                    && (rest.starts_with("decision \u{b7} ")
+                        || rest.starts_with("invariant \u{b7} ")
+                        || rest.starts_with("correction \u{b7} "))
+            })
+    });
+    heading && line
+}
+
+/// One more run of a session-start hook after its timed runs, refused unless what it timed was
+/// the catalogue's normal path.
+fn ensure_catalogue(
+    bin: &Path,
+    root: &Path,
+    event: &str,
+    payload: &serde_json::Value,
+) -> Result<()> {
+    let mut child = Command::new(bin)
+        .args(["hook", event])
+        .current_dir(root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("spawning {}", bin.display()))?;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(payload.to_string().as_bytes())?;
+    let out = child.wait_with_output()?;
+    let context = serde_json::from_slice::<serde_json::Value>(&out.stdout)
+        .ok()
+        .and_then(|v| {
+            v["hookSpecificOutput"]["additionalContext"]
+                .as_str()
+                .map(String::from)
+        })
+        .unwrap_or_default();
+    anyhow::ensure!(
+        lists_typed_records(&context),
+        "{event} on the bench store did not list typed records in its catalogue: the contract would time another path"
+    );
+    Ok(())
+}
+
 fn run_hook(
     bin: &Path,
     root: &Path,
@@ -395,84 +467,258 @@ fn run_hook(
     ))
 }
 
-/// Re-creation of the cue benchmark from [M2]: GLOB per touched file vs
-/// normalised dir-prefix ancestor lookup on an indexed table.
-type P3 = (f64, f64, f64);
-
-fn cue_eval(root: &Path, runs: usize) -> Result<(P3, P3)> {
-    let conn = Connection::open(root.join(".muninn/muninn.db"))?;
-    conn.execute_batch("PRAGMA query_only=1;")?;
-    let mut rng = Rng(7);
-    // a turn context: 20 touched files, 50 symbols
-    let files: Vec<String> = (0..20)
-        .map(|_| {
-            format!(
-                "{}/{}/{}.rs",
-                rng.pick(DIRS),
-                rng.pick(WORDS),
-                rng.pick(WORDS)
-            )
-        })
+/// One prompt for each timed run of the full prompt hook, made of words a few records hold.
+///
+/// The prompt this contract used to run, the same every time, was six of the thirty words the
+/// fixture puts in half of all records: no term was selective, recall returned nothing, and
+/// the hook ended `silence:no_match` in every run. The contract timed the open, the ledger
+/// lookup and an empty recall, and never a block. Each of these asks for three identifiers
+/// out of one record's body, so recall finds that record and the hook renders it.
+fn full_prompts(root: &Path, runs: usize) -> Result<Vec<String>> {
+    let db = Db::open(&root.join(".muninn/muninn.db"), Mode::ReadOnly)?;
+    // Records the session was not given yet: one it was given is not offered to it again, and
+    // a prompt for it alone would be answered with nothing. That is the ledger seed's records
+    // (by the seed's dates, so the list does not depend on what the hooks before this logged)
+    // and the invariants, which a session start delivers.
+    let fresh: Vec<i64> = db
+        .conn
+        .prepare(
+            "SELECT id FROM record WHERE session_id = 'bench' AND kind <> 'invariant' AND id NOT IN \
+             (SELECT record_id FROM fire_ledger WHERE record_id IS NOT NULL \
+              AND fired_at BETWEEN 1700000000000 AND 1700000008335) ORDER BY id",
+        )?
+        .query_map([], |r| r.get(0))?
+        .filter_map(|r| r.ok())
         .collect();
-    let syms: Vec<String> = (0..50).map(|_| rng.pick(WORDS).to_string()).collect();
-
-    // strategy A: GLOB per file against every dir cue
-    let mut glob_st =
-        conn.prepare("SELECT record_id FROM cue WHERE kind='dir' AND ?1 GLOB (key || '*')")?;
-    let mut sym_st = conn.prepare("SELECT record_id FROM cue WHERE kind='symbol' AND key=?1")?;
-    let mut ta = Vec::with_capacity(runs);
-    for _ in 0..runs {
-        let t = Instant::now();
-        let mut hits = 0usize;
-        for f in &files {
-            hits += glob_st.query_map([f], |r| r.get::<_, i64>(0))?.count();
-        }
-        for s in &syms {
-            hits += sym_st.query_map([s], |r| r.get::<_, i64>(0))?.count();
-        }
-        std::hint::black_box(hits);
-        ta.push(t.elapsed().as_secs_f64() * 1000.0);
+    anyhow::ensure!(
+        !fresh.is_empty(),
+        "the bench store holds no record to ask for"
+    );
+    let mut st = db.conn.prepare("SELECT body FROM record WHERE id = ?1")?;
+    let mut out = Vec::with_capacity(runs);
+    for i in 0..runs {
+        // a different record each run, far from the last one
+        let id = fresh[(i * 61) % fresh.len()];
+        let body: String = st.query_row([id], |r| r.get(0))?;
+        let rare: Vec<&str> = body
+            .split(' ')
+            .filter(|w| w.ends_with(|c: char| c.is_ascii_digit()))
+            .take(3)
+            .collect();
+        out.push(format!(
+            "implement {} for the handler with {}",
+            rare.first().copied().unwrap_or("retry"),
+            rare.get(1..).unwrap_or_default().join(" and ")
+        ));
     }
+    Ok(out)
+}
 
-    // strategy B: normalised ancestors, exact indexed lookups
-    let mut anc_st = conn.prepare("SELECT record_id FROM cue WHERE kind='dir' AND key=?1")?;
-    let mut tb = Vec::with_capacity(runs);
-    for _ in 0..runs {
+/// `run_hook` with a prompt of its own for each run, and how many runs were given a block.
+fn run_prompts(
+    bin: &Path,
+    root: &Path,
+    session: &str,
+    prompts: &[String],
+) -> Result<((f64, f64, f64), usize)> {
+    let cwd = root.to_string_lossy().to_string();
+    let mut ts = Vec::with_capacity(prompts.len());
+    let mut delivered = 0usize;
+    for prompt in prompts {
+        let input =
+            serde_json::json!({"session_id": session, "cwd": cwd, "prompt": prompt}).to_string();
         let t = Instant::now();
-        let mut hits = 0usize;
-        let mut seen = std::collections::HashSet::new();
-        for f in &files {
-            let mut p = Path::new(f).parent();
-            while let Some(d) = p {
-                let key = d.to_string_lossy();
-                if key.is_empty() {
-                    break;
-                }
-                if seen.insert(key.to_string()) {
-                    hits += anc_st
-                        .query_map([key.as_ref()], |r| r.get::<_, i64>(0))?
-                        .count();
-                }
-                p = d.parent();
-            }
+        let mut child = Command::new(bin)
+            .args(["hook", "UserPromptSubmit"])
+            .current_dir(root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("spawning {}", bin.display()))?;
+        child.stdin.take().unwrap().write_all(input.as_bytes())?;
+        let out = child.wait_with_output()?;
+        ts.push(t.elapsed().as_secs_f64() * 1000.0);
+        if !out.status.success() {
+            anyhow::bail!(
+                "UserPromptSubmit exited {:?}: {}",
+                out.status.code(),
+                String::from_utf8_lossy(&out.stderr)
+            );
         }
-        for s in &syms {
-            hits += sym_st.query_map([s], |r| r.get::<_, i64>(0))?.count();
+        if String::from_utf8_lossy(&out.stdout).contains("[muninn:") {
+            delivered += 1;
         }
-        std::hint::black_box(hits);
-        tb.push(t.elapsed().as_secs_f64() * 1000.0);
     }
     Ok((
         (
-            pct(&mut ta.clone(), 0.5),
-            pct(&mut ta.clone(), 0.95),
-            pct(&mut ta, 0.99),
+            pct(&mut ts.clone(), 0.5),
+            pct(&mut ts.clone(), 0.95),
+            pct(&mut ts, 0.99),
         ),
-        (
-            pct(&mut tb.clone(), 0.5),
-            pct(&mut tb.clone(), 0.95),
-            pct(&mut tb, 0.99),
-        ),
+        delivered,
+    ))
+}
+
+/// A write hook with one new turn to ingest each run: a turn is appended to the session's
+/// transcript, then the hook runs. Wall clock, process start to exit. Refused unless every
+/// turn is on record afterwards: a hook that ingested nothing is another path.
+fn run_write_hook(bin: &Path, root: &Path, event: &str, runs: usize) -> Result<(f64, f64, f64)> {
+    let session = format!("bench-{}", event.to_lowercase());
+    let transcript = root.join(format!("{session}.jsonl"));
+    let cwd = root.to_string_lossy().to_string();
+    let input = serde_json::json!({
+        "session_id": session, "cwd": cwd, "transcript_path": transcript, "hook_event_name": event
+    })
+    .to_string();
+    let mut ts = Vec::with_capacity(runs);
+    for i in 0..runs {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&transcript)?;
+        let at = format!("2026-01-01T{:02}:{:02}:00.000Z", (i / 60) % 24, i % 60);
+        writeln!(
+            f,
+            "{}",
+            serde_json::json!({"type": "user", "sessionId": session, "cwd": cwd, "timestamp": at,
+                "message": {"role": "user", "content": format!("Bench turn {i} about the {} {} widget, please look at it", WORDS[i % WORDS.len()], i)}})
+        )?;
+        writeln!(
+            f,
+            "{}",
+            serde_json::json!({"type": "assistant", "sessionId": session, "timestamp": at,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": format!("Looked at it, iteration {i}. Nothing to change.")}]}})
+        )?;
+        drop(f);
+        let t = Instant::now();
+        let mut child = Command::new(bin)
+            .args(["hook", event])
+            .current_dir(root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("spawning {}", bin.display()))?;
+        child.stdin.take().unwrap().write_all(input.as_bytes())?;
+        let out = child.wait_with_output()?;
+        ts.push(t.elapsed().as_secs_f64() * 1000.0);
+        if !out.status.success() {
+            anyhow::bail!(
+                "{event} exited {:?}: {}",
+                out.status.code(),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
+    let db = Db::open(&root.join(".muninn/muninn.db"), Mode::ReadOnly)?;
+    let ingested: i64 = db.conn.query_row(
+        "SELECT count(*) FROM record WHERE session_id = ?1",
+        [&session],
+        |r| r.get(0),
+    )?;
+    anyhow::ensure!(
+        ingested as usize >= runs,
+        "{event} left {ingested} record(s) of {runs} turn(s): the contract would time a hook that ingests nothing"
+    );
+    Ok((
+        pct(&mut ts.clone(), 0.5),
+        pct(&mut ts.clone(), 0.95),
+        pct(&mut ts, 0.99),
+    ))
+}
+
+/// The size of the rollout the PostCompact contract reads: the median of the 70 Codex rollouts
+/// on the machine the usage review read (160,271 bytes; the largest was 108 MB).
+const ROLLOUT_BYTES: usize = 160_271;
+
+/// A Codex rollout of `ROLLOUT_BYTES` or a little more, whose last test command exits with
+/// `last_test_exit`.
+///
+/// It is the invented rollout the Codex parser's tests read, its turns repeated until the size
+/// is reached, and then once more up to the test run that passes, with that run's exit code set.
+fn codex_rollout(last_test_exit: i64) -> String {
+    const FIXTURE: &str = include_str!(
+        "../../muninn-capture/tests/fixtures/codex/rollout-2026-11-14T10-00-00-019a7c00-0000-7000-8000-000000000001.jsonl"
+    );
+    const PASSED: &str = "\"exit_code\":0";
+    let lines: Vec<&str> = FIXTURE.lines().filter(|l| !l.trim().is_empty()).collect();
+    let (meta, turns) = lines.split_first().expect("the fixture has lines");
+    let last_pass = turns
+        .iter()
+        .rposition(|l| l.contains("\"CommandExecution\"") && l.contains(PASSED))
+        .expect("the fixture has a command that passed");
+    let mut out = String::with_capacity(ROLLOUT_BYTES + FIXTURE.len() * 2);
+    out.push_str(meta);
+    out.push('\n');
+    while out.len() < ROLLOUT_BYTES {
+        for l in turns {
+            out.push_str(l);
+            out.push('\n');
+        }
+    }
+    for l in &turns[..last_pass] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    out.push_str(&turns[last_pass].replace(PASSED, &format!("\"exit_code\":{last_test_exit}")));
+    out.push('\n');
+    out
+}
+
+/// PostCompact with a summary that claims a result, and a Codex rollout to check it against:
+/// the one read hook that parses a transcript. Timed with a rollout whose last test run
+/// passed, so the hook has nothing to say; then run once on the same rollout with that run
+/// failed, and refused unless the hook says so there and nowhere else. A hook that never read
+/// the rollout answers both the same way.
+fn run_summary_check(bin: &Path, root: &Path, runs: usize) -> Result<(f64, f64, f64)> {
+    let cwd = root.to_string_lossy().to_string();
+    let mut flagged = [0usize; 2];
+    let mut ts = Vec::with_capacity(runs);
+    for (exit, n) in [(0i64, runs), (1, 1)] {
+        let rollout = root.join(format!("rollout-bench-{exit}.jsonl"));
+        std::fs::write(&rollout, codex_rollout(exit))?;
+        let input = serde_json::json!({
+            "session_id": "bench-postcompact", "cwd": cwd, "hook_event_name": "PostCompact",
+            "transcript_path": rollout, "compact_summary": "All tests pass and the build succeeds."
+        })
+        .to_string();
+        for _ in 0..n {
+            let t = Instant::now();
+            let mut child = Command::new(bin)
+                .args(["hook", "PostCompact"])
+                .current_dir(root)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .with_context(|| format!("spawning {}", bin.display()))?;
+            child.stdin.take().unwrap().write_all(input.as_bytes())?;
+            let out = child.wait_with_output()?;
+            if exit == 0 {
+                ts.push(t.elapsed().as_secs_f64() * 1000.0);
+            }
+            anyhow::ensure!(
+                out.status.success(),
+                "PostCompact exited {:?}: {}",
+                out.status.code(),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            if String::from_utf8_lossy(&out.stdout).contains("[muninn:unverified]") {
+                flagged[exit as usize] += 1;
+            }
+        }
+    }
+    anyhow::ensure!(
+        flagged == [0, 1],
+        "PostCompact flagged the summary in {} of {runs} runs on a rollout whose tests passed and in {} of 1 on one whose tests failed: the contract would time a hook that does not read the rollout",
+        flagged[0],
+        flagged[1]
+    );
+    Ok((
+        pct(&mut ts.clone(), 0.5),
+        pct(&mut ts.clone(), 0.95),
+        pct(&mut ts, 0.99),
     ))
 }
 
@@ -799,11 +1045,20 @@ fn main() -> Result<()> {
             std::fs::remove_dir_all(&work).ok();
             r
         }
-        Cmd::EmbedBench { root, reps, json } => embed_bench(&root, reps, json),
+        Cmd::Replay {
+            fixture,
+            split,
+            muninn,
+        } => {
+            let bin = muninn.unwrap_or_else(sibling_muninn);
+            let work = tempfile_dir()?;
+            let r = replay::run(&fixture, split.as_deref(), &bin, &work);
+            std::fs::remove_dir_all(&work).ok();
+            r
+        }
         Cmd::Perf {
             strict,
             records,
-            cues,
             runs,
             muninn,
             json,
@@ -813,7 +1068,7 @@ fn main() -> Result<()> {
             let tmp = tempfile_dir()?;
             let root = tmp.as_path();
             let t = Instant::now();
-            populate(root, records, cues)?;
+            populate(root, records)?;
             let populate_ms = t.elapsed().as_secs_f64() * 1000.0;
             let cwd = root.to_string_lossy().to_string();
             let start = process_start(&bin, runs)?;
@@ -831,6 +1086,14 @@ fn main() -> Result<()> {
                 &serde_json::json!({"session_id":"b","cwd":cwd}),
                 runs,
             )?;
+            for event in ["SessionStart", "SubagentStart"] {
+                ensure_catalogue(
+                    &bin,
+                    root,
+                    event,
+                    &serde_json::json!({"session_id":"b","cwd":cwd}),
+                )?;
+            }
             let ups_gated = run_hook(
                 &bin,
                 root,
@@ -838,15 +1101,19 @@ fn main() -> Result<()> {
                 &serde_json::json!({"session_id":"b","cwd":cwd,"prompt":"ok thanks"}),
                 runs,
             )?;
-            let ups = run_hook(
-                &bin,
-                root,
-                "UserPromptSubmit",
-                &serde_json::json!({"session_id":"b","cwd":cwd,"prompt":"implement retry backoff for the webhook handler with idempotent tokens"}),
-                runs,
-            )?;
-            let (glob, anc) = cue_eval(root, runs)?;
+            let (ups, delivered) = run_prompts(&bin, root, "b", &full_prompts(root, runs)?)?;
+            anyhow::ensure!(
+                delivered == runs,
+                "the full prompt was given a block in {delivered} of {runs} runs: the contract would time a prompt that delivers nothing"
+            );
+            // after the rows above, under a session of its own, so none of them sees it
+            let post_compact = run_summary_check(&bin, root, runs)?;
             let ingest_ms = ingest_200(root)?;
+            // The write hooks last: they fold the logs the read hooks above left, and
+            // SessionEnd starts a detached `maintain` each time. Fewer runs: a turn is
+            // ingested in each, and the store should not grow past its cap while timed.
+            let stop = run_write_hook(&bin, root, "Stop", (runs / 3).max(1))?;
+            let session_end = run_write_hook(&bin, root, "SessionEnd", (runs / 10).max(1))?;
             let mut contracts = vec![
                 Contract {
                     name: "hook SessionStart p95",
@@ -876,10 +1143,15 @@ fn main() -> Result<()> {
                     unit: "ms",
                     floor: Some(start.1),
                 },
+                // The one read hook that parses a transcript had no figure. Limit: twice the
+                // largest p95 read, as for the write hooks below. 8.517, 8.380 and 8.568 ms
+                // on a Windows desktop where the process starts in 4.9 to 5.2 ms p95
+                // (2.920, 2.855 and 2.816 ms under Linux), on a rollout of 160 KB. The parse
+                // grows with the rollout, and the largest one seen was 108 MB.
                 Contract {
-                    name: "cue eval (ancestor lookup) p99",
-                    value: anc.2,
-                    limit: 3.0,
+                    name: "hook PostCompact p95 (Codex rollout)",
+                    value: post_compact.1,
+                    limit: 17.0,
                     unit: "ms",
                     floor: None,
                 },
@@ -890,12 +1162,31 @@ fn main() -> Result<()> {
                     unit: "ms",
                     floor: None,
                 },
+                // The two write hooks had no contract, and `Stop` grew for a month under
+                // none: 219.5 ms with nothing to ingest on a store whose session log had
+                // never been compacted (WP-01, WP-19). Limits: twice the largest p95 read.
+                // Stop: 60.6, 61.0 and 59.7 ms on a Windows desktop (24.8 and 25.1 under
+                // Linux). SessionEnd: 95.5 and 95.0 ms under Linux, where its p50 is 23 ms:
+                // each run starts a detached `maintain`, and thirty runs back to back meet
+                // the one before (56.1, 56.0 and 55.1 ms on the Windows desktop).
+                Contract {
+                    name: "hook Stop p95 (one turn)",
+                    value: stop.1,
+                    limit: 125.0,
+                    unit: "ms",
+                    floor: None,
+                },
+                Contract {
+                    name: "hook SessionEnd p95 (one turn)",
+                    value: session_end.1,
+                    limit: 200.0,
+                    unit: "ms",
+                    floor: None,
+                },
             ];
-            // The limits were set on a developer machine. CI's shared runners measured the
-            // in-process cue lookup at 2.8 ms p50 and up to 3.27 ms p99 against 3, where this
-            // project's machine reads 1.5 ms p99, so CI states how much slack it allows
-            // (MUNINN_PERF_LIMIT_SCALE) and the output prints it. Unset, the limits hold as
-            // written; a value below 1 is ignored.
+            // The limits were set on a developer machine. CI's shared runners are slower, so
+            // CI states how much slack it allows (MUNINN_PERF_LIMIT_SCALE) and the output
+            // prints it. Unset, the limits hold as written; a value below 1 is ignored.
             let scale = std::env::var("MUNINN_PERF_LIMIT_SCALE")
                 .ok()
                 .and_then(|s| s.parse::<f64>().ok())
@@ -909,17 +1200,18 @@ fn main() -> Result<()> {
                 println!(
                     "{}",
                     serde_json::json!({
-                        "records": records, "cues": cues, "runs": runs, "populate_ms": populate_ms,
+                        "records": records, "runs": runs, "populate_ms": populate_ms,
                         "process_start": start,
-                        "hook": { "SessionStart": ss, "SubagentStart": subagent, "UserPromptSubmit_gated": ups_gated, "UserPromptSubmit_full": ups },
-                        "cue_eval": { "glob": glob, "ancestor": anc },
+                        "hook": { "SessionStart": ss, "SubagentStart": subagent, "UserPromptSubmit_gated": ups_gated, "UserPromptSubmit_full": ups, "PostCompact_codex_rollout": post_compact, "Stop": stop, "SessionEnd": session_end },
+                        "rollout_bytes": codex_rollout(0).len(),
+                        "full_prompts_delivered": delivered,
                         "ingest_200_ms": ingest_ms,
                         "limit_scale": scale,
                         "contracts": contracts.iter().map(|c| serde_json::json!({"name": c.name, "value": c.value, "limit": c.limit, "ok": c.ok(), "over_floor": c.over_floor_ok()})).collect::<Vec<_>>(),
                     })
                 );
             } else {
-                println!("muninn-bench perf · {records} records, {cues} cues, {runs} runs · store built in {populate_ms:.0} ms");
+                println!("muninn-bench perf · {records} records, {runs} runs · store built in {populate_ms:.0} ms");
                 println!("level: management (hook cost). stored/delivered/outcome levels arrive with the experiment.");
                 println!(
                     "{:<36} {:>8} {:>8} {:>8}",
@@ -931,18 +1223,15 @@ fn main() -> Result<()> {
                     ("hook SubagentStart", subagent),
                     ("hook UserPromptSubmit (gated)", ups_gated),
                     ("hook UserPromptSubmit (full)", ups),
-                    ("cue eval GLOB per file", glob),
-                    ("cue eval ancestor lookup", anc),
+                    ("hook PostCompact (Codex rollout)", post_compact),
+                    ("hook Stop (one turn ingested)", stop),
+                    ("hook SessionEnd (one turn ingested)", session_end),
                 ] {
                     println!("{n:<36} {:>7.3}ms {:>7.3}ms {:>7.3}ms", v.0, v.1, v.2);
                 }
                 println!(
                     "{:<36} {:>7.1}ms",
                     "ingest 200 records (tx + fts)", ingest_ms
-                );
-                println!(
-                    "cue speedup ancestor vs GLOB (p50): {:.1}x",
-                    glob.0 / anc.0.max(0.001)
                 );
                 println!();
                 if scale != 1.0 {
@@ -985,117 +1274,6 @@ fn tempfile_dir() -> Result<PathBuf> {
     Ok(base)
 }
 
-/// Sidecar sub-gate measurements (plan, Phase 3 §10). recall@10 is self-retrieval: the
-/// query is the last 200 characters of a record's body (≥ 500 chars), the target is
-/// that record; hybrid = RRF(k=60) of lexical top-10 and exact kNN top-10.
-fn embed_bench(root: &std::path::Path, reps: usize, json: bool) -> Result<()> {
-    use muninn_core::db::Mode;
-    use std::collections::HashSet;
-    let paths = muninn_core::ProjectPaths::from_root(root);
-    let db = muninn_core::Db::open(&paths.db_path(), Mode::ReadWrite)?;
-    let emb = muninn_embed::Embedder::load_default().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let st = muninn_embed::embed_pending(&db, &emb, true).map_err(|e| anyhow::anyhow!("{e}"))?;
-    // encode 200 texts of ~600 chars
-    let texts: Vec<String> = (0..200)
-        .map(|i| format!("record {i} {}", "lorem ipsum dolor sit amet ".repeat(22)))
-        .collect();
-    let t0 = Instant::now();
-    let v = emb.encode(&texts);
-    let encode200_ms = t0.elapsed().as_secs_f64() * 1000.0;
-    anyhow::ensure!(v.len() == 200);
-    // bit identity: the same query, `reps` times, must return identical ids and scores
-    let q = emb.encode_one("why did we choose exponential backoff for the webhook retries");
-    let first =
-        muninn_embed::knn(&db, &q, 10, &emb.model_id).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let t1 = Instant::now();
-    let mut identical = 0usize;
-    for _ in 0..reps {
-        let r =
-            muninn_embed::knn(&db, &q, 10, &emb.model_id).map_err(|e| anyhow::anyhow!("{e}"))?;
-        if r == first {
-            identical += 1;
-        }
-    }
-    let knn_ms = t1.elapsed().as_secs_f64() * 1000.0 / reps.max(1) as f64;
-    // recall@10 self-retrieval
-    let mut stmt = db.conn.prepare(
-        "SELECT id, body FROM record WHERE invalid=0 AND length(body) >= 500 ORDER BY id",
-    )?;
-    let rows: Vec<(i64, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .filter_map(|r| r.ok())
-        .collect();
-    let (mut lex_hit, mut vec_hit, mut hyb_hit) = (0usize, 0usize, 0usize);
-    let none: HashSet<i64> = HashSet::new();
-    for (id, body) in &rows {
-        let tail: String = body
-            .chars()
-            .rev()
-            .take(200)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        let terms = muninn_core::recall::select_terms(&db, &tail, 8).unwrap_or_default();
-        let lex: Vec<i64> = muninn_core::recall::recall(&db, &terms, 10, &none)
-            .unwrap_or_default()
-            .iter()
-            .map(|h| h.id)
-            .collect();
-        let qv = emb.encode_one(&tail);
-        let knn: Vec<i64> = muninn_embed::knn(&db, &qv, 10, &emb.model_id)
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .iter()
-            .map(|n| n.id)
-            .collect();
-        // RRF k=60
-        let mut score: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
-        for (rank, i) in lex.iter().enumerate() {
-            *score.entry(*i).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
-        }
-        for (rank, i) in knn.iter().enumerate() {
-            *score.entry(*i).or_default() += 1.0 / (60.0 + rank as f64 + 1.0);
-        }
-        let mut fused: Vec<(i64, f64)> = score.into_iter().collect();
-        fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
-        let hyb: Vec<i64> = fused.iter().take(10).map(|x| x.0).collect();
-        if lex.contains(id) {
-            lex_hit += 1;
-        }
-        if knn.contains(id) {
-            vec_hit += 1;
-        }
-        if hyb.contains(id) {
-            hyb_hit += 1;
-        }
-    }
-    let n = rows.len().max(1) as f64;
-    let out = serde_json::json!({
-        "model": emb.model_id, "records_embedded": st.embedded, "load_ms": emb.load_ms,
-        "encode_records_ms": st.encode_ms, "encode_200_ms": encode200_ms,
-        "knn_reps": reps, "knn_identical": identical, "knn_ms_per_query": knn_ms,
-        "recall_queries": rows.len(),
-        "recall_at_10": {"lexical": lex_hit as f64 / n, "vector": vec_hit as f64 / n, "hybrid_rrf": hyb_hit as f64 / n},
-    });
-    if json {
-        println!("{}", serde_json::to_string_pretty(&out)?);
-    } else {
-        println!(
-            "embed bench on {}: {} records, model {}",
-            root.display(),
-            st.embedded,
-            emb.model_id
-        );
-        println!(
-            "  load {:.1} ms · encode {} records {:.1} ms · encode 200 texts {:.1} ms",
-            emb.load_ms, st.embedded, st.encode_ms, encode200_ms
-        );
-        println!("  kNN: {identical}/{reps} identical · {knn_ms:.3} ms/query");
-        println!("  recall@10 (self-retrieval, {} queries): lexical {:.3} · vector {:.3} · hybrid RRF {:.3}", rows.len(), lex_hit as f64 / n, vec_hit as f64 / n, hyb_hit as f64 / n);
-    }
-    Ok(())
-}
-
 /// The `muninn` binary next to this one. `set_file_name("muninn")` dropped the `.exe`, so on
 /// Windows `perf`, `enforce` and `experiment` never found the binary they had just been
 /// built beside.
@@ -1103,4 +1281,54 @@ fn sibling_muninn() -> std::path::PathBuf {
     let mut p = std::env::current_exe().unwrap();
     p.set_file_name(format!("muninn{}", std::env::consts::EXE_SUFFIX));
     p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lists_typed_records;
+
+    /// The rollout the PostCompact contract hands the hook: the size it says, read by the
+    /// parser as a Codex session, and its last test command ends as asked. That last exit code
+    /// is what the hook's check of a summary turns on, so the contract can tell a run that
+    /// read the rollout from one that did not.
+    #[test]
+    fn the_bench_rollout_is_a_codex_session_whose_last_test_run_ends_as_asked() {
+        let dir = std::env::temp_dir().join(format!("muninn-bench-rollout-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for exit in [0i64, 1] {
+            let text = super::codex_rollout(exit);
+            assert!(
+                (super::ROLLOUT_BYTES..super::ROLLOUT_BYTES * 2).contains(&text.len()),
+                "{} bytes",
+                text.len()
+            );
+            let path = dir.join(format!("rollout-bench-{exit}.jsonl"));
+            std::fs::write(&path, &text).unwrap();
+            let session = muninn_capture::parse_any(&path, 0).unwrap();
+            let last = session
+                .turns
+                .iter()
+                .flat_map(|t| &t.tools)
+                .rfind(|c| c.target.contains("test"))
+                .expect("a test command");
+            assert_eq!(last.exit_code, Some(exit));
+            assert!(session.turns.len() > 20, "{} turns", session.turns.len());
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The check that keeps the session-start contracts on the catalogue's normal path: it
+    /// passes on a list of typed records and refuses the sparse list of what was said, a
+    /// context with no catalogue, and a heading with no line under it.
+    #[test]
+    fn the_catalogue_check_tells_typed_records_from_the_sparse_list() {
+        let typed = "MUNINN 9/9 GREEN\n[muninn:catalog] what is on record: rules that stand and corrections, then decisions, each newest first\n#19951 invariant \u{b7} retry backoff jwt\n#19999 decision \u{b7} cache webhook queue\n\u{2026} and more, not listed\n";
+        assert!(lists_typed_records(typed));
+        let sparse = "[muninn:catalog] what is on record: rules that stand and corrections, then decisions, then what was said, each newest first\n#19998 episode \u{b7} token refresh sqlite\nThat is all of it.\n";
+        assert!(!lists_typed_records(sparse));
+        assert!(!lists_typed_records("MUNINN 9/9 GREEN\n"));
+        assert!(!lists_typed_records(
+            "[muninn:catalog] what is on record: rules that stand and corrections, then decisions, each newest first\n"
+        ));
+    }
 }

@@ -42,7 +42,7 @@ fn entropy(s: &str) -> f64 {
         .sum()
 }
 
-/// Replace secrets with `[redacted]` and `/home/<user>` with `~`.
+/// Replace secrets with `[redacted]` and a home directory, its user name with it, with `~`.
 pub fn redact(s: &str) -> String {
     let mut out = s.to_string();
     for re in patterns() {
@@ -63,6 +63,17 @@ pub fn redact(s: &str) -> String {
             }
         })
         .to_string();
+    // A Windows home first, with its drive, whichever way the path is written: `C:\Users\x`,
+    // `C:/Users/x`, Git Bash's `/c/Users/x`, WSL's `/mnt/c/Users/x`, and separators doubled
+    // inside quoted JSON. Only at the start of a path: the character before it is kept.
+    static WIN_HOME: OnceLock<Regex> = OnceLock::new();
+    let win_home = WIN_HOME.get_or_init(|| {
+        Regex::new(
+            r"(?i)(^|[^a-z0-9._\-/\\])(?:[a-z]:|/mnt/[a-z]|/[a-z])[\\/]+users[\\/]+[a-z0-9._\-]+",
+        )
+        .unwrap()
+    });
+    out = win_home.replace_all(&out, "${1}~").to_string();
     static HOME: OnceLock<Regex> = OnceLock::new();
     let home = HOME.get_or_init(|| Regex::new(r"/(?:home|Users)/[A-Za-z0-9._\-]+").unwrap());
     home.replace_all(&out, "~").to_string()
@@ -90,5 +101,29 @@ mod tests {
         // an opaque mixed-case token is redacted
         let t = "qA7zP2mX9kL4vB8nR1tY6wC3eH5jD0sF2gK8uN4pQ7";
         assert!(redact(t).contains("[redacted]"));
+    }
+
+    /// WP-16. A Windows home directory kept its user name: the pattern knew forward slashes
+    /// only, and inside a Git Bash path it cut in the middle (`/c/Users/<name>/x` → `/c~/x`).
+    /// The drive and the name go together, however the path is written.
+    #[test]
+    fn a_windows_home_directory_loses_its_user_name() {
+        for (path, want) in [
+            (r"C:\Users\quillon\proj\notes.md", r"~\proj\notes.md"),
+            ("C:/Users/quillon/proj/notes.md", "~/proj/notes.md"),
+            ("/c/Users/quillon/proj/notes.md", "~/proj/notes.md"),
+            ("/mnt/c/Users/quillon/proj/notes.md", "~/proj/notes.md"),
+            // as a path reads inside quoted JSON, each separator doubled
+            (r"d:\\users\\quillon\\proj", r"~\\proj"),
+            // and the two it already knew
+            ("/home/quillon/proj", "~/proj"),
+            ("/Users/quillon/proj", "~/proj"),
+        ] {
+            let got = redact(&format!("see {path} for it"));
+            assert_eq!(got, format!("see {want} for it"), "{path}");
+            assert!(!got.contains("quillon"), "{path}");
+        }
+        // a path that only looks alike is left alone
+        assert_eq!(redact("docs/c/Users.md"), "docs/c/Users.md");
     }
 }

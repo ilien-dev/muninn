@@ -4,6 +4,274 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 2.0.0 — 2026-11-14
+
+These come from a second review of real use, on copies of the eleven stores one person had used
+Muninn in. The measurements are usage-v4 in
+[muninn-experiments](https://github.com/ilien-dev/muninn-experiments). Its `RESULTS.md` has each
+figure below beside 1.2.0's, and says where the measurement is weak. It publishes counts and
+record ids only. The projects stay private.
+
+Most changes were read under a rule written before they were built, and one that failed its
+rule was taken out again. There are three kinds of exception. The speed rule failed on two
+hooks and nothing was removed for it. Nine rows of the table of changes shipped on their tests
+alone, and a tenth on tests and probes, because no cell could read them. And several of the
+registration's later texts were written after a figure they bear on had been seen.
+`RESULTS.md` lists all three.
+
+The measurement was done when a review of the whole branch found three defects that no cell
+reads, by putting invented sessions through the hooks. A sentence typed in the turn that hands
+a copy of it to a worker was lost when the worker's session was read first. The excerpt of a
+turn whose command failed stopped being served once the command passed. And an older statement
+read after a newer one retired it. A second review, of the fixes, found three more in the same
+place. A rule you had revoked came back when an older session was read later. An older
+statement read after its replacement stayed current beside it, both served with no mark. And
+with two coordinating sessions, a change typed in one of them could end with nothing current.
+All six are dealt with here, each with a test that fails without its change. For the fifth,
+the two statements now stay on record marked as in conflict. Retiring the older one, as
+reading in date order would, was tried and taken back. A third review found that it lost
+statements when the newer record was a worker's prompt, revoked later: one older statement
+ended with nothing current, and after a patch two older statements ended both current in one
+read order and neither in another. The build that never retired an older record there was
+right in both.
+
+The cells were read again after each round of fixes and no verdict changed. The four speed
+ratios did move. The prompt that is given a block read 0.965 times 1.2.0's before the fixes,
+0.998 after the first three and 0.984 after all six; the gated prompt 1.087, 1.091 and 1.075;
+`SessionStart` 1.148, 1.176 and 1.191; `SubagentStart` 1.274, 1.413 and 1.526. One reading in
+between was worse on a labelled figure, and the change that caused it was taken back: applying
+the word rule backwards retired a sixth labelled statement where five had been retired. What
+is still open is under "Not fixed".
+
+It is a major version because it removes commands, a hook and tables of the store. To upgrade:
+
+- The store moves to schema 5 at the first hook that writes, or at the first `muninn maintain`.
+  No record is retired or deleted by it. On a copy of the largest store that first write took
+  3.5 to 3.8 s. A 1.2.0 binary refuses a migrated store and its hooks stay silent, so update
+  every machine that opens the same project folder.
+- The first `maintain` after that rewrites the database file once, to give back the pages of
+  the dropped tables: 69.3 MB to 33.8 MB on that copy. It never runs inside a hook. This step
+  was not in the plan of the review. It was kept because it is measured and runs once.
+- `PostToolUse` is gone and the plugin no longer registers it. A `.codex/hooks.json` written by
+  an earlier `muninn init --codex` still calls it after every tool. The call does nothing and
+  costs one process start. `muninn init --codex` writes the file again without it.
+- `muninn import` stores records as `imported`, trust 0, whatever origin the file states.
+  `--trust-origin` keeps the file's origin. It refuses a record whose date no unit makes sane.
+- On a machine with Codex, plain `muninn init` now writes `.codex/hooks.json` into the project;
+  1.2.0 did that only with `--codex`. The file names this machine's `muninn` binary by its full
+  path, which is normally under your home folder and breaks every hook for a teammate who pulls
+  it. Do not commit the file. Run `muninn init` on each machine instead.
+- `maintain` now clears what grew without limit. It deletes heartbeat rows older than thirty
+  days and keeps the count `muninn ledger` reads. It rewrites `.muninn/log/sessions.jsonl`
+  without its repeated lines, and deletes `.muninn/log/turn_context.jsonl`. A record dated in
+  microseconds or nanoseconds is rewritten in place to the date it names.
+- The Windows binary is 5.5 MB, where 1.2.0's was 11.8 MB. Releases carry no `models.txt`.
+
+What changed:
+
+- **The embedding sidecar is removed.** No store held a vector, and without it `muninn why`
+  gives the same answers to usage-v2's 30 Spanish questions, to 69 word-form pairs and to 15
+  questions by kind. Gone with it: `muninn embed`, the health check `embed`, `vector_used` in
+  `why --json`, `embedded` and `variants_retired` in `maintain --json`, `MUNINN_WITH_MODEL`,
+  `MUNINN_MODEL_DIR` and the install script's model download.
+- **The symbol graph, directory and symbol cues, `PostToolUse` and the turn-context log are
+  removed.** The stores held them (45,954 symbol rows, 7,723 such cues), and none of the
+  79,534 rows of the delivery ledger had come from one. The build without them returns the
+  same record ids on 150 of 150 replayed prompts. Gone: `muninn symbols`, `muninn init --cues`,
+  `muninn cues --file` and `--symbol`, the `cues` setting (`muninn config cues on` is refused),
+  `MUNINN_CUES`, `symbols_indexed` in
+  `maintain --json`, and the memory block an edit could get from `PreToolUse`. `muninn cues
+  --event` and `--keyword` stay. Decisions built from commit subjects were read the same way
+  and stay: without them a reverted commit's record is not retired.
+- **Fewer real statements are retired.** Replaying every session with each build, 1.2.0
+  retires 9 of the labelled records whose retirement lost something the user had said. This
+  build retires 5, and both retirements labelled valid still happen. In three test
+  repositories written before the fixes:
+  - A one-line edit to a README that moved a word made 1.2.0 retire 7 records. Now 0. A
+    one-line change retires something only in a manifest or a config file, or when a quantity
+    changed, and then one statement.
+  - A decision stated as A, then B, then A again in the same words: 1.2.0 dropped the third
+    as a duplicate and served B. This build serves A.
+  - After a `git revert`, 1.2.0 retired 0 of the reverted commit's 2 records. This build
+    retires its 1, and puts back what the commit had retired.
+- The cap of sixty invariants no longer retires anything. It retired the oldest rule by its
+  age.
+- A retired record says when and why (`invalidated_at`, `invalidated_via`) in `muninn show`, the
+  export and the Markdown mirror.
+- **About half the unrelated blocks are gone from a prompt.** On 68 held-out prompts, blocks
+  labelled unrelated to the question fell from 143 to 72, and pairs labelled useful from 10 to
+  9. A block is served only if it holds a third of the words Muninn searches the question by,
+  and a prompt gets at most two matches beside its rules and corrections.
+- **Blocks are shorter.** The header is `[muninn:decision] #7 · 2026-11-05 · trust 3`. The
+  session, the origin and the `evidence:` line left the hook block, and `muninn show <id>`
+  prints them. Over the 150 replayed prompts a delivery went from 563.7 tokens to 252.5, and
+  from 436.9 to 305.1 on the 17 prompts where both builds return the same records.
+- **A record left out for room is offered again.** 1.2.0 counted a record its budget had cut,
+  or one the catalogue only listed, as delivered for the rest of the session: 0 of 12 and 0 of
+  5 came back when asked for. Now 11 of 11 and 9 of 9 do. A record delivered before a
+  compaction comes back after it.
+- A replaced statement no longer returns through the excerpt of its turn. That happened in 13
+  of 210 and 4 of 49 delivered prompts of two stores, and in none now.
+- **Session start and subagent start show corrections as well as rules**, each cut at 160
+  characters. The catalogue lists rules and corrections before decisions, each newest first,
+  and leaves out the questions and bare acknowledgements that had been typed as decisions.
+  Across seven stores, the rules and corrections a session start neither showed nor listed
+  went from 213 to 151. The catalogue's last line says whether the list is whole, and it was
+  true in all seven.
+- `muninn recall` prints what the prompt hook would deliver, gates included, and takes
+  `--session <id>`. A prompt under four words therefore prints nothing, as in the hook. One
+  consequence is in "Not fixed".
+- One compaction is counted once. `SessionStart` and `PostCompact` had both moved the epoch
+  and logged the reinjection.
+- **Less of what is typed is noise.** On the held-out messages the records and candidates that
+  are not durable statements fell from 55 to 42, and the durable ones rose from 13 to 19. The
+  filters alone, with the new recall rules off, read 38 with all 13 kept. A prompt an agent
+  wrote for another agent, a line the harness marks as not a person's, and the text of a
+  question you were asked are no longer recorded as your words. A message with a question
+  mark, or one that opens by saying something cannot be done or seen, is no longer a
+  correction. Pasted blocks and long quotations are not typed.
+- **More of what you state is kept.** A wish ("it should", "I want", "by default", and the
+  Spanish forms), a correction with no opening "no", and the answers to a dialog of two or
+  more questions now state a record. On the held-out messages, durable statements recorded
+  went from 4 of 25 to 10 of 25.
+- **`muninn remember "<your words>" --kind decision|invariant|correction|deadend`** lets the
+  assistant keep a statement when you make it. It is recorded as yours, at trust 3, only when
+  the whole sentence is found word for word in a message you typed in that session. Anything
+  else is kept as the assistant's wording at trust 0 and replaces nothing. Given whole
+  sentences from 48 labelled statements, it recorded 41 as the user's at the right turn and
+  found 6 already on record. For a sentence already on file it answers `already on record as
+  #n`, and adds `retired (#m)` when record #m has replaced it. `muninn status` counts its calls.
+- **A worker's prompt is no longer recorded as yours.** A worker's session usually ends before
+  its coordinator's turn does, so its prompt is read first and looks typed. When the
+  coordinator's turn is read, what that prompt recorded is revoked. What it had retired comes
+  back only if nothing happened in between: you typed nothing, and `maintain`, `revoke` and
+  `import` retired nothing. Otherwise that record stays retired, `muninn doctor` lists it, and
+  saying it again brings it back, so a true statement can go unserved until then. A sentence you
+  typed yourself in the turn that hands a copy of it to the worker is kept as yours in either
+  order, and so is a change typed in one of two coordinating sessions. Something you typed
+  counts as in between when it was read after the worker's prompt and before the coordinator's
+  turn, whatever its date.
+- **The order sessions are read in no longer decides what is current.** A transcript found
+  after a newer one, a last message `maintain` puts on record once its session has been idle
+  for an hour, and a sentence `muninn remember` takes from an older session are all older
+  word. 1.2.0 let them retire the newer statement. Now the older statement retires nothing
+  said after it, and is not retired by it either. Where the newer one would have replaced it,
+  by a shared key, a correction said again, a quantity or its words, both stay on record and
+  the two are marked: the prompt hook's blocks read `conflict with #n`, the catalogue says
+  another active record disagrees, and `muninn why` prints a conflict line. Retiring the older
+  one there was tried for each rule and taken back. By words it retired a statement the user
+  still held in the replay of the real sessions. By the other three it lost statements when
+  the newer record was a worker's prompt read first. Under the words rule a statement said
+  again after its replacement is current whichever session is read first; under the other
+  rules it is not, see "Not fixed". A rule you revoked
+  stays revoked unless you say it again after the revocation. The cases with no mark are
+  under "Not fixed".
+- A command that ran is read as exit 0 from the shape of its result, and a dead end is retired
+  when the same command later succeeds in its session. An excerpt lists only the commands that
+  failed and stores a long reply once. A prompt under 25 characters that got no answer and no
+  tool call leaves no excerpt. Your last message is kept when the session ends before it is
+  answered. All of this applies to turns read from now on. Nothing already stored is extracted
+  again.
+- **`muninn why` searches every kind on every route**, and the route only orders equal
+  matches: a correction that names a file is found by its own words (0 of 15 on 1.2.0, 15 of
+  15 now). `--all` uses every word typed, where it used the first (0 of 30 to 20 of 30 on
+  "what about …" questions). A Spanish word reaches its other gender and number forms in 55 of
+  69 pairs, where 1.2.0 found none; that is in `muninn why` only. Of equal matches the newest
+  comes first.
+- **`muninn init` sets up Codex without `--codex`** when Codex is on the machine. It writes
+  `.codex/hooks.json`, merged with the hooks you already have, and says Codex wants them
+  reviewed with `/hooks`. Where the Codex plugin is installed it writes nothing, because the
+  plugin already provides the hooks. That holds for a plugin that is installed and disabled
+  too, and then no hook runs: `muninn init --codex` writes the project file all the same.
+  `muninn clean` takes the hooks out, and `muninn status` says which route they take.
+- The Codex hooks on Windows now run. Codex 0.166.0 hands a hook to PowerShell by default, and
+  the lines 1.2.0 wrote ran nothing there.
+- **Codex rollouts are read by who spoke.** Through the hooks a build installs, 70 real
+  rollouts gave 79 typed records where 1.2.0 gave none. A `codex exec` prompt, a queued message
+  and a session Codex does not mark as opened by a person are kept as excerpts and never typed
+  as yours, because any process can add to a session's queue. A rule you state inside
+  `codex exec "…"` gets no record.
+- `Stop` is faster. With a turn to ingest on a copy of the largest store its median went
+  from 216.7 ms to 59.7 ms: three runs of twenty on each build, of which this is the run with
+  the middle difference and also the middle of each column. The builds before the last fixes
+  read 235.1 to 70.7 and then 220.6 to 61.7 by the same choice of run. With nothing to ingest
+  it went from 219.5 ms to 35.9 ms, read once on an earlier build. The session
+  log is compacted, the Markdown mirror is written only where a record changed, and no
+  transaction is held across a git call. The two hooks that write log where their time went.
+  A read hook does so when `MUNINN_PHASES` is set, to any value, `0` included.
+- **The read hooks failed their rule on two rows.** The rule allowed no read hook's p95 to
+  rise more than 10 % over 1.2.0. In three interleaved runs on one Windows desktop the prompt
+  that is given a block read 0.984 times 1.2.0's and the gated prompt 1.075. `SessionStart`
+  read 1.191 and `SubagentStart` 1.526. On the bench store 1.2.0 delivers no block at those two
+  hooks and this build does, so the comparison is between unequal work. The two failing ratios
+  rose at each of the three readings (1.148, 1.176, 1.191 and 1.274, 1.413, 1.526). Read
+  build against build with process start taken out, the first three fixes moved the hooks by
+  −0.23 to +0.17 ms and the last three by −0.02 to +0.15 ms, inside the 0.4 ms that
+  comparison resolves; the session start read slower both times after the last three (+0.15
+  and +0.07 ms), which is where the conflict mark is looked up. The desktop was in use during
+  the runs, which the procedure did not allow, and the gated prompt's pass is narrow (0.973,
+  1.075 and 1.205).
+- `perf --strict` has three more contracts: `Stop`, `SessionEnd`, and `PostCompact` checking a
+  summary against a Codex rollout. Under Linux it passes with the limits as written. Over
+  three runs at 20,000 records the p95 was 4.6 to 5.0 ms for a session start, 3.9 to 4.2 ms
+  for a prompt that is given a block and 1.2 to 1.3 ms for a gated one. Earlier builds of the
+  release had read 5.2 to 6.1, 4.3 to 5.0 and 1.3 to 1.5, on other days. On Windows it still
+  fails, for this build and for 1.2.0: starting the process alone takes about 5 ms there.
+- The health line counts nine checks where it counted ten (`MUNINN 9/9 GREEN`), and `muninn
+  doctor` lists thirteen where it listed ten. `embed` left, and four came in: dates, lineage,
+  records an agent's statement left retired, and evidence files that are gone.
+- **Tried and not shipped.** A new extractor that types one record a turn from its structure:
+  it raised precision on the held-out messages from 0.2174 to 0.6111 and recall from 0.16 to
+  0.44, and it left active one of the two retirements labelled valid. Spanish word forms on
+  the path the hooks share: 59 of 69 pairs, with two useful held-out pairs lost. Three
+  families of rule-compiler patterns: one marked held-out rules wrongly (2 of 4), one matched
+  nothing in 3,585 rules, and the last gained one rule whose sentence was also in the half it
+  was developed on. Also filters for scripted prompts and for sentences that point back,
+  narrower rules for a statement read as a change of an earlier one, answers to prompts of one
+  to three words, and rules on a catalogue page of their own.
+- **Not fixed:** 5 of the labelled losses are still retired in the replay. A statement the rules
+  read as a change of an earlier one on the same subject still retires it. The replay reads
+  each session whole, and a sixth labelled statement is retired by that rule when two
+  overlapping sessions are read turn by turn, as the hooks read a live project. Two of the rules
+  that retire a statement are not applied when the older session is read last, because what
+  they read is not kept in the store: the reply that names both values ("switching from X to
+  Y"), and a change that names no subject and takes the statement just before it. Where only
+  one of those links two statements, both are served as current with no conflict mark, and a
+  statement said again while current can still be retired by an older reply read later. A
+  message nothing was typed from, read after a later change that shares its words, also stays
+  in the list of what was said, unmarked. Saying
+  a statement again after its replacement does not always bring it back. In a probe of every
+  read order, a correction, a second one replacing it and the first said again end as date
+  order does in 2 orders of 6. In 1 the second is current alone, the order that reads it last,
+  and in 3 both are active and marked. The key rule takes the same path in the code and was
+  not probed. A quantity, a bare change of it and the quantity said again leave the change
+  active beside it in 5 orders of 6, unmarked in 4. A decision, its replacement by words, the
+  decision again and the replacement again leave the decision active beside the current
+  replacement in 11 orders of 24, unmarked in 4. Three quantities in a row leave an older one
+  active beside the newest in 5 orders of 6, in 1 of them with no mark shown between the two.
+  A conflict mark is written when the older record is read and is never moved or removed. It
+  says nothing while either record is retired and shows again if that record comes back, and
+  it does not follow a record that is replaced later. `muninn why` still opens with
+  `sufficient` above its conflict lines. A
+  statement you say again in a coordinating session's prompt, after another had replaced it,
+  can end with the other one current when a second worker's session is read before it and
+  that worker's coordinator after: 64 of 384 read orders in a probe. 1.2.0 cannot bring a
+  statement back at all and ends wrong in all 384. A worker's prompt reads as yours until its
+  coordinator's session is read. If that session is never read, what the prompt stated stays
+  at trust 3, and that includes a statement another coordinator had already shown to be an
+  agent's.
+  `muninn recall` with
+  a topic of three words prints nothing, so the loop 8 held-out test can no longer read whether
+  the current answer is served: it reads 2 of 30 where it read 11 of 30 on 1.2.0. Read through
+  the prompt hook and the session start together, the current value reaches the assistant with
+  the old one absent in 20 and 17 of 30 cells, against 18 and 15 on 1.2.0. In the prompt hook
+  alone, where nine other decisions come in between, it is in 2 of 30 against 4. Loop 8's
+  retirement figures equal 1.2.0's, including 3 of 30 retired on the noise arm; the 1.2.0
+  entry said none were, and this harness reads 3 on 1.2.0 too. `muninn init --help` still
+  describes `--codex` as the flag that writes the Codex hooks. The Windows `SessionStart` of
+  the Claude Code plugin is still a script, at 32.4 ms where the binary alone takes 6.7 ms.
+  The delivery ledger is never pruned.
+
 ## 1.2.0 — 2026-11-02
 
 These come from 773 sessions and 1,200 subagent transcripts from the ten stores one person

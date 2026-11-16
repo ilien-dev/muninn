@@ -25,13 +25,18 @@ created_at: 2026-09-12T14:03:11Z
 invalid: false
 invalidated_by: ~
 invalid_reason: ~
+invalidated_at: ~
+invalidated_via: ~
 ---
 Review comment accepted on PR #88: "use exponential backoff here, the linear
 one hammers the upstream during incidents". Applied in a1b2c3d.
 ```
 
 The body is literal and is never rewritten, summarised or merged. An invalidated
-record keeps its file, and only the frontmatter changes.
+record keeps its file, and only the frontmatter changes: `invalidated_at` says when it
+was retired and `invalidated_via` what retired it (a commit, a restatement, an agent's
+prompt found out later). A record stated more than once also lists its
+`earlier_turns`. A file is rewritten only when its record changed.
 
 `kind` ∈ `invariant`, `decision`, `deadend`, `correction`, `claim`, `episode`.
 `origin` ∈ `user_said`, `review_accepted`, `commit_linked`, `tool_observed`,
@@ -41,7 +46,7 @@ record keeps its file, and only the frontmatter changes.
 ## `index.md`
 
 `.muninn/index.md` lists active invariants and the most recent decisions, one
-line each, ≤ 200 lines and ≤ 25 KB. It is regenerated on every ingest and is
+line each, ≤ 200 lines and ≤ 25 KB. It is brought up to date after an ingest and is
 what a human opens first. It is *not* injected into the agent.
 
 ## JSONL export / import
@@ -50,12 +55,14 @@ what a human opens first. It is *not* injected into the agent.
 frontmatter plus `body`, to `.muninn/export-<timestamp>.jsonl`.
 `muninn import <file>` accepts that JSONL, or a directory of Markdown files
 with the frontmatter above (including the harness's native topic files, whose
-frontmatter is a subset). Imported records get `origin: imported`, trust 0,
-unless the file carries its own provenance fields.
+frontmatter is a subset). Imported records get `origin: imported`, trust 0, whatever
+origin the file states; `muninn import --trust-origin` keeps the file's origin. The
+origin a file stated is kept in `meta` (`imported_origin:<id>`). A date that cannot be
+read is refused.
 
 The rest is derived or operational and is not projected: cues are rebuilt from
 records, rules are recompiled from their source files, and the fire ledger is
-telemetry. `muninn export --all` includes them for reproducibility kits.
+telemetry. `muninn export --all` adds the retired records.
 
 Fields follow the vocabulary of the W3C Community Group draft on agent memory
 interchange where one exists (`subject`/`relation`/`object`, provenance,

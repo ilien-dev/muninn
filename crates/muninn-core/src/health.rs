@@ -14,6 +14,8 @@ use std::collections::HashMap;
 pub enum Status {
     Green,
     Cold,
+    /// Nothing wrong is served and nothing is broken, and something is worth a look.
+    Yellow,
     Red,
 }
 
@@ -50,18 +52,41 @@ impl Report {
             let fix = r.fix.as_deref().unwrap_or("see `muninn doctor`");
             return format!("MUNINN RED {}: {} — {}", r.name, r.detail, fix);
         }
-        let colds: Vec<&Check> = self.colds().collect();
-        if colds.is_empty() {
-            format!("MUNINN {total}/{total} GREEN")
-        } else {
-            let names: Vec<&str> = colds.iter().map(|c| c.name).collect();
-            format!(
-                "MUNINN {}/{total} GREEN · cold: {}",
-                total - colds.len(),
-                names.join(", ")
-            )
+        let names = |of: Status| -> Vec<&str> {
+            let it = self.checks.iter().filter(|c| c.status == of);
+            it.map(|c| c.name).collect()
+        };
+        let (colds, yellows) = (names(Status::Cold), names(Status::Yellow));
+        let mut line = format!(
+            "MUNINN {}/{total} GREEN",
+            total - colds.len() - yellows.len()
+        );
+        for (label, names) in [("cold", colds), ("yellow", yellows)] {
+            if !names.is_empty() {
+                line.push_str(&format!(" · {label}: {}", names.join(", ")));
+            }
         }
+        line
     }
+}
+
+/// The statements of the user's that an agent's prompt retired and that were not given back
+/// when the prompt was found out (`db::AGENT_UNRESTORED`), oldest first: typed records only,
+/// not the episodes that went with them. They are retired, so nothing stale is served; one
+/// the user still holds is silent until it is said again, and one they replaced since must
+/// not be. Read-only; `doctor` and `status` call it, no hook does.
+pub fn unrestored(db: &Db) -> Vec<i64> {
+    let sql = format!(
+        "SELECT id FROM record WHERE invalid = 1 AND invalidated_via = '{}' AND origin = 'user_said' AND kind IN ('decision', 'invariant', 'correction') ORDER BY id",
+        crate::db::AGENT_UNRESTORED
+    );
+    db.conn
+        .prepare(&sql)
+        .and_then(|mut st| {
+            st.query_map([], |r| r.get(0))
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<i64>>>())
+        })
+        .unwrap_or_default()
 }
 
 /// The remedy for a repeated hook failure, read off the error the hook itself recorded.
@@ -149,9 +174,7 @@ pub fn run(
                             "ingest",
                             Status::Red,
                             format!("last session not ingested for {age_min} min"),
-                            Some(
-                                "run `muninn hook SessionEnd` manually or `muninn doctor --ingest`",
-                            ),
+                            Some("run `muninn maintain`, which resumes every pending ingest"),
                         )
                     } else {
                         check(
@@ -274,7 +297,7 @@ pub fn run(
                 "integrity",
                 Status::Red,
                 e.to_string(),
-                Some("restore from `.muninn/records/` with `muninn import --from-records`"),
+                Some("restore from the Markdown mirror into a fresh store: `muninn import --trust-origin .muninn/records`"),
             ),
         },
         Some(db) if !db.has_served_view() => check(
@@ -334,7 +357,7 @@ pub fn run(
                     "integrity",
                     Status::Red,
                     r,
-                    Some("restore from `.muninn/records/` with `muninn import --from-records`"),
+                    Some("restore from the Markdown mirror into a fresh store: `muninn import --trust-origin .muninn/records`"),
                 ),
             }
         }
@@ -398,7 +421,7 @@ pub fn run(
                     "fts",
                     Status::Red,
                     format!("record active={a} fts={f}"),
-                    Some("run `muninn doctor --rebuild-fts`"),
+                    Some("run `muninn maintain`, which rebuilds the index when the two disagree"),
                 )
             }
         }
@@ -537,21 +560,15 @@ pub fn run(
             } else {
                 0
             };
-            if inv > caps::MAX_INVARIANTS {
-                check(
-                    8,
-                    "caps",
-                    Status::Red,
-                    format!("{inv} invariants > {}", caps::MAX_INVARIANTS),
-                    Some("run `muninn doctor --enforce-caps`"),
-                )
-            } else if act > caps::MAX_ACTIVE_RECORDS {
+            // Invariants have no cap of their own any more (WP-04): age is not evidence that a
+            // rule stopped holding, and the count is reported, not judged.
+            if act > caps::MAX_ACTIVE_RECORDS {
                 check(
                     8,
                     "caps",
                     Status::Red,
                     format!("{act} active records > {}", caps::MAX_ACTIVE_RECORDS),
-                    Some("run `muninn doctor --enforce-caps`"),
+                    Some("run `muninn maintain`: its ingest archives the oldest unreferenced episodes"),
                 )
             } else if big > 0 {
                 check(
@@ -559,7 +576,7 @@ pub fn run(
                     "caps",
                     Status::Red,
                     format!("{big} bodies over {} chars", caps::MAX_BODY_CHARS),
-                    Some("run `muninn doctor --enforce-caps`"),
+                    Some("the schema refuses such a body, so something else wrote this store: `muninn export --all --out <file>`, then `muninn import --trust-origin <file>` into a fresh one"),
                 )
             } else {
                 check(
@@ -567,8 +584,7 @@ pub fn run(
                     "caps",
                     Status::Green,
                     format!(
-                        "{inv}/{} invariants, {act}/{} active",
-                        caps::MAX_INVARIANTS,
+                        "{inv} invariants, {act}/{} active",
                         caps::MAX_ACTIVE_RECORDS
                     ),
                     None,
@@ -654,42 +670,6 @@ pub fn run(
         }
     }
 
-    // 10. embedding sidecar: fresh, or cold — never RED by itself (plan, Phase 3 §8)
-    checks.push(match db {
-        Some(db) => {
-            let has_table = db
-                .count("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='record_vec'")
-                .unwrap_or(0)
-                > 0;
-            let model = db.meta_get("embed_model").ok().flatten();
-            if !has_table || model.is_none() {
-                check(10, "embed", Status::Cold, "optional sidecar off (no model): `muninn why` searches lexically", None)
-            } else if !live {
-                // Coverage costs a join over every vector — 3.1 ms of a 10 ms hook on a store
-                // at the schema's cap — and it says nothing about the read path, which never
-                // touches the sidecar. The full report still counts them.
-                check(10, "embed", Status::Green, "sidecar enabled", None)
-            } else {
-                let active = db.count("SELECT count(*) FROM record WHERE invalid=0").unwrap_or(0);
-                let vecs = db
-                    .count("SELECT count(*) FROM record_vec v JOIN record r ON r.id=v.record_id WHERE r.invalid=0")
-                    .unwrap_or(0);
-                if vecs >= active {
-                    check(10, "embed", Status::Green, format!("{vecs} vector(s), up to date"), None)
-                } else {
-                    check(
-                        10,
-                        "embed",
-                        Status::Cold,
-                        format!("{} record(s) not embedded yet", active - vecs),
-                        Some("run `muninn embed` (the next Stop/SessionEnd does it too)"),
-                    )
-                }
-            }
-        }
-        None => check(10, "embed", Status::Cold, "no database", None),
-    });
-
     // 11. the allow rules Muninn's own commands need
     //
     // The boot summary tells the agent to run `muninn show <id>`, and an install made before
@@ -745,6 +725,137 @@ pub fn run(
             )
         });
     }
+    // 12. dates: an active record dated past tomorrow heads every newest-first path (R-17).
+    // Only the live report counts them; `maintain` brings back the ones in the wrong unit.
+    if let Some(db) = db.filter(|_| live) {
+        let ahead = db
+            .conn
+            .query_row(
+                "SELECT count(*) FROM record WHERE invalid=0 AND created_at > ?1",
+                [now + 86_400_000],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0);
+        checks.push(if ahead == 0 {
+            check(
+                12,
+                "dates",
+                Status::Green,
+                "no record dated in the future",
+                None,
+            )
+        } else {
+            check(
+                12,
+                "dates",
+                Status::Red,
+                format!(
+                    "{ahead} active record(s) dated past tomorrow head every newest-first list"
+                ),
+                Some("run `muninn maintain`; what it cannot date, `muninn revoke <id>`"),
+            )
+        });
+    }
+    // 13. lineage: a record retired with itself as heir is retired by nothing and replaced by
+    // nothing; `muninn show` answers "replaced by #n" with the record's own id. Live only.
+    if let Some(db) = db.filter(|_| live) {
+        let own = db
+            .conn
+            .query_row(
+                "SELECT count(*) FROM record WHERE invalidated_by = id",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0);
+        checks.push(if own == 0 {
+            check(
+                13,
+                "lineage",
+                Status::Green,
+                "no record is its own heir",
+                None,
+            )
+        } else {
+            check(
+                13,
+                "lineage",
+                Status::Red,
+                format!("{own} record(s) retired with themselves as heir"),
+                Some("read them with `muninn show <id>`; this is a write-path defect to report"),
+            )
+        });
+    }
+    // 14. unrestored: what an agent's prompt retired while it read as the user's, left retired
+    // because the user spoke before the prompt was found out. Never RED: a retired record is
+    // not served, and the remedy is the user's to choose. Live only.
+    if let Some(db) = db.filter(|_| live) {
+        let ids = unrestored(db);
+        checks.push(if ids.is_empty() {
+            check(
+                14,
+                "unrestored",
+                Status::Green,
+                "nothing an agent's statement retired is left retired",
+                None,
+            )
+        } else {
+            const SHOWN: usize = 20;
+            let mut named: Vec<String> = ids.iter().take(SHOWN).map(|i| format!("#{i}")).collect();
+            if ids.len() > SHOWN {
+                named.push(format!("and {} more", ids.len() - SHOWN));
+            }
+            check(
+                14,
+                "unrestored",
+                Status::Yellow,
+                format!(
+                    "{} statement(s) of yours retired by an agent's prompt and not restored: {}",
+                    ids.len(),
+                    named.join(", ")
+                ),
+                Some("check each with `muninn show <id>`; say it again only if it still holds"),
+            )
+        });
+    }
+    // 15. evidence: the transcripts active records name, and how many the client has removed
+    // since (WP-21). Never anything but green: the records are served word for word as stored,
+    // and on ten store copies 1,718 of 4,175 active records named a file that was gone, so a
+    // warning would be most stores' permanent state. Live only: it looks at the file system.
+    if let Some(db) = db.filter(|_| live) {
+        let mut files: HashMap<String, usize> = HashMap::new();
+        if let Ok(mut st) = db.conn.prepare(
+            "SELECT transcript_ref FROM record WHERE invalid=0 AND transcript_ref IS NOT NULL",
+        ) {
+            if let Ok(rows) = st.query_map([], |r| r.get::<_, String>(0)) {
+                for t in rows.flatten() {
+                    if let Some(f) = crate::recall::evidence_file(&t) {
+                        *files.entry(f.to_string_lossy().to_string()).or_default() += 1;
+                    }
+                }
+            }
+        }
+        let gone: Vec<usize> = files
+            .iter()
+            .filter(|(f, _)| !std::path::Path::new(f).is_file())
+            .map(|(_, n)| *n)
+            .collect();
+        checks.push(check(
+            15,
+            "evidence",
+            Status::Green,
+            if gone.is_empty() {
+                format!("{} transcript(s) named as evidence, all on disk", files.len())
+            } else {
+                format!(
+                    "{} of {} transcript(s) named as evidence are no longer on disk; {} record(s) keep what was stored and are served as before",
+                    gone.len(),
+                    files.len(),
+                    gone.iter().sum::<usize>()
+                )
+            },
+            None,
+        ));
+    }
     Report { checks }
 }
 
@@ -764,6 +875,121 @@ mod tests {
         let r = run(&paths, Some(&db), None, false);
         assert!(r.is_green(), "{:?}", r.checks);
         assert!(r.summary().starts_with("MUNINN "));
+        // the embedding sidecar is gone, and with it the check that read `cold` on every store
+        assert!(r.checks.iter().all(|c| c.name != "embed"), "{:?}", r.checks);
+    }
+
+    /// R-17. An active record dated past tomorrow heads every newest-first path. `doctor`
+    /// counts them and goes RED; the hook report does not pay for the count.
+    #[test]
+    fn a_record_dated_in_the_future_turns_doctor_red() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        std::fs::create_dir_all(paths.muninn_dir.clone()).unwrap();
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                 VALUES('invariant','k','must','o','b','user_said',3,'s','h',?1)",
+                [i64::MAX / 2],
+            )
+            .unwrap();
+        let r = run(&paths, Some(&db), None, true);
+        let dates = r
+            .checks
+            .iter()
+            .find(|c| c.name == "dates")
+            .expect("checked");
+        assert_eq!(dates.status, Status::Red, "{dates:?}");
+        let r = run(&paths, Some(&db), None, false);
+        assert!(r.checks.iter().all(|c| c.name != "dates"));
+    }
+
+    /// What an agent's statement retired and nobody gave back is counted and named, YELLOW:
+    /// `doctor` still exits green, and the hook report does not pay for the count.
+    #[test]
+    fn records_an_agents_statement_left_retired_turn_doctor_yellow() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        std::fs::create_dir_all(paths.muninn_dir.clone()).unwrap();
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        for id in 1..=4 {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                     VALUES(?1,'decision','k' || ?1,'is','o','b','user_said',3,'s','h' || ?1,1)",
+                    [id],
+                )
+                .unwrap();
+        }
+        let unrestored = |db: &Db| {
+            run(&paths, Some(db), None, true)
+                .checks
+                .into_iter()
+                .find(|c| c.name == "unrestored")
+                .expect("checked")
+        };
+        assert_eq!(unrestored(&db).status, Status::Green);
+        db.conn
+            .execute_batch(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=4, invalidated_via='agent_unrestored' WHERE id=1; \
+                 UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_via='agent_unrestored' WHERE id=2; \
+                 UPDATE record SET kind='episode', relation='happened', invalid=1, invalid_reason='superseded', invalidated_via='agent_unrestored' WHERE id=4; \
+                 UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=4, invalidated_via='said' WHERE id=3;",
+            )
+            .unwrap();
+        let c = unrestored(&db);
+        assert_eq!(c.status, Status::Yellow, "{c:?}");
+        assert_eq!(
+            c.detail,
+            "2 statement(s) of yours retired by an agent's prompt and not restored: #1, #2"
+        );
+        assert_eq!(
+            c.fix.as_deref(),
+            Some("check each with `muninn show <id>`; say it again only if it still holds")
+        );
+        assert_eq!(super::unrestored(&db), vec![1, 2]);
+        let r = run(&paths, Some(&db), None, true);
+        assert!(r.is_green(), "yellow is not red");
+        assert!(
+            r.summary().ends_with("yellow: unrestored"),
+            "{}",
+            r.summary()
+        );
+        let r = run(&paths, Some(&db), None, false);
+        assert!(r.checks.iter().all(|c| c.name != "unrestored"));
+    }
+
+    /// A record retired with itself as heir is a write-path defect: the live report says so.
+    #[test]
+    fn a_record_that_is_its_own_heir_turns_doctor_red() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        std::fs::create_dir_all(paths.muninn_dir.clone()).unwrap();
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) \
+                 VALUES(7,'episode','k','happened','o','b','tool_observed',1,'s','h',1)",
+                [],
+            )
+            .unwrap();
+        let lineage = |db: &Db| {
+            run(&paths, Some(db), None, true)
+                .checks
+                .into_iter()
+                .find(|c| c.name == "lineage")
+                .expect("checked")
+                .status
+        };
+        assert_eq!(lineage(&db), Status::Green);
+        db.conn
+            .execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=7 WHERE id=7",
+                [],
+            )
+            .unwrap();
+        assert_eq!(lineage(&db), Status::Red);
     }
 
     /// A repeated hook failure used to report only its count, and point at the command

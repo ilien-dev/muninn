@@ -1,7 +1,7 @@
 //! `muninn maintain`: the asynchronous write path that runs outside any hook —
 //! fold the hook logs, resume a pending ingest from its watermark, capture commits and
-//! reverts from git since the last run (ENGINE.md §3), project Markdown, then let the
-//! embedding sidecar catch up. Spawned detached by SessionStart; run inline by Stop.
+//! reverts from git since the last run (ENGINE.md §3), project Markdown. Spawned detached by
+//! SessionStart; run inline by Stop.
 
 use crate::output;
 use muninn_core::db::now_ms;
@@ -15,21 +15,30 @@ pub struct MaintainStats {
     pub commits: usize,
     pub reverts: usize,
     pub projected: usize,
-    pub embedded: usize,
     pub anchors_retired: usize,
-    pub symbols_indexed: usize,
     pub cues_derived: usize,
-    pub variants_retired: usize,
     /// Records retired because the repository stopped holding the value they named.
     pub values_retired: usize,
     /// Typed records retired because a compaction summary, not the user, put them on record.
     pub summary_records_retired: usize,
-    /// Records put back after a bug up to 1.1.0 retired them.
+    /// Records put back after a bug up to 1.1.0 retired them, or after 1.2.0's commit-diff
+    /// rule retired a record that had already been put back once.
     pub records_restored: usize,
+    /// The full-text index disagreed with the active rows and was rebuilt.
+    pub index_rebuilt: bool,
+    /// Records dated past tomorrow in the wrong unit, brought back to their own date.
+    pub dates_repaired: usize,
+    /// The file was rewritten without the pages of the tables schema v5 dropped.
+    pub store_compacted: bool,
+    /// Lines taken out of the session log: repeats of a session and transcript already noted.
+    pub session_lines_dropped: usize,
+    /// Rows older than thirty days taken out of the `heartbeat` table.
+    pub heartbeats_dropped: usize,
     pub ms: u128,
 }
 
 fn git(root: &std::path::Path, args: &[&str]) -> Option<String> {
+    hold_git_for_a_test(args);
     let out = Command::new("git")
         .current_dir(root)
         .args(args)
@@ -39,6 +48,26 @@ fn git(root: &std::path::Path, args: &[&str]) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// A seam for one test (`write_path.rs`): before git runs, leave a note naming the subcommand
+/// and wait until the note is taken away, so the test can try the store's write lock exactly
+/// then. Debug builds only, and only when the variable names a directory.
+fn hold_git_for_a_test(args: &[&str]) {
+    #[cfg(debug_assertions)]
+    if let Ok(dir) = std::env::var("MUNINN_TEST_HOLD_GIT") {
+        let note = std::path::Path::new(&dir).join("held");
+        if std::fs::write(&note, args.first().copied().unwrap_or_default()).is_ok() {
+            for _ in 0..3000 {
+                if !note.exists() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = args;
 }
 
 /// `--since` for a watermark, or `None` when there is not one yet.
@@ -56,7 +85,7 @@ fn since_arg(since_ms: i64) -> Option<String> {
 /// reverts retire the decision they undo and leave a `deadend`.
 pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize, usize)> {
     // where the code is, which is not always where the store is: `MUNINN_SOURCE_ROOT`
-    // separates them, and symbols, anchors and `scan` have always followed it. Git did not,
+    // separates them, and anchors and `scan` have always followed it. Git did not,
     // so a store kept outside its checkout read the history of the wrong directory.
     let root = paths.source_root();
     let since_ms: i64 = db
@@ -68,7 +97,9 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
     args.extend(since_arg(since_ms));
     args.extend(
         [
-            "--format=%x1e%h%x1f%s%x1f%ct%x1f%an",
+            // the body comes last and ends at \x1d: it can span lines, and it is where `git
+            // revert` names the commit it reverts by hash
+            "--format=%x1e%h%x1f%s%x1f%ct%x1f%an%x1f%b%x1d",
             "--name-only",
             "--no-merges",
             "-n",
@@ -83,20 +114,30 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
     let mut commits = 0usize;
     let mut reverts = 0usize;
     let tx = db.write_tx()?;
-    for block in log.split('\x1e').filter(|b| !b.trim().is_empty()) {
-        let mut lines = block.lines();
-        let Some(head) = lines.next() else { continue };
+    // Oldest first. `git log` lists newest first, so a commit and its revert read in one pass
+    // met the revert before the commit was on record, and the revert retired nothing (or an
+    // earlier commit that happened to share the subject).
+    let mut blocks: Vec<&str> = log.split('\x1e').filter(|b| !b.trim().is_empty()).collect();
+    blocks.reverse();
+    for block in blocks {
+        let (head, rest) = block.split_once('\x1d').unwrap_or((block, ""));
         let mut f = head.split('\x1f');
         let (Some(hash), Some(subject), Some(ct)) = (f.next(), f.next(), f.next()) else {
             continue;
         };
-        let files: Vec<String> = lines
+        let message_body = f.nth(1).unwrap_or("");
+        let files: Vec<String> = rest
+            .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty())
             .take(20)
             .map(String::from)
             .collect();
-        let created: i64 = ct.parse::<i64>().map(|s| s * 1000).unwrap_or(now);
+        let created: i64 = ct
+            .parse::<i64>()
+            .ok()
+            .and_then(|s| muninn_core::db::sane_created_at(s.saturating_mul(1000), now))
+            .unwrap_or(now);
         let short: String = hash.chars().take(7).collect();
         let body = muninn_capture::redact::redact(&format!(
             "commit {short}: {subject}\nfiles: {}\n",
@@ -126,13 +167,11 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
         if n == 1 {
             commits += 1;
         }
-        // "Revert \"<subject>\"": the reverted decision is retired, the dead end kept
+        // "Revert \"<subject>\"": every record of the reverted commit is retired, the dead end
+        // kept, and what those records had retired is put back
         if let Some(rest) = subject.strip_prefix("Revert \"") {
             let orig = rest.trim_end_matches('"');
-            let retired = tx.execute(
-                "UPDATE record SET invalid=1, invalid_reason='reverted' WHERE invalid=0 AND kind='decision' AND subject LIKE 'commit:%' AND object=?1",
-                [orig],
-            )?;
+            let retired = retire_reverted(&tx, &short, message_body, orig, created)?;
             let de_body = format!("reverted by {short}: {orig}\n");
             let de_hash = blake3::hash(
                 format!("deadend|revert:{short}|tried_and_failed|{orig}|{de_body}").as_bytes(),
@@ -157,7 +196,86 @@ pub fn capture_git(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<(usize,
     }
     tx.commit()?;
     db.meta_set("git_watermark_ms", &now.to_string())?;
+    // `Stop` runs this too, outside `maintain`: what it stored or retired has no file yet,
+    // and no ingest says so for it any more
+    if commits + reverts > 0 {
+        db.meta_set("records_changed_since_project", "1")?;
+    }
     Ok((commits, reverts))
+}
+
+/// Retire every record of the commit a revert undid, and put back what those records retired.
+///
+/// The commit is found by the hash `git revert` writes into the message body; matching by
+/// subject, which 1.2.0 did, retired a later re-application of the same change instead of the
+/// commit that was reverted. The subject is the fallback for a revert written by hand, cut as
+/// the record's object is cut, and then only the newest such commit made before the revert.
+/// A reverted commit's records are its own entry from `git log` and the observation its swap
+/// wrote; anything that observation had retired was retired by a change the revert took back.
+fn retire_reverted(
+    tx: &rusqlite::Connection,
+    revert_short: &str,
+    message_body: &str,
+    orig: &str,
+    created: i64,
+) -> muninn_core::Result<usize> {
+    let target: Option<String> = message_body
+        .split("This reverts commit ")
+        .nth(1)
+        .map(|t| {
+            t.chars()
+                .take_while(char::is_ascii_hexdigit)
+                .take(7)
+                .collect::<String>()
+        })
+        .filter(|h| h.len() == 7);
+    muninn_core::db::note_event(tx, "revert")?;
+    let ids: Vec<i64> = match &target {
+        Some(h) => tx
+            .prepare(
+                "SELECT id FROM record WHERE invalid=0 AND origin='commit_linked' \
+                 AND (subject = 'commit:' || ?1 OR substr(transcript_ref, 1, 11) = 'git:' || ?1)",
+            )?
+            .query_map([h], |r| r.get(0))?
+            .flatten()
+            .collect(),
+        None => {
+            let object: String = orig.chars().take(160).collect();
+            tx.prepare(
+                "SELECT id FROM record WHERE invalid=0 AND kind='decision' AND subject LIKE 'commit:%' \
+                 AND object=?1 AND created_at <= ?2 ORDER BY created_at DESC, id DESC LIMIT 1",
+            )?
+            .query_map(rusqlite::params![object, created], |r| r.get(0))?
+            .flatten()
+            .collect()
+        }
+    };
+    let via = format!("revert:{revert_short}");
+    let mut n = 0;
+    for id in &ids {
+        n += tx.execute(
+            "UPDATE record SET invalid=1, invalid_reason='reverted', invalidated_via=?2 WHERE id=?1 AND invalid=0",
+            rusqlite::params![id, via],
+        )?;
+        tx.execute(
+            "UPDATE record SET invalid=0, invalid_reason=NULL, invalidated_by=NULL \
+             WHERE invalid=1 AND invalid_reason='superseded' AND invalidated_by=?1",
+            [id],
+        )?;
+    }
+    Ok(n)
+}
+
+/// The commits whose diff says nothing about a value any more: the ones a later commit
+/// reverted, and the reverts themselves. `capture_git` has already marked both by the time
+/// the diffs are read.
+fn reverted_or_reverts(db: &Db) -> muninn_core::Result<std::collections::HashSet<String>> {
+    let mut st = db.conn.prepare(
+        "SELECT substr(subject, 8, 7) FROM record WHERE origin='commit_linked' AND invalid_reason='reverted' AND subject LIKE 'commit:%' \
+         UNION SELECT substr(subject, 8, 7) FROM record WHERE kind='deadend' AND subject LIKE 'revert:%'",
+    )?;
+    let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+    Ok(rows.flatten().collect())
 }
 
 /// Identifier-like tokens of one diff line, lowercased: the words a manifest, an import
@@ -246,6 +364,77 @@ const MAX_TREE_CHECKS: usize = 32;
 /// hyphen — is exempt, because that is a value however often it appears.
 const MAX_VALUE_FILES: usize = 3;
 
+/// A file a package manager writes: `Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`,
+/// `bun.lockb`, `gradle.lockfile`, `go.sum`, … — by its name's shape, so that `blocklist.json`
+/// or `clock.toml` is not one.
+fn is_lock_file(name: &str) -> bool {
+    let stem_ends_lock = name
+        .split('.')
+        .next()
+        .is_some_and(|stem| stem == "lock" || stem.ends_with("-lock") || stem.ends_with("_lock"));
+    let ext_is_lock = name
+        .split('.')
+        .skip(1)
+        .any(|part| matches!(part, "lock" | "lockb" | "lockfile"));
+    stem_ends_lock || ext_is_lock || matches!(name, "go.sum" | "npm-shrinkwrap.json")
+}
+
+/// Is this tracked file one where a line *is* a value — a manifest or a configuration file —
+/// rather than prose or code, where a line that changes is a sentence or a statement being
+/// rewritten? WP-02: on one real store the swap rule had read 174 one-line hunks as changed
+/// values, most of them source lines and prose sentences, and a single reworded README line
+/// retired seven records in a synthetic repository. A lock file is a manifest nobody writes by
+/// hand, so it says nothing about what was decided.
+fn is_config_file(path: &str) -> bool {
+    let name = path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .to_ascii_lowercase();
+    if is_lock_file(&name) {
+        return false;
+    }
+    const NAMES: [&str; 14] = [
+        "dockerfile",
+        "containerfile",
+        "makefile",
+        "gemfile",
+        "pipfile",
+        "procfile",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        ".tool-versions",
+        ".nvmrc",
+        ".python-version",
+    ];
+    if NAMES.contains(&name.as_str()) || name.starts_with(".env") {
+        return true;
+    }
+    if name.starts_with("requirements") && name.ends_with(".txt") {
+        return true;
+    }
+    const EXT: [&str; 13] = [
+        "json",
+        "jsonc",
+        "json5",
+        "toml",
+        "yaml",
+        "yml",
+        "ini",
+        "cfg",
+        "conf",
+        "properties",
+        "env",
+        "csproj",
+        "tf",
+    ];
+    name.rsplit_once('.')
+        .is_some_and(|(_, ext)| EXT.contains(&ext))
+}
+
 /// The decisions the code itself left behind (ENGINE.md §5.2).
 ///
 /// Every lexical rule for noticing that a decision was replaced runs out at the same
@@ -264,6 +453,23 @@ const MAX_VALUE_FILES: usize = 3;
 /// because its value is not in the diff.
 ///
 /// Write path only. Read hooks never run git.
+/// A seam for one test (`dropped_values.rs`): between the pass's read and its write, say so
+/// and wait until told to go on, so that an ingest can be run exactly there. Debug builds
+/// only, and only when the variable names a directory.
+fn hold_for_a_test() {
+    #[cfg(debug_assertions)]
+    if let Ok(dir) = std::env::var("MUNINN_TEST_HOLD_COMMIT_PASS") {
+        let dir = std::path::Path::new(&dir);
+        let _ = std::fs::write(dir.join("read"), "");
+        for _ in 0..600 {
+            if dir.join("go").exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+}
+
 pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Result<usize> {
     let root = paths.source_root();
     let since_ms: i64 = db
@@ -340,7 +546,11 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
             commits.push(Commit {
                 hash: hash.chars().take(7).collect(),
                 // the record is dated when the code changed, not when Muninn noticed
-                created_at: ct.parse::<i64>().map(|s| s * 1000).unwrap_or(now),
+                created_at: ct
+                    .parse::<i64>()
+                    .ok()
+                    .and_then(|s| muninn_core::db::sane_created_at(s.saturating_mul(1000), now))
+                    .unwrap_or(now),
                 ..Commit::default()
             });
             continue;
@@ -383,27 +593,45 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         }
     }
     close_hunk(&mut commits, &mut hunk, &file);
-    commits.retain(|c| !c.removed.is_empty());
+    // a change that was reverted did not happen, and the revert only puts back what was
+    let skip = reverted_or_reverts(db)?;
+    commits.retain(|c| !c.removed.is_empty() && !skip.contains(&c.hash));
     if commits.is_empty() {
         return Ok(0);
     }
+    // The pass opens with its event and its read of the active records in one transaction
+    // (`db::open_pass`): a record an agent's prompt retired before this is not in the read, and
+    // the event keeps the undo of that prompt from giving it back; one retired after it is in
+    // the read. (`muninn-capture`, `agent/undo.rs`.)
+    //
     // the values the store actually holds, so the diff's vocabulary is never the subject
-    let live: Vec<(i64, String, i64)> = {
-        let mut st = db.conn.prepare(
-            "SELECT id, object, created_at FROM record WHERE invalid=0 AND length(body) <= 700 AND ( \
+    let live: Vec<(i64, String, i64, bool)> = muninn_core::db::open_pass(
+        db,
+        "commits",
+        true,
+        |tx| {
+            let mut st = tx.prepare(
+            "SELECT id, object, created_at, kind = 'decision' FROM record WHERE invalid=0 AND length(body) <= 700 AND ( \
                  (kind='decision' AND origin IN ('user_said','review_accepted')) \
                  OR kind='episode') \
              ORDER BY created_at DESC, id DESC LIMIT 400",
         )?;
-        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-        rows.flatten().collect()
-    };
+            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+            Ok(rows.flatten().collect())
+        },
+    )?;
+    // One hunk is evidence about one value, and it goes to one statement: the newest decision
+    // that named it, or failing one the newest episode (records are walked decisions first,
+    // each newest first). 1.2.0 let a single hunk retire 55 records on one store.
+    let mut used: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     // every content word of the statement, not only the ones that look like a product name —
     // `nock` and `bash` are values too, and nothing about their spelling says so — with the
     // name-shaped ones kept apart, because they are exempt from the commonness test below
     let words_of: Vec<(i64, Vec<String>, Vec<String>)> = live
         .iter()
-        .map(|(id, obj, _)| {
+        .filter(|(_, _, _, d)| *d)
+        .chain(live.iter().filter(|(_, _, _, d)| !*d))
+        .map(|(id, obj, _, _)| {
             (
                 *id,
                 muninn_capture::extract::topic_words(obj),
@@ -413,21 +641,45 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         .collect();
     let object_of = |id: i64| -> String {
         live.iter()
-            .find(|(i, _, _)| *i == id)
-            .map(|(_, o, _)| o.clone())
+            .find(|(i, _, _, _)| *i == id)
+            .map(|(_, o, _, _)| o.clone())
             .unwrap_or_default()
     };
     let created_of = |id: i64| -> i64 {
         live.iter()
-            .find(|(i, _, _)| *i == id)
-            .map_or(0, |(_, _, c)| *c)
+            .find(|(i, _, _, _)| *i == id)
+            .map_or(0, |(_, _, c, _)| *c)
     };
-    let mut n = 0;
     let mut gone_cache: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     let mut common_cache: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
-    let tx = db.write_tx()?;
+    // The work, with no transaction open: which records the commits speak about. It asks git
+    // up to two questions a record (`git grep`, tens of milliseconds each on Windows), and
+    // until now it asked them inside the closing transaction, so a `Stop` that met a long
+    // `maintain` waited out its 700 ms and failed with `database is locked` (WP-19). What it
+    // decides is kept as a plan and the transaction below only writes it.
+    //
+    // A statement the plan retires takes the episodes of its turns with it, so those are
+    // marked here as they will be retired there: they claim no hunk and write no observation.
+    let mut planned: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut plan: Vec<Retirement> = Vec::new();
+    let episodes_of_its_turns = format!(
+        "SELECT id FROM record WHERE invalid=0 AND {} AND length(body) <= 700 AND kind='episode'",
+        muninn_capture::ingest::turns_of("?1")
+    );
     for (id, words, names) in &words_of {
+        // retired earlier in this pass, as the episode of a turn whose decision went, or by
+        // something else since the read
+        let still_live: bool = !planned.contains(id)
+            && db
+                .conn
+                .query_row("SELECT invalid = 0 FROM record WHERE id=?1", [id], |r| {
+                    r.get(0)
+                })
+                .unwrap_or(false);
+        if !still_live {
+            continue;
+        }
         // Two kinds of evidence, either of which is enough.
         //
         // A **swap**: one line became one line, the old value was on the first and is not on
@@ -451,12 +703,30 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
         let born = created_of(*id);
         let later = || commits.iter().filter(|c| c.created_at > born);
         let quantities = muninn_capture::extract::quantity_slots(&object_of(*id));
-        let swap = later().find_map(|c| {
-            let sw = c.swaps.iter().find(|sw| {
-                words
-                    .iter()
-                    .any(|w| sw.out.contains(w) && !sw.inn.contains(w))
-                    || {
+        // WP-02. A swap speaks only when the hunk is a value changing: a line of a manifest or
+        // a configuration file, or a quantity in its slot. Any other one-line hunk is prose or
+        // code being rewritten, and 1.2.0 read those too.
+        //
+        // An episode still takes part. The analysis proposed decisions only; on a design grid
+        // in loop 8's shape where the old value survives in another file and the statement was
+        // not typed as a decision, that left six of eight such statements active and served
+        // (24/24 retired on 1.2.0, 18/24 with decisions only), and the config-file guard alone
+        // already keeps a prose edit out. Decisions go first, so an episode is chosen only when
+        // no decision named the value.
+        let swap = commits
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.created_at > born)
+            .find_map(|(ci, c)| {
+                let (si, sw) = c.swaps.iter().enumerate().find(|(si, sw)| {
+                    if used.contains(&(ci, *si)) {
+                        return false;
+                    }
+                    let value = is_config_file(&sw.file)
+                        && words
+                            .iter()
+                            .any(|w| sw.out.contains(w) && !sw.inn.contains(w));
+                    value || {
                         let (was, now) = (
                             muninn_capture::extract::quantity_slots(&sw.was),
                             muninn_capture::extract::quantity_slots(&sw.line),
@@ -466,9 +736,11 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
                                 && now.iter().any(|(u, n)| u == unit && n != num)
                         })
                     }
-            })?;
-            Some((c, sw))
-        });
+                })?;
+                Some((ci, si, c, sw))
+            });
+        let claim = swap.map(|(ci, si, _, _)| (ci, si));
+        let swap = swap.map(|(_, _, c, sw)| (c, sw));
         let (commit, gone) = match &swap {
             // the word that went — or, on the quantity path where nothing went, the unit,
             // which is the slot. `unwrap_or(&words[0])` would have been an eager index into a
@@ -534,80 +806,170 @@ pub fn capture_dropped_values(paths: &ProjectPaths, db: &Db) -> muninn_core::Res
                     && w.iter().any(|w| added.contains(w) && !words.contains(w))
             })
             .map(|(i, _, _)| *i);
-        n += tx.execute(
-            "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
-             WHERE id=?1 AND invalid=0",
-            rusqlite::params![id, heir],
+        // What the file now holds, whether or not anyone said it: it now holds this line, and
+        // that is an observation with a commit behind it, not a guess — `commit_linked`, trust
+        // 2, anchored to the file, keyed on the retired decision's own topic words so the
+        // question that used to reach the old answer reaches this one. Written only when a
+        // swap retires something, so a repository's ordinary churn creates nothing. It is the
+        // heir of what it retired when no statement is (WP-12): 1.2.0 wrote it and linked
+        // nothing to it, so 175 retirements on one store pointed at no record at all.
+        let observation = swap.as_ref().map(|(_, sw)| {
+            // every word the swap took out, not only the one that matched first:
+            // `code_tokens` emits a hyphenated value both joined and split, so
+            // `async-std` contributes `async` and `std`, and filtering on the single
+            // `gone` word left keys like `said:change:runtime std` — half the retired
+            // value, as the topic of the record that replaced it.
+            let topic: Vec<&str> = words
+                .iter()
+                .filter(|w| *w != gone && !(sw.out.contains(w) && !sw.inn.contains(w)))
+                .map(String::as_str)
+                .collect();
+            let object = muninn_core::sanitize::truncate_chars(&sw.line, 160).to_string();
+            let body = muninn_capture::redact::redact(&format!(
+                "commit {}: {} now reads {}\n",
+                commit.hash, sw.file, object
+            ));
+            let subject = format!("said:change:{}", topic.join(" "));
+            let hash = blake3::hash(format!("decision|{subject}|is|{object}|{body}").as_bytes())
+                .to_hex()
+                .to_string();
+            Observation {
+                subject,
+                object,
+                body,
+                file: sw.file.clone(),
+                commit: commit.hash.clone(),
+                hash,
+                created_at: commit.created_at,
+            }
+        });
+        let via = match &swap {
+            Some(_) => format!("swap:{}", commit.hash),
+            None => format!("gone:{gone}"),
+        };
+        if let Some(c) = claim {
+            used.insert(c);
+        }
+        planned.insert(*id);
+        // The same turn's literal episode states it too, and serving that would put the
+        // dropped value back in front of the agent. Every turn that stated it: a restatement
+        // keeps the turns it moved away from.
+        if let Ok(mut st) = db.conn.prepare_cached(&episodes_of_its_turns) {
+            if let Ok(rows) = st.query_map([id], |r| r.get::<_, i64>(0)) {
+                planned.extend(rows.flatten());
+            }
+        }
+        plan.push(Retirement {
+            id: *id,
+            heir,
+            observation,
+            via,
+        });
+    }
+    hold_for_a_test();
+    // The pass closes in one transaction (`db::close_pass`) that only writes the plan. A record
+    // of the read that is no longer live when it opens was retired during the work by something
+    // else, a worker's prompt for one, and the pass cannot judge it any more: that alone leaves
+    // the closing event, which keeps the undo of that prompt from giving the record back to a
+    // pass that will not see it again.
+    muninn_core::db::close_pass(db, "commits", |tx| {
+        let read: Vec<String> = live.iter().map(|(id, ..)| id.to_string()).collect();
+        let gone_during_the_work: bool = tx.query_row(
+            &format!(
+                "SELECT EXISTS(SELECT 1 FROM record WHERE invalid = 1 AND id IN ({}))",
+                read.join(",")
+            ),
+            [],
+            |r| r.get(0),
         )?;
-        // the same turn's literal episode states it too, and serving that would put the
-        // dropped value back in front of the agent. So does a record typed from the same
-        // sentence. A typed record of that turn that does not name the value is a separate
-        // statement, and nothing here says it stopped holding.
-        let tref: Option<String> = tx
-            .query_row("SELECT transcript_ref FROM record WHERE id=?1", [id], |r| {
-                r.get(0)
-            })
-            .ok()
-            .flatten();
-        if let Some(tref) = tref {
-            tx.execute(
-                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2 \
-                 WHERE invalid=0 AND transcript_ref=?1 AND length(body) <= 700                    AND (kind='episode' OR instr(lower(body), ?3) > 0)",
-                rusqlite::params![tref, heir, gone],
-            )?;
-        }
-        if let Some(h) = heir {
-            muninn_capture::ingest::inherit_topic(&tx, h)?;
-        }
-        {
-            // What the file now holds, whether or not anyone said it: it now holds this line, and that is
-            // an observation with a commit behind it, not a guess — `commit_linked`, trust 2,
-            // anchored to the file, keyed on the retired decision's own topic words so the
-            // question that used to reach the old answer reaches this one. Written only when a
-            // swap actually retired something, so a repository's ordinary churn creates
-            // nothing: at most one record per retirement.
-            {
-                if let Some((_, sw)) = &swap {
-                    // every word the swap took out, not only the one that matched first:
-                    // `code_tokens` emits a hyphenated value both joined and split, so
-                    // `async-std` contributes `async` and `std`, and filtering on the single
-                    // `gone` word left keys like `said:change:runtime std` — half the retired
-                    // value, as the topic of the record that replaced it.
-                    let topic: Vec<&str> = words
-                        .iter()
-                        .filter(|w| *w != gone && !(sw.out.contains(w) && !sw.inn.contains(w)))
-                        .map(String::as_str)
-                        .collect();
-                    let object = muninn_core::sanitize::truncate_chars(&sw.line, 160).to_string();
-                    let body = muninn_capture::redact::redact(&format!(
-                        "commit {}: {} now reads {}\n",
-                        commit.hash, sw.file, object
-                    ));
-                    let subject = format!("said:change:{}", topic.join(" "));
-                    let hash =
-                        blake3::hash(format!("decision|{subject}|is|{object}|{body}").as_bytes())
-                            .to_hex()
-                            .to_string();
+        let mut n = 0;
+        for r in &plan {
+            let still_live: bool = tx
+                .query_row(
+                    "SELECT invalid = 0 FROM record WHERE id=?1",
+                    [r.id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+            if !still_live {
+                continue;
+            }
+            let observed: Option<i64> = match &r.observation {
+                Some(o) => {
                     tx.execute(
                         "INSERT OR IGNORE INTO record(kind, subject, relation, object, body, origin, trust, anchor_path, session_id, transcript_ref, dedup_hash, created_at) \
                          VALUES('decision', ?1, 'is', ?2, ?3, 'commit_linked', 2, ?4, 'git', ?5, ?6, ?7)",
                         rusqlite::params![
-                            subject,
-                            object,
-                            body,
-                            sw.file,
-                            format!("git:{}", commit.hash),
-                            hash,
-                            commit.created_at
+                            o.subject,
+                            o.object,
+                            o.body,
+                            o.file,
+                            format!("git:{}", o.commit),
+                            o.hash,
+                            o.created_at
                         ],
                     )?;
+                    tx.query_row(
+                        "SELECT id FROM record WHERE dedup_hash = ?1",
+                        [&o.hash],
+                        |row| row.get(0),
+                    )
+                    .ok()
                 }
+                None => None,
+            };
+            let heir = r.heir.or(observed);
+            n += tx.execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2, invalidated_via=?3 \
+                 WHERE id=?1 AND invalid=0",
+                rusqlite::params![r.id, heir, r.via],
+            )?;
+            // A typed record of that turn is a separate statement — an invariant or a
+            // correction typed from the same message is not the value — and nothing here says
+            // it stopped holding: 1.2.0 swept those too when they held the word, which is how a
+            // reworded README line retired an invariant.
+            tx.execute(
+                &format!(
+                    "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=?2, invalidated_via=?3 \
+                     WHERE invalid=0 AND {} AND length(body) <= 700 AND kind='episode'",
+                    muninn_capture::ingest::turns_of("?1")
+                ),
+                rusqlite::params![r.id, heir, r.via],
+            )?;
+            // a statement that replaced it takes over its topic; the observation already carries
+            // the topic minus the value that left, and inheriting would put that value back in
+            if let Some(h) = heir.filter(|h| Some(*h) != observed) {
+                muninn_capture::ingest::inherit_topic(tx, h)?;
             }
         }
-    }
-    tx.commit()?;
-    Ok(n)
+        Ok((n, n > 0 || gone_during_the_work))
+    })
 }
+
+/// What the commit pass decided for one record, with no transaction open, and writes when it
+/// closes: the record to retire, the statement that replaced it when one did, the line the
+/// file now holds when a swap said so, and the cause.
+struct Retirement {
+    id: i64,
+    heir: Option<i64>,
+    observation: Option<Observation>,
+    via: String,
+}
+
+/// The record a swap leaves: what the file now reads, with the commit behind it.
+struct Observation {
+    subject: String,
+    object: String,
+    body: String,
+    file: String,
+    commit: String,
+    hash: String,
+    created_at: i64,
+}
+
+/// Heartbeat rows dropped in one run from which the file is rewritten to give their pages
+/// back: about 1.3 MB of rows at the 128 bytes a row measured on one store.
+const HEARTBEATS_WORTH_COMPACTING: usize = 10_000;
 
 /// One writer at a time: a second `maintain` finds the lock held and exits at once.
 fn lock(paths: &ProjectPaths) -> Option<std::fs::File> {
@@ -650,11 +1012,22 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
     if let Err(e) = crate::delivery::fold_into_db(paths, &db) {
         output::err(&format!("muninn maintain: delivery fold: {e}"));
     }
+    // thirty days of heartbeat rows are kept; a first run on a store in use frees enough
+    // pages to be worth giving back, which the compaction further down does
+    match muninn_core::heartbeat::prune(&db) {
+        Ok(n) => {
+            st.heartbeats_dropped = n;
+            if n >= HEARTBEATS_WORTH_COMPACTING {
+                let _ = db.ask_for_compaction();
+            }
+        }
+        Err(e) => output::err(&format!("muninn maintain: heartbeat prune: {e}")),
+    }
     // resume: the last transcript from its watermark (a hook that expired left it)
     if let Ok(Some(p)) = db.meta_get("last_transcript_path") {
         let p = std::path::PathBuf::from(p);
         if p.is_file() {
-            match muninn_capture::ingest::ingest_transcript_with(&db, &p, "resume", Some(paths)) {
+            match crate::sessions::ingest_one(&db, &p, "resume", paths) {
                 Ok(s) => {
                     st.ingested += s.inserted;
                     st.projected += s.projected;
@@ -663,6 +1036,8 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             }
         }
     }
+    // before the log is read: the lines no reader can tell apart go first
+    st.session_lines_dropped = crate::sessions::compact(paths);
     st.ingested += crate::sessions::ingest_pending(paths, &db);
     match muninn_core::filter::validate_anchors(paths, &db) {
         Ok(n) => st.anchors_retired = n,
@@ -682,6 +1057,20 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
     match muninn_capture::ingest::restore_false_retirements(&db) {
         Ok(n) => st.records_restored = n,
         Err(e) => output::err(&format!("muninn maintain: restore: {e}")),
+    }
+    match muninn_capture::ingest::restore_retired_again(&db) {
+        Ok(n) => st.records_restored += n,
+        Err(e) => output::err(&format!("muninn maintain: restore again: {e}")),
+    }
+    // what `doctor` compares, mended here when the two disagree (WP-08)
+    match db.repair_fts_if_drifted() {
+        Ok(n) => st.index_rebuilt = n.is_some(),
+        Err(e) => output::err(&format!("muninn maintain: fts repair: {e}")),
+    }
+    // and what `doctor` reports as dated in the future, where the unit was wrong (R-17)
+    match db.repair_future_dates() {
+        Ok(n) => st.dates_repaired = n,
+        Err(e) => output::err(&format!("muninn maintain: dates: {e}")),
     }
     match capture_dropped_values(paths, &db) {
         Ok(n) => st.values_retired = n,
@@ -707,6 +1096,7 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
         + st.values_retired
         + st.summary_records_retired
         + st.records_restored
+        + st.dates_repaired
         > 0
         || db
             .meta_get("records_changed_since_project")
@@ -723,26 +1113,17 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             Err(e) => output::err(&format!("muninn maintain: project: {e}")),
         }
     }
-    if let Err(e) = muninn_core::cue::trim_context_log(paths) {
-        output::err(&format!("muninn maintain: turn context: {e}"));
-    }
+    // The turn-context log an earlier build's PostToolUse wrote (megabytes on a store in
+    // use): nothing reads it and nothing trims it any more.
+    let _ = std::fs::remove_file(paths.log_dir().join("turn_context.jsonl"));
     if let Ok(n) = muninn_core::cue::derive_missing(&db) {
         st.cues_derived = n;
     }
-    // symbol graph: only files whose content hash changed are re-parsed
-    match muninn_symbols::rebuild(&db, &paths.source_root(), false) {
-        Ok(s) => st.symbols_indexed = s.files_indexed,
-        Err(e) => output::err(&format!("muninn maintain: symbols: {e}")),
-    }
-    // the sidecar catches up here, never in a read hook; no model → stays cold
-    if let Ok(emb) = muninn_embed::Embedder::load_default() {
-        match muninn_embed::embed_pending(&db, &emb, false) {
-            Ok(s) => {
-                st.embedded = s.embedded;
-                st.variants_retired = s.variants_retired;
-            }
-            Err(e) => output::err(&format!("muninn maintain: embed: {e}")),
-        }
+    // once, after the migration that dropped the symbol graph: here and not on `Stop`,
+    // because it rewrites the file
+    match db.compact_if_pending() {
+        Ok(done) => st.store_compacted = done,
+        Err(e) => output::err(&format!("muninn maintain: compact: {e}")),
     }
     let _ = db.record_quick_check(3_600_000);
     // as on `Stop`: recompiled when a source file changed, never applied
@@ -751,13 +1132,14 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
             output::err(&format!("muninn maintain: compile: {e:#}"));
         }
     }
+    db.fold_log();
     st.ms = t0.elapsed().as_millis();
     if json {
         output::json(&st);
     } else {
         output::out(&format!(
-            "maintain: {} ingested, {} commit(s), {} revert(s), {} anchor(s) retired, {} file(s) projected, {} embedded ({} variant(s) retired), {} symbol file(s) indexed, {} ms",
-            st.ingested, st.commits, st.reverts, st.anchors_retired, st.projected, st.embedded, st.variants_retired, st.symbols_indexed, st.ms
+            "maintain: {} ingested, {} commit(s), {} revert(s), {} anchor(s) retired, {} file(s) projected, {} ms",
+            st.ingested, st.commits, st.reverts, st.anchors_retired, st.projected, st.ms
         ));
     }
     0
@@ -765,7 +1147,14 @@ pub fn run(paths: &ProjectPaths, json: bool) -> i32 {
 
 /// Spawn only if the last spawn is older than `min_age_s` (stamp file in the log dir,
 /// the one place a read hook may write).
-pub fn spawn_detached_throttled(paths: &ProjectPaths, min_age_s: u64) {
+///
+/// The process is started on another thread, which the caller joins before it exits: starting
+/// one costs about 2 ms on Windows (2.05 ms p50 on a copy of one store), and the hook has its
+/// reads to do meanwhile (R-10).
+pub fn spawn_detached_throttled(
+    paths: &ProjectPaths,
+    min_age_s: u64,
+) -> Option<std::thread::JoinHandle<()>> {
     let stamp = paths.log_dir().join("maintain.stamp");
     if let Ok(md) = std::fs::metadata(&stamp) {
         if let Ok(age) = md
@@ -773,12 +1162,13 @@ pub fn spawn_detached_throttled(paths: &ProjectPaths, min_age_s: u64) {
             .and_then(|m| m.elapsed().map_err(std::io::Error::other))
         {
             if age.as_secs() < min_age_s {
-                return;
+                return None;
             }
         }
     }
     let _ = std::fs::write(&stamp, now_ms().to_string());
-    spawn_detached(paths);
+    let paths = paths.clone();
+    Some(std::thread::spawn(move || spawn_detached(&paths)))
 }
 
 /// Start `muninn maintain` as a detached process (no inherited stdio, own process
@@ -875,6 +1265,33 @@ mod tests {
         assert_eq!(since_arg(0), None);
         assert_eq!(since_arg(999), None); // under a second is still no watermark
         assert_eq!(since_arg(10_000), Some("--since=@9".into())); // one second of overlap
+    }
+
+    /// A lock file is told by the shape of its name, not by containing `lock` somewhere.
+    #[test]
+    fn lock_files_are_not_config_and_names_that_merely_contain_lock_are() {
+        for lock in [
+            "Cargo.lock",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lockb",
+            "gradle.lockfile",
+            "packages.lock.json",
+            "go.sum",
+            "deps/poetry.lock",
+        ] {
+            assert!(!is_config_file(lock), "{lock}");
+        }
+        for cfg in [
+            "config/blocklist.json",
+            "clock.toml",
+            "deadlock-detector.yaml",
+            "Cargo.toml",
+            "package.json",
+        ] {
+            assert!(is_config_file(cfg), "{cfg}");
+        }
     }
 
     #[test]

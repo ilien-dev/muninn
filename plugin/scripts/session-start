@@ -39,13 +39,23 @@ case "$bin" in
     # The extensionless copy the old check left behind, found by its exact name (`-e` would
     # match muninn.exe too). It is a Windows binary, starts with MZ, and nothing installs one
     # there on purpose: it becomes our marked muninn.exe, or goes if one already exists.
-    if ls -A "$(dirname "$link")" 2>/dev/null | grep -qx muninn &&
-       [ "$(head -c 2 "$link" 2>/dev/null)" = MZ ]; then
-      if ls -A "$(dirname "$link")" | grep -qx muninn.exe; then rm -f "$link"
-      else mv -f "$link" "$link.exe" && : > "$mark"; fi
-    fi 2>/dev/null || true
+    #
+    # Everything a session with the binary and an up-to-date copy goes through here is a
+    # shell builtin. Starting a program is slow under Git Bash, and this script started
+    # three on every session start (`dirname`, `ls`, `grep`): 60.1 ms for the script with
+    # them and 32.4 ms without, against 6.7 ms for the binary it ends in (p50, 30 runs
+    # each). The exact name is found by a glob,
+    # which reads the directory's real names; with no such file the pattern stays as written.
+    dir="${link%/*}"
+    for legacy in "${link%n}"[n]; do
+      case "$legacy" in *']') break ;; esac
+      if [ "$(head -c 2 "$legacy" 2>/dev/null)" = MZ ]; then
+        if ls -A "$dir" | grep -qx muninn.exe; then rm -f "$legacy"
+        else mv -f "$legacy" "$link.exe" && : > "$mark"; fi
+      fi
+    done 2>/dev/null || true
     if [ ! -e "$link.exe" ] || { [ -e "$mark" ] && [ "$bin" -nt "$link.exe" ]; }; then
-      { mkdir -p "$(dirname "$link")" && cp -f "$bin" "$link.exe" && : > "$mark"; } 2>/dev/null || true
+      { mkdir -p "$dir" && cp -f "$bin" "$link.exe" && : > "$mark"; } 2>/dev/null || true
     fi ;;
   *)
     if [ -L "$link" ] || [ ! -e "$link" ]; then
