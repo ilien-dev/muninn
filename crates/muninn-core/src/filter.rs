@@ -43,32 +43,58 @@ pub fn file_hash(root: &Path, rel: &str) -> Option<String> {
 /// `anchor_hash` is retired with `anchor_changed`. The new value is never guessed
 /// [K11]. Records whose file is gone are retired the same way. Returns the count.
 pub fn validate_anchors(paths: &ProjectPaths, db: &Db) -> Result<usize> {
-    let mut stmt = db.conn.prepare(
-        "SELECT id, anchor_path, anchor_hash FROM record \
-         WHERE invalid = 0 AND anchor_path IS NOT NULL AND anchor_hash IS NOT NULL \
-         AND kind IN ('decision','invariant','claim','correction')",
-    )?;
-    let rows: Vec<(i64, String, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-        .filter_map(|r| r.ok())
-        .collect();
+    validate_anchors_with(paths, db, || {})
+}
+
+/// The validator, with something run between its read and its write (a test's seam).
+///
+/// It opens by reading the anchored active records, hashes their files with no transaction
+/// open, and closes by retiring the ones whose file no longer matches. A record is judged
+/// only against a hash taken after the record was read, so one ingested during the work, with
+/// the hash of the file as it is then, is not judged at all in this run; and a record is
+/// retired at the close only if it still carries the hash that was read, so one re-anchored
+/// during the work is left alone. No event on opening: every run reads every active anchored
+/// record, so one given back later is judged by the next run.
+pub(crate) fn validate_anchors_with(
+    paths: &ProjectPaths,
+    db: &Db,
+    during_the_work: impl FnOnce(),
+) -> Result<usize> {
+    let rows: Vec<(i64, String, String)> = crate::db::open_pass(db, "anchors", false, |tx| {
+        let mut stmt = tx.prepare(
+            "SELECT id, anchor_path, anchor_hash FROM record \
+             WHERE invalid = 0 AND anchor_path IS NOT NULL AND anchor_hash IS NOT NULL \
+             AND kind IN ('decision','invariant','claim','correction')",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    })?;
     let mut cache: HashMap<String, Option<String>> = HashMap::new();
-    let mut retired = 0usize;
-    let tx = db.write_tx()?;
-    for (id, path, hash) in rows {
-        let now = cache
-            .entry(path.clone())
-            .or_insert_with(|| file_hash(&paths.source_root(), &path))
-            .clone();
-        if now.as_deref() != Some(hash.as_str()) {
-            tx.execute(
-                "UPDATE record SET invalid = 1, invalid_reason = 'anchor_changed' WHERE id = ?1 AND invalid = 0",
-                [id],
+    let changed: Vec<(i64, String)> = rows
+        .into_iter()
+        .filter(|(_, path, hash)| {
+            let now = cache
+                .entry(path.clone())
+                .or_insert_with(|| file_hash(&paths.source_root(), path));
+            now.as_deref() != Some(hash.as_str())
+        })
+        .map(|(id, _, hash)| (id, hash))
+        .collect();
+    during_the_work();
+    let retired = crate::db::close_pass(db, "anchors", |tx| {
+        let mut retired = 0usize;
+        for (id, hash) in &changed {
+            retired += tx.execute(
+                "UPDATE record SET invalid = 1, invalid_reason = 'anchor_changed' \
+                 WHERE id = ?1 AND invalid = 0 AND anchor_hash = ?2",
+                rusqlite::params![id, hash],
             )?;
-            retired += 1;
         }
-    }
-    tx.commit()?;
+        Ok((retired, !changed.is_empty()))
+    })?;
     if retired > 0 {
         db.meta_set("records_changed_since_project", "1")?;
     }
@@ -78,11 +104,32 @@ pub fn validate_anchors(paths: &ProjectPaths, db: &Db) -> Result<usize> {
 
 /// Explicit revocation by a person: retained, never served. `reason` is free text kept
 /// in the retired row's body tail? No — the body is literal; the reason goes to meta.
+///
+/// A record that is retired already is left exactly as it is, and the answer is "no" as it
+/// always was. One thing is written beside it when a replacement holds it retired: that the
+/// person revoked it, and when (`agent_retired`, `held_by` -1, with the newest record and
+/// journal row of that moment). If what replaced it turns out to be an agent's prompt read as
+/// the user's, the undo of that prompt does not give the record back (`muninn-capture`,
+/// `agent/undo.rs`). Nothing else reads the note.
 pub fn revoke(db: &Db, id: i64, reason: &str) -> Result<bool> {
-    let n = db.conn.execute(
+    let tx = db.write_tx()?;
+    let n = tx.execute(
         "UPDATE record SET invalid = 1, invalid_reason = 'revoked' WHERE id = ?1 AND invalid = 0",
         [id],
     )?;
+    if n == 1 {
+        // only a revoke that retired something: a mistyped id blocks nothing
+        crate::db::note_event(&tx, "revoke")?;
+    } else {
+        tx.execute(
+            "INSERT OR REPLACE INTO agent_retired(record_id, held_by, statement, journal) \
+             SELECT id, -1, (SELECT coalesce(max(id), 0) FROM record), \
+                    (SELECT coalesce(max(id), 0) FROM restatement) \
+             FROM record WHERE id = ?1 AND invalid = 1 AND invalid_reason = 'superseded'",
+            [id],
+        )?;
+    }
+    tx.commit()?;
     if n == 1 {
         db.meta_set(
             &format!("revoked:{id}"),
@@ -153,16 +200,85 @@ pub fn lineage(db: &Db, id: i64) -> Result<Vec<(i64, Option<String>)>> {
 /// Active records that share (subject, relation) with `id` but hold a different
 /// object: an unresolved conflict [N4]. Both are served, both marked; ranking never
 /// picks one.
+///
+/// So are two active decisions that ingest marked as disagreeing ([`mark_conflict`]): an
+/// older one read after a later one that would have replaced it by its words.
 pub fn conflicts_of(db: &Db, id: i64) -> Result<Vec<i64>> {
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn.prepare_cached(
         "SELECT o.id FROM record r JOIN record o ON o.subject = r.subject AND o.relation = r.relation AND o.kind = r.kind \
          WHERE r.id = ?1 AND o.id <> r.id AND o.invalid = 0 AND o.object <> r.object AND r.kind <> 'episode' ORDER BY o.id",
     )?;
-    let ids: Vec<i64> = stmt
+    let mut ids: Vec<i64> = stmt
         .query_map([id], |r| r.get(0))?
         .filter_map(|r| r.ok())
         .collect();
+    for other in marked_conflicts(db, id)? {
+        if !ids.contains(&other) {
+            ids.push(other);
+        }
+    }
+    ids.sort_unstable();
     Ok(ids)
+}
+
+fn conflict_key(id: i64) -> String {
+    format!("conflict:{id}")
+}
+
+/// The active records `id` was marked as disagreeing with, while `id` is active itself. The
+/// mark is a `meta` row a record, read by its primary key: one probe for a record that has
+/// none, which is every record but a few.
+pub fn marked_conflicts(db: &Db, id: i64) -> Result<Vec<i64>> {
+    let listed: Option<String> = match db.conn.query_row(
+        "SELECT value FROM meta WHERE key = ?1",
+        [conflict_key(id)],
+        |r| r.get(0),
+    ) {
+        Ok(v) => Some(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => return Err(e.into()),
+    };
+    let Some(listed) = listed else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    let mut active = db.conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM record a, record b WHERE a.id = ?1 AND b.id = ?2 \
+         AND a.invalid = 0 AND b.invalid = 0)",
+    )?;
+    for other in listed.split(',').filter_map(|i| i.parse::<i64>().ok()) {
+        if active.query_row([id, other], |r| r.get::<_, bool>(0))? {
+            out.push(other);
+        }
+    }
+    Ok(out)
+}
+
+/// Mark two records as disagreeing, each with the other. Inside the caller's write
+/// transaction. The mark says nothing once either record is retired, and is never removed.
+pub fn mark_conflict(tx: &rusqlite::Connection, a: i64, b: i64) -> Result<()> {
+    for (x, y) in [(a, b), (b, a)] {
+        let key = conflict_key(x);
+        let have: Option<String> =
+            match tx.query_row("SELECT value FROM meta WHERE key = ?1", [&key], |r| {
+                r.get(0)
+            }) {
+                Ok(v) => Some(v),
+                Err(rusqlite::Error::QueryReturnedNoRows) => None,
+                Err(e) => return Err(e.into()),
+            };
+        let mut ids: Vec<String> = have
+            .map(|v| v.split(',').map(str::to_string).collect())
+            .unwrap_or_default();
+        if !ids.contains(&y.to_string()) {
+            ids.push(y.to_string());
+            tx.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+                rusqlite::params![key, ids.join(",")],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -193,9 +309,25 @@ mod tests {
         let h = file_hash(tmp.path(), "a.rs").unwrap();
         let a = ins(&db, "decision", "retry", "linear", Some(("a.rs", &h)));
         // untouched file: stays
+        let events = |what: &str| {
+            db.count(&format!(
+                "SELECT count(*) FROM store_event WHERE what = '{what}'"
+            ))
+            .unwrap()
+        };
         assert_eq!(validate_anchors(&paths, &db).unwrap(), 0);
+        assert_eq!(
+            events("anchors"),
+            0,
+            "a pass that retires nothing leaves no event"
+        );
         std::fs::write(tmp.path().join("a.rs"), "v2").unwrap();
         assert_eq!(validate_anchors(&paths, &db).unwrap(), 1);
+        assert_eq!(
+            events("anchors"),
+            1,
+            "the pass that retired a record left one"
+        );
         let reason: String = db
             .conn
             .query_row("SELECT invalid_reason FROM record WHERE id=?1", [a], |r| {
@@ -218,6 +350,169 @@ mod tests {
         assert!(revoke(&db, d, "user said so").unwrap());
         assert!(conflicts_of(&db, c).unwrap().is_empty());
         assert!(!revoke(&db, d, "again").unwrap());
+        assert_eq!(
+            events("revoke"),
+            1,
+            "only the revoke that retired a record leaves an event"
+        );
+        assert!(!revoke(&db, 9999, "no such record").unwrap());
+        assert_eq!(events("revoke"), 1, "a mistyped id leaves none");
+        // A record a replacement holds retired is not touched and the answer is no, as it
+        // always was; that the person revoked it is noted beside it, for the undo of an
+        // agent's prompt to read.
+        assert!(!revoke(&db, b, "not this one either").unwrap());
+        let (invalid, reason, heir): (i64, String, i64) = db
+            .conn
+            .query_row(
+                "SELECT invalid, invalid_reason, invalidated_by FROM record WHERE id=?1",
+                [b],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((invalid, reason.as_str(), heir), (1, "superseded", c));
+        assert_eq!(events("revoke"), 1);
+        assert_eq!(
+            db.count("SELECT count(*) FROM agent_retired WHERE held_by = -1")
+                .unwrap(),
+            1,
+            "noted for b, not for the revoked d nor for the id that is no record"
+        );
+    }
+
+    /// The validator reads its records, then hashes, then retires. A record another session
+    /// writes during the hashing, anchored to a file as it is by then, is not judged against a
+    /// hash taken before it existed; and a record re-anchored during the hashing is not retired
+    /// on the hash it had when it was read. A record whose file did change is retired, and the
+    /// pass leaves its event.
+    #[test]
+    fn the_validator_judges_no_record_against_a_hash_older_than_the_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = ProjectPaths::from_root(tmp.path());
+        for d in paths.all_dirs() {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let db = Db::open(&paths.db_path(), Mode::ReadWrite).unwrap();
+        for f in ["a.rs", "b.rs", "c.rs"] {
+            std::fs::write(tmp.path().join(f), "v1").unwrap();
+        }
+        let hash = |f: &str| file_hash(tmp.path(), f).unwrap();
+        let changed = ins(&db, "decision", "one", "x", Some(("a.rs", &hash("a.rs"))));
+        let reanchored = ins(&db, "decision", "two", "y", Some(("b.rs", &hash("b.rs"))));
+        let untouched = ins(&db, "decision", "three", "z", Some(("c.rs", &hash("c.rs"))));
+        std::fs::write(tmp.path().join("a.rs"), "v2").unwrap();
+        std::fs::write(tmp.path().join("b.rs"), "v2").unwrap();
+        let mut late = 0;
+        let retired = validate_anchors_with(&paths, &db, || {
+            // during the hashing: c.rs is edited and a new record is anchored to it as it is
+            // now; the record on b.rs is anchored anew to b.rs as it is now
+            std::fs::write(tmp.path().join("c.rs"), "v3").unwrap();
+            late = ins(&db, "decision", "four", "w", Some(("c.rs", &hash("c.rs"))));
+            db.conn
+                .execute(
+                    "UPDATE record SET anchor_hash = ?1 WHERE id = ?2",
+                    rusqlite::params![hash("b.rs"), reanchored],
+                )
+                .unwrap();
+        })
+        .unwrap();
+        assert_eq!(retired, 1);
+        let invalid = |id: i64| -> i64 {
+            db.conn
+                .query_row("SELECT invalid FROM record WHERE id=?1", [id], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(
+            (
+                invalid(changed),
+                invalid(reanchored),
+                invalid(untouched),
+                invalid(late)
+            ),
+            (1, 0, 0, 0)
+        );
+        assert_eq!(
+            db.count("SELECT count(*) FROM store_event WHERE what = 'anchors'")
+                .unwrap(),
+            1
+        );
+        // the next run sees c.rs as it is now: the record read before the edit goes, the one
+        // written after it stays
+        assert_eq!(validate_anchors(&paths, &db).unwrap(), 1);
+        assert_eq!((invalid(untouched), invalid(late)), (1, 0));
+    }
+
+    /// `muninn revoke` on a record a replacement had retired changes nothing, and the episode
+    /// of that record's turn stays hidden: the read path hides it while the statement's reason
+    /// is `superseded` (`recall::stale_turns`).
+    #[test]
+    fn revoking_a_replaced_record_leaves_it_and_its_twin_as_they_were() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("m.db"), Mode::ReadWrite).unwrap();
+        let ins = |id: i64, kind: &str, text: &str, tref: Option<&str>| {
+            db.conn
+                .execute(
+                    "INSERT INTO record(id,kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at,transcript_ref) \
+                     VALUES(?1,?2,?3,'is',?4,?4,'user_said',3,'s',?3,1,?5)",
+                    rusqlite::params![id, kind, format!("k{id}"), text, tref],
+                )
+                .unwrap();
+        };
+        ins(1, "decision", "the pooler is pgpool", Some("t:1"));
+        ins(
+            2,
+            "episode",
+            "pooler pooler pooler pooler connection connection pooler pgpool",
+            Some("t:1"),
+        );
+        ins(
+            3,
+            "decision",
+            "the pooler is pgbouncer now, set by hand on every node",
+            None,
+        );
+        for i in 5..12 {
+            ins(
+                i,
+                "decision",
+                &format!("filler record number {i} about nothing"),
+                None,
+            );
+        }
+        db.conn
+            .execute(
+                "UPDATE record SET invalid=1, invalid_reason='superseded', invalidated_by=3, invalidated_via='said' WHERE id=1",
+                [],
+            )
+            .unwrap();
+        let terms = vec!["pooler".to_string(), "connection".to_string()];
+        let served = || -> Vec<i64> {
+            let mut ids: Vec<i64> =
+                crate::recall::recall(&db, &terms, 8, &std::collections::HashSet::new())
+                    .unwrap()
+                    .iter()
+                    .map(|h| h.id)
+                    .collect();
+            ids.sort_unstable();
+            ids
+        };
+        let before = served();
+        assert!(!before.contains(&2), "the twin is hidden: {before:?}");
+        assert!(!revoke(&db, 1, "again").unwrap(), "nothing to revoke");
+        let state: (i64, String, i64, String) = db
+            .conn
+            .query_row(
+                "SELECT invalid, invalid_reason, invalidated_by, invalidated_via FROM record WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(state, (1, "superseded".to_string(), 3, "said".to_string()));
+        assert_eq!(served(), before, "and the twin is still hidden");
+        assert_eq!(
+            db.count("SELECT count(*) FROM store_event").unwrap(),
+            0,
+            "a revoke that retired nothing leaves no event"
+        );
     }
 
     /// Every file that may read `record` directly, with the reason. A serving path is not on
@@ -243,12 +538,20 @@ mod tests {
         ),
         ("muninn-core/src/recall.rs", "the IDF denominator: a count"),
         (
-            "muninn-embed/src/lib.rs",
-            "write path: backfill, dedup and variant retirement",
-        ),
-        (
             "muninn-capture/src/ingest.rs",
             "write path: dedup, supersession, topic inheritance",
+        ),
+        (
+            "muninn-capture/src/agent.rs",
+            "write path: records typed from an agent's prompt are retired",
+        ),
+        (
+            "muninn-capture/src/agent/undo.rs",
+            "write path: what an agent's prompt retired is given back",
+        ),
+        (
+            "muninn-capture/src/remember.rs",
+            "write path: `muninn remember` finds the record a turn already has",
         ),
         ("muninn-cli/src/main.rs", "status counters"),
         ("muninn-cli/src/maintain.rs", "write path: revert detection"),
@@ -260,7 +563,15 @@ mod tests {
             "muninn-why/src/lib.rs",
             "muninn why --all, which prints RETIRED rows on purpose",
         ),
+        (
+            "muninn-why/src/es.rs",
+            "muninn why --all: the Spanish forms a retired record's words take, words only",
+        ),
         ("muninn-bench/src/main.rs", "offline harness"),
+        (
+            "muninn-bench/src/replay.rs",
+            "offline harness; rewinds a copy of a store to a prompt's moment",
+        ),
         (
             "muninn-bench/src/experiment.rs",
             "offline harness; audits retired deliveries",

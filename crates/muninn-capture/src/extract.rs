@@ -25,6 +25,34 @@ pub struct Candidate {
     pub end_offset: u64,
 }
 
+/// The words a person typed in this turn, as far as its structure tells; `None` when no person
+/// wrote it (a program, another session's agent, the harness's summary or a tagged wrapper).
+/// Of a dialog answer, the options picked, one a line: the questions and any preview are the
+/// agent's text. Of any other prompt, what is left once pastes, fenced blocks, blockquotes and
+/// long quotations are taken out; a pasted conversation is nobody's own words.
+pub fn persons_words(t: &Turn) -> Option<String> {
+    let up = t.user_prompt.trim();
+    if up.is_empty()
+        || t.automated
+        || t.agent_written
+        || is_tagged(up)
+        || crate::is_compaction_summary(up)
+    {
+        return None;
+    }
+    if t.answered {
+        static PICK: OnceLock<Regex> = OnceLock::new();
+        let pick = PICK.get_or_init(|| Regex::new("\"=\"([^\"]*)\"").unwrap());
+        let picks: Vec<&str> = pick
+            .captures_iter(up)
+            .filter_map(|c| c.get(1).map(|m| m.as_str()))
+            .collect();
+        return (!picks.is_empty()).then(|| picks.join("\n"));
+    }
+    let own = unquoted(up);
+    (!is_pasted_conversation(&own)).then_some(own)
+}
+
 /// Trust is a function of origin and nothing else [W3].
 pub fn trust_of(origin: &str) -> i64 {
     match origin {
@@ -77,9 +105,45 @@ fn asks_for_explanation(s: &str) -> bool {
     .is_match(s)
 }
 
-/// The user correcting something, which is not the user asking what you meant.
+/// The user correcting something, which is not the user asking what you meant, asking
+/// anything else, or reporting what the product does not let them do.
 fn is_correction(s: &str) -> bool {
-    correction_re().is_match(s) && !asks_for_explanation(s)
+    correction_re().is_match(s)
+        && !asks_for_explanation(s)
+        && !(crate::measure::on("correction_guard")
+            && (s.contains('?') || reports_what_is_not_allowed(s)))
+}
+
+/// A correction that opens with no negation: the person dislikes what the agent made, says it
+/// keeps getting something wrong, or asks for another language. In the review of 1.2.0's real
+/// use 0 of the 7 durable corrections of the agent were typed as one, and these were the shapes
+/// they took. A question is still not one. Off in the filters-only measurement arm.
+fn corrects_without_an_opener(s: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    !s.contains('?')
+        && R.get_or_init(|| {
+            Regex::new(
+                r"(?i)\b(?:no me (?:gust[oó]|gustaron|gusta|gustan|agrada|agradan|convenci[oó])|te sigues equivocando|sigues equivoc[aá]ndote|you keep getting|en (?:español|espanol|inglés|ingles)\b|in (?:spanish|english)\b)",
+            )
+            .unwrap()
+        })
+        .is_match(s)
+}
+
+/// "No me deja …", "No me permite …", "No veo …": a bare `no` that opens a report of what the
+/// product does not let the person do or does not show. In the review of 1.2.0's real use the
+/// bare-negation opener produced 10 correction records and none of them corrected the agent;
+/// the review counted 9 of its 18 correction records in reach of this guard and the question
+/// guard above, 1 of them one of the 4 that did correct the agent.
+fn reports_what_is_not_allowed(s: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)^\s*no\s+(?:me\s+|nos\s+|te\s+|se\s+)?(?:deja|dej[oó]|dejan|permite|permiti[oó]|permiten|veo|vemos|ve|aparece|aparecen|muestra|muestran|carga|cargan|funciona|funcionan)\b",
+        )
+        .unwrap()
+    })
+    .is_match(s)
 }
 
 fn correction_re() -> &'static Regex {
@@ -133,7 +197,7 @@ fn next_visible(b: &[u8], i: usize) -> Option<u8> {
         .copied()
 }
 
-fn split_sentences(s: &str) -> Vec<&str> {
+pub(crate) fn split_sentences(s: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let b = s.as_bytes();
@@ -189,6 +253,11 @@ fn split_sentences(s: &str) -> Vec<&str> {
 /// block and a `>` blockquote. The episode keeps the message whole — a literal excerpt is
 /// supposed to be literal; this is only about what may become a typed record.
 fn unquoted(s: &str) -> String {
+    let s = if crate::measure::on("pastes") {
+        without_pastes(s)
+    } else {
+        s.to_string()
+    };
     let mut out = String::new();
     let mut fenced = false;
     for line in s.lines() {
@@ -204,6 +273,32 @@ fn unquoted(s: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+/// Two more shapes a quotation takes inside a line: the block a harness wraps a long paste in
+/// (`<pasted_content …> … </pasted_content>`, to the end of the message when it is not closed),
+/// and a long inline quotation ("…" or “…”, forty characters or more). In the review of
+/// 1.2.0's real use 3 typed records came from these, all of them someone else's words.
+fn without_pastes(s: &str) -> String {
+    static PASTE: OnceLock<Regex> = OnceLock::new();
+    static QUOTE: OnceLock<Regex> = OnceLock::new();
+    let paste = PASTE.get_or_init(|| {
+        Regex::new(r"(?s)<pasted_content\b[^>]*>.*?(?:</pasted_content>|\z)").unwrap()
+    });
+    let quote = QUOTE.get_or_init(|| Regex::new("\"[^\"\\n]{40,}\"|“[^”\\n]{40,}”").unwrap());
+    let s = paste.replace_all(s, " ");
+    quote.replace_all(&s, " ").into_owned()
+}
+
+/// What the user wrote, with what they quoted taken out. An AskUserQuestion answer is left as it
+/// is: its `"question"="option"` pairs are quotations by their shape, the option is the
+/// person's pick, and no sentence of it is typed anyway (`answer_tests`).
+fn own_words(t: &Turn, up: &str) -> String {
+    if t.answered {
+        up.to_string()
+    } else {
+        unquoted(up)
+    }
 }
 
 /// Is this message a conversation pasted into it?
@@ -267,21 +362,40 @@ pub fn restates(a: &str, b: &str) -> bool {
     all > 0 && shared * 100 >= all * 10
 }
 
+/// The first eight bytes of a session id, or fewer: never cut inside a character. A harness
+/// writes an id in ASCII; `--session` and a hook's input can hold anything.
+pub(crate) fn sid_head(sid: &str) -> &str {
+    let mut end = sid.len().min(8);
+    while !sid.is_char_boundary(end) {
+        end -= 1;
+    }
+    &sid[..end]
+}
+
 fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
     let up = t.user_prompt.trim();
     // A program's prompt stays on record as an episode. It is nobody's decision, and trust 3
     // says a person stated it.
-    if up.is_empty() || t.automated || is_tagged(up) || crate::is_compaction_summary(up) {
+    // An agent's prompt, though logged in the user's role, is not the user either (`agent.rs`).
+    if up.is_empty()
+        || t.automated
+        || t.agent_written
+        || is_tagged(up)
+        || crate::is_compaction_summary(up)
+    {
         return;
     }
-    if is_correction(up) && up.chars().count() <= 1_500 {
+    if (is_correction(up)
+        || (crate::measure::on("correction_no_opener") && corrects_without_an_opener(up)))
+        && up.chars().count() <= 1_500
+    {
         let body = redact(&format!("user: {}\n", truncate_chars(up, 900)));
         out.push(Candidate {
             kind: "correction",
             ack: String::new(),
             subject: format!(
                 "correction:{}#{}",
-                &sid[..sid.len().min(8)],
+                sid_head(sid),
                 t.start_offset.max(t.index as u64)
             ),
             relation: "user_said".into(),
@@ -294,10 +408,13 @@ fn user_candidates(sid: &str, t: &Turn, out: &mut Vec<Candidate>) {
         });
     }
     // typed records come from what the user wrote, not from what they pasted
-    let own = unquoted(up);
+    let own = own_words(t, up);
     let own = own.trim();
     decision_candidates(t, own, out);
-    if asks_for_generated_text(own) || is_pasted_conversation(own) {
+    // An answer in AskUserQuestion carries the question, which is the agent's text: none of its
+    // sentences is a rule the user stated (`answer_tests`).
+    let answered = t.answered && crate::measure::on("question_text");
+    if answered || asks_for_generated_text(own) || is_pasted_conversation(own) {
         return;
     }
     for sent in split_sentences(own) {
@@ -1194,10 +1311,73 @@ fn states_decision(s: &str) -> bool {
         .is_some_and(|m| !denied(s, m.start()))
 }
 
+/// The person's pick in an AskUserQuestion dialog, kept as one decision with the question it
+/// answers: the literal text Claude Code hands back, `"question"="option"` pairs and all. The
+/// question is there for what the pick means; the record is one per dialog, and it replaces
+/// nothing (`ingest` skips supersession for an answer).
+///
+/// Only a dialog of two questions or more. A one-question dialog is mostly the agent asking
+/// leave to act now (rebuild, commit, wait): on usage-v4's design split, typing every dialog
+/// added 5 durable picks against 6 noise candidates, typing those of two questions or more 2
+/// against none. What decides is the dialog's shape, never its wording.
+fn answer_candidate(t: &Turn, up: &str) -> Option<Candidate> {
+    if up.matches("\"=\"").count() < 2 {
+        return None;
+    }
+    let words = topic_words(up);
+    if words.is_empty() {
+        return None;
+    }
+    let object = truncate_chars(up, 300).to_string();
+    Some(Candidate {
+        kind: "decision",
+        ack: t.assistant_text.clone(),
+        subject: format!("said:state:{}", words.join(" ")),
+        relation: "user_decision".into(),
+        object: redact(&object),
+        body: redact(&format!("user: {}\n", truncate_chars(up, 1_500))),
+        origin: "user_said",
+        anchor_path: None,
+        turn_index: t.index,
+        end_offset: t.end_offset,
+    })
+}
+
+/// The conditional of "must" and "should", "has to", "(do not) want" and "by default": how the
+/// person wants the product to behave, in the forms this person states it most. Measured in the
+/// review of 1.2.0's real use, on the human messages outside question dialogs, these four forms
+/// sat in 18 of 35 messages holding a durable statement and in 8 of 213 others; none was a cue.
+/// "I would like" (3 against 6) and a bare "I like" (0 against 3) are left out on the same
+/// count, and a first person "tengo que" is a report of a chore, not a rule.
+fn states_wish(s: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(?:deber[ií]a(?:n|mos)?|tendr[ií]a(?:n|mos)? que|tiene(?:n)? que|tenemos que|quiero que|no quiero|por defecto|should(?:n'?t)?|has to|have to|(?:don'?t|do not) want|i want|by default)\b",
+        )
+        .unwrap()
+    })
+    .find(s)
+    // "no quiero" carries its own negation; any other form with one in front says the opposite
+    .is_some_and(|m| m.as_str().to_lowercase().starts_with("no ") || !denied(s, m.start()))
+}
+
 fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
+    if t.answered && crate::measure::on("answer_pick") {
+        // the pairs are quotations by their shape: read them from the prompt itself
+        out.extend(answer_candidate(t, t.user_prompt.trim()));
+        return;
+    }
     let before = out.len();
     let mut sentence_change = false;
-    for sent in split_sentences(up) {
+    let mut wished = false;
+    // the sentences of an answered dialog are the question's, not the user's (see above)
+    let sentences = if t.answered && crate::measure::on("question_text") {
+        Vec::new()
+    } else {
+        split_sentences(up)
+    };
+    for sent in sentences {
         let n = sent.chars().count();
         // a sentence that ends in a colon introduces what follows and states nothing itself:
         // `Por condición de 540 registros:` was captured from this project's own store
@@ -1211,9 +1391,14 @@ fn decision_candidates(t: &Turn, up: &str, out: &mut Vec<Candidate>) {
         // one is decided against the store, in `supersede_quantity`.
         let bare_quantity =
             !quantity_slots(sent).is_empty() && words_outside_quantities(sent).len() <= 1;
-        if !(change || bare_quantity || states_decision(sent)) {
+        let by_cue = change || bare_quantity || states_decision(sent);
+        // a wish admits one sentence per message: a long message states the same wish in
+        // several, and every extra one is a fragment of it
+        let by_wish = !by_cue && !wished && crate::measure::on("wish") && states_wish(sent);
+        if !(by_cue || by_wish) {
             continue;
         }
+        wished |= by_wish;
         let words = topic_words(sent);
         // a one-word change that names something ("switch to ECharts") still counts: it refers
         // to what was said before it
@@ -1434,7 +1619,8 @@ fn commit_candidates(t: &Turn, out: &mut Vec<Candidate>) {
     }
 }
 
-fn norm_cmd(s: &str) -> String {
+/// The key a command's dead end is filed under (`cmd:<this>`).
+pub(crate) fn norm_cmd(s: &str) -> String {
     truncate_chars(&s.split_whitespace().collect::<Vec<_>>().join(" "), 120).to_string()
 }
 
@@ -2406,6 +2592,22 @@ mod paste_tests {
         let quoted = "> we switched from gzip to zstd last week\nis that still true";
         assert!(decisions(quoted).is_empty(), "{:?}", decisions(quoted));
 
+        // a paste the harness wraps, and a long inline quotation, are not the user's either
+        let wrapped = "Pegué la nota del proveedor: <pasted_content id=\"a1\"> Shipping rates must be quoted in kilograms from now on. </pasted_content> léela";
+        assert!(decisions(wrapped).is_empty(), "{:?}", decisions(wrapped));
+        let open = "Copio el correo: <pasted_content id=\"a2\"> Shipping rates must be quoted in kilograms";
+        assert!(decisions(open).is_empty(), "{:?}", decisions(open));
+        let inline = "Leí esto en el foro: \"the plugin always rewrites the lockfile when the mirror is offline\"";
+        assert!(decisions(inline).is_empty(), "{:?}", decisions(inline));
+        // an answer's pairs are quotations by their shape, and they are the person's pick
+        let pairs = "Your questions have been answered: \"¿Qué formato usamos para el catálogo de piezas?\"=\"CSV con cabecera\".";
+        let t = Turn {
+            user_prompt: pairs.into(),
+            answered: true,
+            ..Default::default()
+        };
+        assert_eq!(super::own_words(&t, pairs), pairs);
+
         // and the user's own sentence around a paste still counts
         let mixed = "let's switch to zstd for compression\n```\nsome log output\n```";
         assert!(
@@ -2475,6 +2677,59 @@ mod correction_tests {
             "Veo que dice que treesitter sera parte de la version 1.1 a pesar de que te dije que tiene que ser parte del MVP"
         ));
     }
+
+    /// A question is not a correction, whatever it opens with; nor is a report that the
+    /// product does not let the person do something or does not show it. Both open with the
+    /// same bare `no` and correct nothing the agent did.
+    #[test]
+    fn a_question_or_a_report_of_what_is_not_allowed_is_not_a_correction() {
+        assert!(!is_correction("no tenías que mover también el índice?"));
+        assert!(!is_correction(
+            "No me deja guardar el archivo cuando tiene espacios en el nombre"
+        ));
+        assert!(!is_correction(
+            "No me permite imprimir la factura en tamaño carta"
+        ));
+        assert!(!is_correction("No veo el botón de exportar en el menú"));
+        // a correction stays one
+        assert!(is_correction("No, eso no. Deja el índice donde estaba."));
+        assert!(is_correction(
+            "No uses tabuladores en los archivos de texto"
+        ));
+    }
+
+    fn corrections(msg: &str) -> usize {
+        let s = crate::model::Session {
+            turns: vec![crate::model::Turn {
+                user_prompt: msg.into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        super::extract(&s, "abcdef12")
+            .iter()
+            .filter(|c| c.kind == "correction")
+            .count()
+    }
+
+    /// A correction need not open with a negation: the person says they dislike what the
+    /// agent made, that it keeps getting something wrong, or asks for another language.
+    #[test]
+    fn a_correction_without_an_opening_cue_is_one() {
+        assert_eq!(
+            corrections("La tabla quedó bien, pero no me gustaron los bordes punteados."),
+            1
+        );
+        assert_eq!(
+            corrections("You keep getting the plural of the unit wrong in the labels."),
+            1
+        );
+        assert_eq!(
+            corrections("responde en inglés, es para el informe del cliente"),
+            1
+        );
+        assert_eq!(corrections("Me gusta cómo quedó, súbelo."), 0);
+    }
 }
 
 #[cfg(test)]
@@ -2502,5 +2757,110 @@ mod summary_tests {
         assert!(extract(&s, "abcdef12")
             .iter()
             .all(|c| c.origin != "user_said"));
+    }
+}
+
+#[cfg(test)]
+mod answer_tests {
+    use super::extract;
+    use crate::model::{Session, Turn};
+
+    fn answered(text: &str) -> Vec<super::Candidate> {
+        let s = Session {
+            turns: vec![Turn {
+                user_prompt: text.into(),
+                answered: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        extract(&s, "abcdef12")
+    }
+
+    /// The question of an AskUserQuestion dialog is the agent's text; only the pick is the
+    /// person's. No sentence of the question becomes a record of what the user said.
+    #[test]
+    fn no_sentence_of_the_question_is_typed_as_the_users() {
+        let c = answered(
+            "Your questions have been answered: \"La guía de estilo dice que nunca mezclemos dos \
+             tipografías. ¿Sigo con una sola?\"=\"Sí\". You can now continue with these answers in mind.",
+        );
+        let kinds: Vec<&str> = c.iter().map(|c| c.kind).collect();
+        assert!(!kinds.contains(&"invariant"), "{c:?}");
+        assert!(
+            c.iter()
+                .filter(|c| c.kind != "decision")
+                .all(|c| !c.object.contains("nunca mezclemos")),
+            "{c:?}"
+        );
+    }
+
+    /// The pick is the person's choice: one decision per dialog, holding the literal pairs so
+    /// that the option is read with the question it answers.
+    #[test]
+    fn a_pick_is_one_decision_with_the_question_it_answers() {
+        let c = answered(
+            "Your questions have been answered: \"¿Qué formato tiene el catálogo?\"=\"CSV con cabecera (Recomendado)\", \
+             \"¿Cada cuánto se publica?\"=\"Cada lunes\". You can now continue with these answers in mind.",
+        );
+        assert_eq!(c.len(), 1, "{c:?}");
+        assert_eq!(c[0].kind, "decision");
+        assert!(
+            c[0].body.contains("\"=\"CSV con cabecera (Recomendado)\""),
+            "{c:?}"
+        );
+        assert!(c[0].body.contains("\"=\"Cada lunes\""), "{c:?}");
+        // a one-question dialog is not typed
+        let one = answered(
+            "Your questions have been answered: \"¿Uso la fuente serif en los títulos?\"=\"No\". \
+             You can now continue with these answers in mind.",
+        );
+        assert!(one.is_empty(), "{one:?}");
+    }
+}
+
+#[cfg(test)]
+mod wish_tests {
+    use super::extract;
+    use crate::model::{Session, Turn};
+
+    fn decisions(msg: &str) -> Vec<String> {
+        let s = Session {
+            turns: vec![Turn {
+                user_prompt: msg.into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        extract(&s, "abcdef12")
+            .into_iter()
+            .filter(|c| c.kind == "decision")
+            .map(|c| c.object)
+            .collect()
+    }
+
+    /// The conditional of "must", "has to", "(do not) want" and "by default" state how the
+    /// product should behave as often as the indicative does, and none of them was a cue.
+    #[test]
+    fn a_wish_in_the_conditional_or_with_quiero_is_a_decision() {
+        for msg in [
+            "Los recibos deberían agruparse por mes en el resumen anual",
+            "La receta tiene que indicar los gramos de cada ingrediente",
+            "No quiero que el menú del viernes incluya mariscos",
+            "El envío estándar va por defecto en los pedidos nacionales",
+            "The export should keep the original file names",
+        ] {
+            assert_eq!(decisions(msg).len(), 1, "{msg}");
+        }
+        // a question stays a question
+        assert!(decisions("¿Debería agruparlos por mes en el resumen?").is_empty());
+        // one wish sentence per message
+        assert_eq!(
+            decisions(
+                "El resumen debería mostrar los gastos del mes. También debería ocultar los cancelados."
+            )
+            .len(),
+            1
+        );
     }
 }

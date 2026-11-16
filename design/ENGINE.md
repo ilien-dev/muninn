@@ -1,7 +1,9 @@
 # Muninn — especificación del motor de memoria
 
 Estado: enviado en 1.0.0. Fecha del diseño: 2026-09-12; las divergencias entre lo
-especificado y lo enviado están marcadas **Enviado** en su sección. Toda referencia `[X]`
+especificado y lo enviado están marcadas **Enviado** en su sección. Las de 2.0.0 salen de
+la segunda revisión de uso (usage-v4), y sus cifras están en
+`experiment/results/usage-v4/RESULTS.md` de `ilien-dev/muninn-experiments`. Toda referencia `[X]`
 apunta a `research/00-evidence-log.md`. Las cifras `[H*]` `[I*]` `[M2]` son mediciones
 propias.
 
@@ -69,6 +71,15 @@ Sin `t_evento`/`t_registro`/`t_invalidación` separados, sin "fuerza de evidenci
 estado "no demostrable". Todo eso era grano fino y `[X1]` demuestra que no paga. Si una
 medición futura lo pide, se añade entonces.
 
+**Enviado, a 2.0.0 (esquema 5):** `record` lleva además `invalidated_at` (cuándo se retiró) e
+`invalidated_via` (qué lo retiró: un commit, una reafirmación, el prompt de un agente
+descubierto después), y `invalid_reason` admite `cap`. Hay tablas nuevas al lado, ninguna en
+la ruta de lectura de un prompt: `record_turn` (los turnos en que se dijo un registro),
+`agent_task` y `turn_prompt` (solo hashes: reconocen el prompt que un agente le escribió a
+otro), `restatement`, `restatement_retired` y `agent_retired` (el diario que permite deshacer
+lo que hizo ese prompt) y `store_event`. Se fueron `record_vec` y las tablas del grafo de
+símbolos.
+
 ### 2.2 `cue` — condiciones de disparo permanentes (F3)
 
 | Columna | Tipo | Notas |
@@ -81,6 +92,12 @@ medición futura lo pide, se añade entonces.
 Índices: `(kind, key)`. Los globs `dir/**` se normalizan a prefijo en la escritura; los
 que no se pueden normalizar se guardan como `glob` y se evalúan aparte, porque un `GLOB`
 por fichero tocado cuesta 5,4x más `[M2]`.
+
+**Enviado, a 2.0.0:** `dir` y `symbol` ya no existen. En once tiendas reales ninguna de las
+79 534 filas del `fire_ledger` venía de una cue de directorio, símbolo, fichero o herramienta, y
+la build sin ellas devuelve los mismos ids en 150 de 150 prompts reproducidos (usage-v4, D). El
+CHECK admite `event`, `after`, `cooldown`, `keyword` y `glob`; la migración quita los grupos
+que tenían una cue de las dos clases retiradas. Lo que sigue describe 1.0.0.
 
 **Enviado, a 1.0.0:** el evaluador implementa `dir`, `symbol`, `event`, `after` y
 `keyword`. `glob` y `cooldown` siguen en el CHECK del esquema pero **no se evalúan**, así
@@ -161,7 +178,11 @@ Rust `[I1]`. Escala sublineal: 144x datos, 6x latencia `[H1]`.
 ## 3. Ruta de escritura (asíncrona, fuera del camino crítico)
 
 Disparada en `SessionEnd`, `Stop` y `PostToolUse` (este último solo para capturar
-señales de ejecución, no para escribir registros).
+señales de ejecución, no para escribir registros). **Enviado, a 2.0.0:** `PostToolUse` se
+retiró con las cues que alimentaba; escriben `Stop`, `SessionEnd`, `maintain` y el comando
+`muninn remember`, que guarda una frase del usuario cuando el agente la pasa y solo la da por
+suya (confianza 3) si está, palabra por palabra y como frase entera, en un turno que el
+usuario escribió en esa sesión.
 
 ```
 transcript_path ──► 1. extraer candidatos (reglas deterministas + patrones)
@@ -195,7 +216,9 @@ pierde datos: pierde tiempo.
 
 **Topes duros `[P5]`:**
 - `invariant` activos: ≤ 60 por proyecto. Al pasarse, el más antiguo sin `rationale_ref`
-  pasa a `invalid=1, reason=user` y se avisa.
+  pasa a `invalid=1, reason=user` y se avisa. **Enviado, a 2.0.0:** ya no se retira ninguno
+  por pasar de sesenta: el tope retiraba la regla más vieja por su edad, que no es evidencia
+  de que haya dejado de valer. El presupuesto de entrega acota lo que se muestra.
 - Registros activos totales: ≤ 20 000. Por encima, los `episode` más antiguos sin
   referencias entrantes se archivan (siguen en disco, salen del índice).
 - Un `record.body`: ≤ 2 000 caracteres. Lo que no cabe se queda en `transcript_ref`.
@@ -218,6 +241,14 @@ UserPromptSubmit ──► 0. heartbeat
                      9. formato: bloques tipados con procedencia (sección 6)
                     10. fire_ledger: una fila por cada disparo Y por cada silencio
 ```
+
+**Enviado, a 2.0.0:** los pasos 2, 3 y 6 no existen (sin contexto del turno, sin cues de
+directorio o símbolo, sin fusión). El prompt se responde con el léxico, y un bloque solo se
+sirve si contiene un tercio de los términos elegidos de la pregunta, con a lo sumo dos
+coincidencias además de las reglas, las correcciones y el registro más nuevo que la consulta
+alcanzó. En 68 prompts retenidos los bloques sin relación bajaron de 143 a 72 y los útiles de
+10 a 9 (usage-v4, C1). Un registro que el presupuesto dejó fuera se vuelve a ofrecer en la
+misma sesión.
 
 **Contratos:**
 
@@ -296,9 +327,8 @@ Gate 2 comparó contra no tener memoria (19/25 contra 2/25) y contra un control 
 longitud.
 
 ```
-[muninn:decision] 2026-09-14 · session 586574a9 · origin: user_said · trust 3
+[muninn:decision] #7 · 2026-09-14 · trust 3
 user: for the transport compression codec we go with zstd.
-  evidence: ~/.claude/projects/-home-ilien-Projects-muninn/586574a9.jsonl:8549213
 [muninn:invariant] … una regla que sigue en pie
 [muninn:deadend] … algo que se intentó y falló; no repetirlo a ciegas
 [muninn:correction] … un sitio donde te corrigieron
@@ -307,8 +337,9 @@ user: for the transport compression codec we go with zstd.
 
 ### 6.1 El catálogo, una vez por sesión
 
-`[muninn:catalog]` lista lo que hay en el registro: cada decisión, regla vigente y corrección
-activa, la más nueva primero, una línea cada una, con `replaces #n` leído de `invalidated_by` y
+`[muninn:catalog]` lista lo que hay en el registro: las reglas vigentes y las correcciones
+activas, después las decisiones, cada grupo con la más nueva primero (desde 2.0.0; antes era
+una sola lista por fecha), una línea cada una, con `replaces #n` leído de `invalidated_by` y
 `conflict` cuando otro registro activo la contradice. Un registro retirado aporta su id y nada
 de su texto, que es la regla que la línea de linaje de `why` ya seguía. Las entradas de log de
 commit quedan fuera, como en todo el camino de lectura.
@@ -340,9 +371,12 @@ con la misma clave se contradicen —se sirven los dos, nunca se elige por ranki
 `[muninn:unverified]` para una afirmación de un resumen de compactación que ningún código de
 salida respalda.
 
-Cada bloque lleva **el texto literal y su referencia** —la línea `evidence:` dice en qué
-transcripción y en qué byte abrirlo `[A2]`—; **procedencia y nivel de confianza** siempre
-`[K1]` `[W2]`; y va enmarcado como evidencia, nunca como instrucción:
+Cada bloque lleva **el texto literal y su referencia**. **Enviado, a 2.0.0:** en un bloque de
+hook la referencia es el id; la sesión, el origen y la línea `evidence:` (en qué transcripción
+y en qué byte abrirlo `[A2]`) las imprime `muninn show <id>`. Quitarlas bajó la entrega de
+436,9 a 305,1 tokens en los 17 prompts con los mismos ids (usage-v4, C2). El **nivel de
+confianza** va siempre `[K1]` `[W2]`; y el bloque va enmarcado como evidencia, nunca como
+instrucción:
 la memoria es la superficie epistémica y las instrucciones la imperativa. Ningún bloque
 puede contener texto que se parezca a un rol de sistema o de usuario — es la defensa
 contra M-CPE `[W2]`.
@@ -411,9 +445,11 @@ autoformalización publicada `[U1]`, no se inventa.
 
 ## 11. Salud del motor (P10)
 
-Health gate en `SessionStart`, una línea: `MUNINN 11/11 GREEN` o el nombre del fallo y su
-arreglo. Diez comprobaciones, todas aritmética sobre evidencia tipada, ninguna con
-modelo `[G3]`:
+Health gate en `SessionStart`, una línea: `MUNINN 9/9 GREEN` o el nombre del fallo y su
+arreglo (a 2.0.0 la línea cuenta nueve comprobaciones y `muninn doctor` lista trece: se fue
+la 10 y entraron fechas, linaje, registros que la frase de un agente dejó retirados y
+ficheros de evidencia que ya no están). La lista original, todas aritmética sobre evidencia
+tipada, ninguna con modelo `[G3]`:
 
 1. marca de agua de ingesta fresca; 2. heartbeats de todos los hooks esperados desde el
 último límite; 3. integridad del `.db` (`PRAGMA quick_check`); 4. FTS5 coherente con
@@ -439,6 +475,10 @@ diferida no es alarma, es "verificar en el siguiente límite".
 | Más de dos herramientas MCP | 0 operaciones voluntarias `[K1]`; peaje `[H2]` |
 | Respondedor de "por qué" **proactivo** | El respondedor enrutado sí está en el MVP (decisión del usuario), pero solo como herramienta **invocada** (`muninn why`, fase 4), nunca inyectado por hook; su suficiencia se mide `[K3]` |
 | Vectores en el `recall` de los hooks | El sidecar de embeddings sí está en el MVP (decisión del usuario), pero vive en la ruta de escritura asíncrona y alimenta solo a `muninn why` y a la detección de duplicados; nunca al hook `[I2]` `[V4]` |
+
+**Enviado, a 2.0.0:** el sidecar de embeddings se retiró. Ninguna de once tiendas reales tenía
+un vector, y `muninn why` responde igual sin él a las preguntas de usage-v2 (usage-v4, D). El
+grafo de símbolos se retiró con la misma lectura.
 
 Medido en la fase 3: el sidecar carga en 52 ms y codifica 200 textos en 8,5 ms; el kNN
 exacto es bit-idéntico en 1 000 repeticiones; sobre auto-recuperación no sube el

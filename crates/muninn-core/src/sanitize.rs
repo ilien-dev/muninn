@@ -101,6 +101,15 @@ fn fold_diacritic(c: char) -> Option<char> {
     Some(out)
 }
 
+/// `s` lowercased with Latin diacritics folded as `fts_term` folds them, every other character
+/// kept: text that a folded word can be compared with by `LIKE`.
+pub fn fold(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| c.to_lowercase())
+        .map(|c| fold_diacritic(c).unwrap_or(c))
+        .collect()
+}
+
 /// A single FTS5 MATCH token: alphanumerics and underscore only, lowercase, with Latin
 /// diacritics folded exactly as the index folds them. Anything else would need quoting,
 /// and quoting was the failure [Q3].
@@ -151,29 +160,6 @@ pub fn read_regular_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::
     }
     let mut buf = Vec::with_capacity(md.len().min(max_bytes) as usize);
     f.take(max_bytes).read_to_end(&mut buf)?;
-    Ok(from_bytes_lossy(&buf))
-}
-
-/// The last `max_bytes` of a regular file, from the first line that starts inside them: the
-/// tail of an append-only log, never a torn first line.
-pub fn read_regular_tail(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut f = std::fs::File::open(path)?;
-    let md = f.metadata()?;
-    if !md.is_file() {
-        return Err(std::io::Error::other("not a regular file"));
-    }
-    let start = md.len().saturating_sub(max_bytes);
-    f.seek(SeekFrom::Start(start))?;
-    let mut buf = Vec::with_capacity(md.len().min(max_bytes) as usize);
-    f.take(max_bytes).read_to_end(&mut buf)?;
-    if start > 0 {
-        let cut = buf
-            .iter()
-            .position(|b| *b == b'\n')
-            .map_or(buf.len(), |i| i + 1);
-        buf.drain(..cut);
-    }
     Ok(from_bytes_lossy(&buf))
 }
 

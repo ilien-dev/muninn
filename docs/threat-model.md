@@ -28,14 +28,19 @@ published attack succeeds 92.5 % of the time and endpoint defenders recalled 0 %
   a published sha256 and a keyless Sigstore signature.
   `plugin/scripts/install.sh` verifies the checksum always and the signature
   whenever `cosign` is installed. On Windows under Codex,
-  `plugin/scripts/session-start.ps1` does the download and verifies the sha256.
-- Codex hooks are shell-form by the harness's own design. `muninn init --codex`
+  `plugin/scripts/session-start.ps1` does the download and verifies the sha256; it is
+  started only when the plugin's binary is missing.
+- Codex hooks are shell-form by the harness's own design. `muninn init`
   writes the absolute binary path **single-quoted**, so a space or a metacharacter
   in it is literal, and refuses outright a path carrying a single quote or a
   control character, which quoting cannot make safe
-  (`init::shell_quote_binary`, tested in `init::tests`). On Windows, where Codex
-  runs `commandWindows` through `cmd.exe`, the path is double-quoted and a path
-  carrying `"`, `%` or a control character is refused (`init::cmd_quote_binary`).
+  (`init::shell_quote_binary`, tested in `init::tests`). On Windows Codex hands
+  `commandWindows` to the session's shell, PowerShell by default and `cmd.exe` when
+  there is none. A path made of letters, digits and `\ / : . _ - ~` is written bare,
+  any other inside `cmd /c "…"`, and a path carrying `"`, `%`, `$`, a backtick, one of
+  `& < > ( ) @ ^ |` or a control character is refused (`init::windows_program`).
+  `init` leaves alone a hooks file it cannot read as text, and merges with the hooks
+  a user already has.
 
 ## 2. Cross-context prompt injection through memory (X-CPE / M-CPE) [W2]
 
@@ -47,8 +52,26 @@ channel. The stored text may impersonate a system or user role.
 - Trust is derived from `origin`, never from wording [W3]. `agent_inferred` and
   `imported` records are trust 0 and are only delivered with an explicit
   provenance frame.
-- Every delivered block is framed as evidence ("origin: …, trust n"), never as
-  an instruction.
+- Every delivered block is framed as evidence (its kind, id, date and "trust n"),
+  never as an instruction. A prompt that an agent wrote for another agent, a line
+  the harness marks as not a person's, and a queued or scripted Codex message are
+  not recorded as the user's, whatever they say.
+- `muninn remember` is a second way to trust 3, and an agent runs it. It records a
+  statement as the user's only when all of this holds: the session is one the
+  session log names, with the transcript the log names for it; the statement is
+  one or more whole sentences of a single turn of that transcript, word for word;
+  and that turn is one a person wrote, by the same test ingest applies (not a
+  prompt another session handed over, not a harness line, not the question of a
+  dialog, not pasted text). Anything else is kept as the agent's wording at trust
+  0 and replaces nothing.
+  What does not bound it: the session log is written by the hooks from their own
+  input, so a process that can run `muninn hook` can make the log name any file as
+  a session's transcript; `--session` may name any session in the log, not only the
+  caller's; and the transcript is a file the agent's shell can write. `muninn
+  ingest <file>` already types any file handed to it the same way. An agent with a
+  shell in the project can therefore put a sentence on record at trust 3. Muninn
+  has no defence of its own against that; the permission to run commands is the
+  one there is.
 - The block validator (`muninn_core::cue::validate_block`) rejects any block
   containing role-like sequences (`<|system|>`, `system:`, `[INST]`, `<<SYS>>`,
   `### system`) or instruction-override patterns ("ignore previous
@@ -81,8 +104,11 @@ published defect classes before anything is applied.
 The read hooks (`SessionStart`, `SubagentStart`, `UserPromptSubmit`, `PreCompact`,
 `PostCompact`, `InstructionsLoaded`) open the store with `query_only=1` and
 `SQLITE_OPEN_READ_ONLY`. They cannot write the database even if compromised.
-Heartbeats go to an append-only log file. Only `Stop`, `SessionEnd` and
-`PostToolUse` open the store read-write.
+Heartbeats go to an append-only log file. Of the hooks, only `Stop` and
+`SessionEnd` open the store read-write, and so does the detached `maintain` they
+start; `PostToolUse` was removed in 2.0.0. Four commands a person or an agent
+runs by hand also write: `muninn remember`, `muninn revoke`, `muninn import` and
+`muninn ingest`. No hook calls them.
 
 ## 6. The repository as an input to invalidation
 

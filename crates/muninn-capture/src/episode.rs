@@ -176,15 +176,21 @@ pub fn from_turn_all(session_id: &str, t: &Turn) -> Vec<Episode> {
         push(
             if crate::is_compaction_summary(up) {
                 "summary"
+            } else if t.agent_written {
+                "agent"
             } else {
                 "user"
             },
             &rest,
         );
     }
+    // the head episode holds the reply's first 350 and last 300 characters; the
+    // continuation holds what lies between, so a long reply is stored once, not twice
     let a = t.assistant_text.trim();
-    if a.chars().count() > 700 {
-        push("assistant", a);
+    let n = a.chars().count();
+    if n > 700 {
+        let middle: String = a.chars().skip(350).take(n - 650).collect();
+        push("assistant", &middle);
     }
     out
 }
@@ -209,9 +215,17 @@ pub fn from_turn(session_id: &str, t: &Turn) -> Option<Episode> {
     if up.is_empty() {
         return None;
     }
+    // a prompt of a word or two that nothing answered and nothing acted on says nothing
+    // that can be read later: 64 of 1,035 episodes in the review of 1.2.0's real use
+    if up.chars().count() < 25 && t.assistant_text.trim().is_empty() && t.tools.is_empty() {
+        return None;
+    }
     let mut body = String::new();
+    // an agent's prompt is labelled as such, though the harness logged it in the user's role
     body.push_str(if crate::is_compaction_summary(up) {
         "summary: "
+    } else if t.agent_written {
+        "agent: "
     } else {
         "user: "
     });
@@ -239,25 +253,22 @@ pub fn from_turn(session_id: &str, t: &Turn) -> Option<Episode> {
         }
         body.push('\n');
     }
+    // Only the commands that failed. In the review of 1.2.0's real use command lines were
+    // 23.4 % of all episode text and 97.4 % of them said no more than that the command ran;
+    // a run that failed is what a later session can learn from.
     let mut had_failure = false;
     let cmds: Vec<String> = t
         .tools
         .iter()
         .filter(|c| c.name == "Bash" || c.name == "shell" || c.name.ends_with("_call"))
-        .map(|c| {
+        .filter_map(|c| {
             let status = match (c.exit_code, c.is_error) {
-                (Some(0), _) => "ok".to_string(),
-                (Some(n), _) => {
-                    had_failure = true;
-                    format!("exit {n}")
-                }
-                (None, true) => {
-                    had_failure = true;
-                    "error".to_string()
-                }
-                (None, false) => "ran".to_string(),
+                (Some(0), _) | (None, false) => return None,
+                (Some(n), _) => format!("exit {n}"),
+                (None, true) => "error".to_string(),
             };
-            format!("$ {} → {}", truncate_chars(&c.target, 120), status)
+            had_failure = true;
+            Some(format!("$ {} → {}", truncate_chars(&c.target, 120), status))
         })
         .collect();
     if !cmds.is_empty() {
@@ -405,5 +416,88 @@ mod split_word_tests {
             "and it starts on a whole word: {}",
             &eps[1].body[..60.min(eps[1].body.len())]
         );
+    }
+}
+
+#[cfg(test)]
+mod body_tests {
+    use super::{from_turn, from_turn_all};
+    use crate::model::{ToolCall, Turn};
+
+    fn bash(cmd: &str, exit: Option<i64>, err: bool) -> ToolCall {
+        ToolCall {
+            name: "Bash".into(),
+            target: cmd.into(),
+            exit_code: exit,
+            is_error: err,
+            ..Default::default()
+        }
+    }
+
+    /// Command lines were a quarter of all episode text and nearly all of them said only
+    /// that a command ran. A run that failed is worth its line; the others are not.
+    #[test]
+    fn an_episode_lists_the_commands_that_failed_and_no_others() {
+        let t = Turn {
+            user_prompt: "corre las pruebas del módulo de facturas".into(),
+            assistant_text: "Una falla, la arreglo.".into(),
+            tools: vec![
+                bash("ls -la", Some(0), false),
+                bash("cargo test -p facturas", Some(101), true),
+                bash("git status", None, false),
+            ],
+            ..Default::default()
+        };
+        let e = from_turn("s", &t).unwrap();
+        assert!(
+            e.body.contains("cargo test -p facturas → exit 101"),
+            "{}",
+            e.body
+        );
+        assert!(!e.body.contains("ls -la"), "{}", e.body);
+        assert!(!e.body.contains("git status"), "{}", e.body);
+        assert!(e.had_failure);
+        let quiet = Turn {
+            tools: vec![bash("ls -la", Some(0), false)],
+            ..t.clone()
+        };
+        assert!(!from_turn("s", &quiet).unwrap().body.contains("commands:"));
+    }
+
+    /// A long reply is kept as head and tail in the first episode; the continuation holds
+    /// what lies between, not the whole reply a second time.
+    #[test]
+    fn a_long_reply_is_stored_once() {
+        let a: String = (0..30)
+            .map(|i| format!("frase {i:02} {}", "x".repeat(40)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let t = Turn {
+            user_prompt: "explica el plan".into(),
+            assistant_text: a.clone(),
+            ..Default::default()
+        };
+        let eps = from_turn_all("s", &t);
+        let first = &eps[0].body;
+        assert!(first.contains("frase 00") && first.contains("frase 29"));
+        let rest: String = eps[1..].iter().map(|e| e.body.clone()).collect();
+        assert!(!rest.contains("frase 00 "), "the head is not stored again");
+        assert!(!rest.contains("frase 29 "), "nor the tail");
+        assert!(rest.contains("frase 15 "), "the middle is: {rest}");
+    }
+
+    /// A prompt of a word or two that nothing answered and nothing acted on is no episode.
+    #[test]
+    fn a_short_prompt_with_no_reply_is_no_episode() {
+        let t = Turn {
+            user_prompt: "continua".into(),
+            ..Default::default()
+        };
+        assert!(from_turn("s", &t).is_none());
+        let answered = Turn {
+            assistant_text: "Sigo.".into(),
+            ..t
+        };
+        assert!(from_turn("s", &answered).is_some());
     }
 }

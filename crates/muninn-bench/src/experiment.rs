@@ -257,21 +257,6 @@ fn seed_store_arm(
     records: Option<&Path>,
     arm: &str,
 ) -> Result<i64> {
-    seed_store_full(muninn, dir, seeds, boot, records, arm, None)
-}
-
-/// `source`: the checkout whose symbol graph goes into the store before the seeded
-/// records are imported, so their symbol cues come from the graph, not the fallback.
-#[allow(clippy::too_many_arguments)]
-fn seed_store_full(
-    muninn: &Path,
-    dir: &Path,
-    seeds: &[PathBuf],
-    boot: bool,
-    records: Option<&Path>,
-    arm: &str,
-    source: Option<&Path>,
-) -> Result<i64> {
     // init touches no file by default; the boot block (file or hook) is the cell's
     // business, decided by its arm
     let _ = boot;
@@ -284,14 +269,6 @@ fn seed_store_full(
             "ingest",
             s.to_str().unwrap(),
         ]))?;
-    }
-    if let Some(src) = source {
-        run_ok(
-            Command::new(muninn)
-                .env("MUNINN_ROOT", dir)
-                .env("MUNINN_SOURCE_ROOT", src)
-                .args(["--cwd", dir.to_str().unwrap(), "symbols"]),
-        )?;
     }
     if let Some(r) = records {
         run_ok(Command::new(muninn).env("MUNINN_ROOT", dir).args([
@@ -335,7 +312,6 @@ fn settings_json(muninn: &Path, f2: bool) -> serde_json::Value {
             "UserPromptSubmit": h("UserPromptSubmit", 5),
             // confinement (MUNINN_CONFINE_ROOT): an edit outside the checkout is denied
             "PreToolUse": [{ "matcher": pre_matcher, "hooks": [{ "type": "command", "command": bin, "args": ["hook", "PreToolUse"], "timeout": 5 }] }],
-            "PostToolUse": [{ "matcher": "Bash|Edit|Write|MultiEdit|Read", "hooks": [{ "type": "command", "command": bin, "args": ["hook", "PostToolUse"], "timeout": 5 }] }],
             "Stop": h("Stop", 30),
             "SessionEnd": h("SessionEnd", 5)
         }
@@ -542,7 +518,7 @@ fn run_cell(
             Vec::new()
         };
         if !no_muninn {
-            cell.stored_episodes = seed_store_full(
+            cell.stored_episodes = seed_store_arm(
                 muninn,
                 &store,
                 if is_control { &control_seeds } else { seeds },
@@ -553,9 +529,8 @@ fn run_cell(
                     seed_records.as_deref()
                 },
                 arm,
-                Some(&dir),
             )?;
-            // the write path once, so the store starts warm (anchors, cues, sidecar)
+            // the write path once, so the store starts warm (anchors, cues)
             let _ = run_ok(
                 Command::new(muninn)
                     .env("MUNINN_ROOT", &store)
@@ -800,9 +775,6 @@ fn run_cell(
             cmd.env("MUNINN_NO_CUES", "1").env("MUNINN_EXPAND", "0");
         } else {
             cmd.env("MUNINN_EXPAND", "1");
-            // experiments measure the full mechanism; the shipped default keeps
-            // dir/symbol cues off (GATE4.md)
-            cmd.env("MUNINN_CUES", "1");
         }
         #[cfg(unix)]
         {
@@ -945,21 +917,16 @@ fn run_cell(
                 &d.stdout,
             );
         }
-        // the cell's delivery and turn-context logs, for audit (which cue fired, when)
+        // the cell's delivery log, for audit (which cue fired, when)
         {
             let logs = out_root.join("logs");
             let _ = std::fs::create_dir_all(&logs);
-            for (src, suffix) in [
-                ("delivery.jsonl", "delivery.jsonl"),
-                ("turn_context.jsonl", "context.jsonl"),
-            ] {
-                let from = store.join(".muninn/log").join(src);
-                if from.exists() {
-                    let _ = std::fs::copy(
-                        &from,
-                        logs.join(format!("r{run}-{}-{arm}.{suffix}", task.id)),
-                    );
-                }
+            let from = store.join(".muninn/log/delivery.jsonl");
+            if from.exists() {
+                let _ = std::fs::copy(
+                    &from,
+                    logs.join(format!("r{run}-{}-{arm}.delivery.jsonl", task.id)),
+                );
             }
             // The enforcement ledger records every PreToolUse evaluation including the
             // silences, so it is the only evidence inside the grid that a compiled

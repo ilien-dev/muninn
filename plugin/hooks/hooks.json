@@ -15,10 +15,6 @@
       { "matcher": "Bash|Edit|Write|MultiEdit|Read|WebFetch|WebSearch",
         "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "PreToolUse"], "timeout": 2 } ] }
     ],
-    "PostToolUse": [
-      { "matcher": "Bash|Read|Edit|Write|MultiEdit|Grep|Glob",
-        "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "PostToolUse"], "timeout": 2 } ] }
-    ],
     "PreCompact": [
       { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/muninn", "args": ["hook", "PreCompact"], "timeout": 5 } ] }
     ],

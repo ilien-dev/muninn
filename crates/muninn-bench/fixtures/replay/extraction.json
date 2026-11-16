@@ -1,0 +1,29 @@
+{
+  "section": "extraction",
+  "about": "An invented project, `tides`, in two sessions. The precision set is records an earlier build stored; the recall set is messages, each labelled for the durable statement it holds.",
+  "transcripts": { "tides": "sessions/tides" },
+  "precision": [
+    { "id": "tides:4", "label": "a", "kind": "decision", "project": "tides", "session": "tide-1", "split": "design",
+      "object": "We go with SQLite for the tide cache", "body": "user: We go with SQLite for the tide cache\n" },
+    { "id": "tides:5", "label": "a", "kind": "invariant", "project": "tides", "session": "tide-1", "split": "heldout",
+      "object": "Never commit the generated tables under out/", "body": "user: Never commit the generated tables under out/\n" },
+    { "id": "tides:13", "label": "b", "kind": "invariant", "project": "tides", "session": "tide-2", "split": "design",
+      "object": "It should never rain on the demo day", "body": "user: It should never rain on the demo day\n" },
+    { "id": "tides:90", "label": "c", "kind": "decision", "project": "tides", "session": "tide-2", "split": "heldout",
+      "object": "We deploy on Fridays", "body": "user: We deploy on Fridays\n" },
+    { "id": "tides:91", "label": "d", "kind": "deadend", "origin": "tool_observed", "project": "tides", "session": "tide-1", "split": "design",
+      "object": "cargo tset", "body": "$ cargo tset\n" }
+  ],
+  "recall": [
+    { "id": "tides:tide-1:0", "label": "a", "kind": "decision", "project": "tides", "session": "tide-1", "turn": 0, "split": "design",
+      "anchors": ["SQLite for the tide cache"] },
+    { "id": "tides:tide-1:1", "label": "b", "project": "tides", "session": "tide-1", "turn": 1, "split": "heldout" },
+    { "id": "tides:tide-1:2", "label": "a", "kind": "correction", "project": "tides", "session": "tide-1", "turn": 2, "split": "heldout",
+      "anchors": ["metres, not feet"] },
+    { "id": "tides:tide-2:0", "label": "a", "kind": "decision", "project": "tides", "session": "tide-2", "turn": 0, "split": "design",
+      "anchors": ["the cache moves to Redis"] },
+    { "id": "tides:tide-2:1", "label": "a", "kind": "rule", "project": "tides", "session": "tide-2", "turn": 1, "split": "design",
+      "anchors": ["harbour tests before a release"] },
+    { "id": "tides:tide-2:2", "label": "b", "project": "tides", "session": "tide-2", "turn": 2, "split": "heldout" }
+  ]
+}

@@ -1,13 +1,16 @@
 //! Transcript capture: Claude Code JSONL and Codex rollout → harness-neutral
 //! turns → literal episodes, with secret redaction and byte-offset watermarks.
 
+pub mod agent;
 pub mod claude;
 pub mod codex;
 pub mod episode;
 pub mod extract;
 pub mod ingest;
+pub mod measure;
 pub mod model;
 pub mod redact;
+pub mod remember;
 
 pub use model::{Session, ToolCall, Turn};
 
@@ -18,9 +21,9 @@ pub use model::{Session, ToolCall, Turn};
 /// and every one of them read `user:` at trust 1, which is the level for something seen in
 /// the transcript rather than for a paraphrase that can be wrong in ways a literal excerpt
 /// cannot. `extract` already refused to make typed records from it; episodes did not know.
-/// The sentence is Claude Code's. Codex compacts differently and its marker is not known
-/// here, so a Codex summary is still captured as a turn of its own; no rollout of this
-/// project was available to read one from.
+/// The sentence is Claude Code's. Codex writes what a compaction leaves as a `compacted` line
+/// and a `ContextCompaction` item, neither of them a message from anyone, so its parser opens
+/// no turn for one (`codex.rs`).
 ///
 /// The sentence is looked for past any leading notice, not only at the start: Claude Code now
 /// opens some summaries with `<artifact-content-authored-by-others/>` and a paragraph about it,
@@ -37,12 +40,11 @@ pub fn is_compaction_summary(prompt: &str) -> bool {
 /// evidence names more than one.
 ///
 /// An anchor is a claim, not a label: `filter::validate_anchors` retires an anchored record
-/// when that file's content changes, and `cue::derive` fires the record whenever the session
-/// touches the file's directory. A commit or a turn that touched several files supports no
+/// when that file's content changes. A commit or a turn that touched several files supports no
 /// such claim about any one of them. Taking the first made the anchor a property of the
 /// ordering rather than of the change — `git log --name-only` lists a commit's files
 /// alphabetically, and on this project's own store that put 84 of 256 commit records on
-/// whichever file sorted first, and 78 of its 187 directory cues on one directory.
+/// whichever file sorted first.
 pub fn sole_anchor<T: AsRef<str>>(files: &[T]) -> Option<String> {
     match files {
         [one] => Some(one.as_ref().to_string()),
@@ -50,10 +52,24 @@ pub fn sole_anchor<T: AsRef<str>>(files: &[T]) -> Option<String> {
     }
 }
 
+/// As [`parse_any`], with the task hashes the write path reads (`agent.rs`): for ingest and
+/// the `extract_dump` measurement, never for a read hook.
+pub fn parse_any_with_tasks(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
+    if is_codex(path) {
+        codex::parse_with_tasks(path, start_offset)
+    } else {
+        claude::parse_with_tasks(path, start_offset)
+    }
+}
+
+fn is_codex(path: &std::path::Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    name.starts_with("rollout-") || path.components().any(|c| c.as_os_str() == ".codex")
+}
+
 /// Detect the harness from the file and parse from `start_offset`.
 pub fn parse_any(path: &std::path::Path, start_offset: u64) -> std::io::Result<Session> {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if name.starts_with("rollout-") || path.components().any(|c| c.as_os_str() == ".codex") {
+    if is_codex(path) {
         codex::parse(path, start_offset)
     } else {
         claude::parse(path, start_offset)

@@ -1,5 +1,5 @@
 # SessionStart bootstrap for the Codex plugin on Windows, where Codex runs hook commands
-# through cmd.exe and there is no sh to run scripts/session-start. It does the same job:
+# through PowerShell or cmd.exe and there is no sh to run scripts/session-start. It does the same job:
 # the first session after an install or an update downloads the release binary that
 # matches this plugin's version into the plugin's own bin\, verifies its SHA-256 against
 # the release's checksums.txt, and keeps a copy in %USERPROFILE%\.local\bin for a person

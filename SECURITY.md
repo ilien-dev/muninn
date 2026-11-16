@@ -20,8 +20,7 @@ these matter most:
 - anything that makes a hook run a command other than the Muninn binary.
 - a downloaded binary that is used without its checksum matching.
 - conversation text leaving your machine. The Muninn binary makes no network request. The
-  plugin's scripts download two things: the release binary, and the embedding model if you ask
-  for it.
+  plugin's scripts download one thing, the release binary.
 
 [docs/threat-model.md](docs/threat-model.md) lists each of these, the defence in place, and
 what is out of scope.

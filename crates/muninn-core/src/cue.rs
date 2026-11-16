@@ -1,130 +1,37 @@
-//! F3 — permanent trigger conditions (ENGINE.md §2.2, §4; plan Phase 5). Cues are
-//! derived on the write path from what a record is anchored to; the read path turns the
-//! turn context (files touched, symbols referenced, the event) into exact indexed
-//! lookups — dir by normalised ancestors, symbol and event by equality — and never
-//! runs a GLOB per file [M2]. Conjunction inside a group, disjunction between groups.
+//! F3 — permanent trigger conditions (ENGINE.md §2.2, §4; plan Phase 5). A record's cues are
+//! derived on the write path from its kind; the read path turns the event (a session start, a
+//! compaction) into exact indexed lookups. Conjunction inside a group, disjunction between
+//! groups.
 
 use crate::caps::{BUDGET_BLOCK_TOKENS, BUDGET_TURN_TOKENS};
 use crate::db::now_ms;
-use crate::paths::ProjectPaths;
 use crate::recall::{best_passage, Hit};
 use crate::tokens::estimate;
 use crate::{Db, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
-pub const MAX_SYMBOL_CUES_PER_RECORD: usize = 20;
-pub const CONTEXT_FILES: usize = 20;
-pub const CONTEXT_SYMBOLS: usize = 50;
+/// The cue kinds `evaluate` checks. `glob` and `cooldown` are in the schema's CHECK and in
+/// ENGINE.md §2.2 and have no evaluator.
+const EVALUATED: [&str; 3] = ["event", "after", "keyword"];
 
-/// `src/auth/jwt.rs` → `src/auth`; a path with no directory has no dir cue.
-pub fn dir_prefix(path: &str) -> Option<String> {
-    let p = path.trim().trim_start_matches("./").replace('\\', "/");
-    let d = Path::new(&p).parent()?.to_string_lossy().to_string();
-    if d.is_empty() || d == "." {
-        None
-    } else {
-        Some(d)
-    }
-}
-
-/// Identifier-like tokens of a text (the lexical fallback for `symbol` cues when the
-/// graph has nothing for the file): snake_case, camelCase, `::`-free, 4–40 chars.
-pub fn lexical_symbols(text: &str, max: usize) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for tok in text.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
-        let n = tok.len();
-        if !(4..=40).contains(&n) || tok.chars().all(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        let mixed = tok.contains('_')
-            || (tok.chars().any(|c| c.is_uppercase()) && tok.chars().any(|c| c.is_lowercase()));
-        if !mixed || tok.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        if seen.insert(tok.to_string()) {
-            out.push(tok.to_string());
-            if out.len() >= max {
-                break;
-            }
-        }
-    }
-    out
-}
-
-/// Derive and store the cues of one record. `symbols_in_anchor` are the definitions
-/// the graph knows in the anchored file (empty → lexical fallback); `referrers` the
-/// one-hop callers precomputed by the write path.
-pub fn derive(
-    db: &Db,
-    record_id: i64,
-    kind: &str,
-    anchor_path: Option<&str>,
-    body: &str,
-    symbols_in_anchor: &[String],
-    referrers: &[String],
-) -> Result<usize> {
+/// Derive and store the cues of one record: the events of its kind. Invariants and
+/// corrections resurface at session start, invariants after a compaction too.
+pub fn derive(db: &Db, record_id: i64, kind: &str) -> Result<usize> {
     db.conn
         .execute("DELETE FROM cue WHERE record_id = ?1", [record_id])?;
-    let mut rows: Vec<(&str, String, i64)> = Vec::new();
-    let mut grp = 0i64;
-    // event cues by kind: invariants and corrections resurface at session start and
-    // after compaction; dead ends fire before an edit under their directory
-    match kind {
-        "invariant" => {
-            rows.push(("event", "session_start".into(), grp));
-            grp += 1;
-            rows.push(("event", "post_compact".into(), grp));
-            grp += 1;
-        }
-        "correction" => {
-            rows.push(("event", "session_start".into(), grp));
-            grp += 1;
-        }
-        _ => {}
-    }
-    // only paths inside the repository make a dir cue; an absolute anchor elsewhere
-    // (a plan file in the home directory) would never match a touched file
-    if let Some(dir) = anchor_path
-        .filter(|a| !a.starts_with('/') && !a.starts_with('~'))
-        .and_then(dir_prefix)
-    {
-        if kind == "deadend" {
-            rows.push(("event", "pre_edit".into(), grp));
-            rows.push(("dir", dir, grp));
-        } else {
-            rows.push(("dir", dir, grp));
-        }
-        grp += 1;
-    }
-    let mut syms: Vec<String> = if symbols_in_anchor.is_empty() {
-        lexical_symbols(body, 8)
-    } else {
-        symbols_in_anchor.iter().take(12).cloned().collect()
+    let events: &[&str] = match kind {
+        "invariant" => &["session_start", "post_compact"],
+        "correction" => &["session_start"],
+        _ => &[],
     };
-    for r in referrers
-        .iter()
-        .take(MAX_SYMBOL_CUES_PER_RECORD.saturating_sub(syms.len()))
-    {
-        if !syms.contains(r) {
-            syms.push(r.clone());
-        }
-    }
-    syms.truncate(MAX_SYMBOL_CUES_PER_RECORD);
-    for s in syms {
-        rows.push(("symbol", s, grp));
-        grp += 1;
-    }
     let mut ins = db
         .conn
-        .prepare("INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, ?2, ?3, ?4)")?;
-    let n = rows.len();
-    for (k, key, g) in rows {
-        ins.execute(rusqlite::params![record_id, k, key, g])?;
+        .prepare("INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, 'event', ?2, ?3)")?;
+    for (grp, event) in events.iter().enumerate() {
+        ins.execute(rusqlite::params![record_id, event, grp as i64])?;
     }
-    Ok(n)
+    Ok(events.len())
 }
 
 /// Store explicit cues for a record (from an import that carries them).
@@ -134,13 +41,18 @@ pub fn set_explicit(db: &Db, record_id: i64, cues: &[(String, String, i64)]) -> 
     let mut ins = db
         .conn
         .prepare("INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, ?2, ?3, ?4)")?;
+    // Only the kinds `evaluate` actually checks, and a group only when every cue of it is
+    // one: storing the rest of a group whose other cue was dropped would silently weaken it,
+    // and the conjunction would fire on the cues that are left. A cue that is always true is
+    // worse than no cue.
+    let dropped: HashSet<i64> = cues
+        .iter()
+        .filter(|(k, _, _)| !EVALUATED.contains(&k.as_str()))
+        .map(|(_, _, g)| *g)
+        .collect();
     let mut n = 0;
     for (k, key, g) in cues {
-        // Only the kinds `evaluate` actually checks. `glob` and `cooldown` are in the
-        // schema's CHECK and in ENGINE.md §2.2 but have no evaluator, so storing one
-        // would silently weaken its group: the conjunction would fire on the other
-        // cues alone. A cue that is always true is worse than no cue.
-        if !["dir", "symbol", "event", "after", "keyword"].contains(&k.as_str()) {
+        if dropped.contains(g) {
             continue;
         }
         let key = if k == "keyword" {
@@ -154,187 +66,33 @@ pub fn set_explicit(db: &Db, record_id: i64, cues: &[(String, String, i64)]) -> 
     Ok(n)
 }
 
-/// Derive cues for every active typed record that has none yet (imported records,
-/// records from before the cue table was filled). Lexical fallback for symbols.
+/// Derive cues for every active invariant and correction that has none yet (imported
+/// records, records from before the cue table was filled).
 pub fn derive_missing(db: &Db) -> Result<usize> {
     let mut st = db.conn.prepare(
-        "SELECT r.id, r.kind, r.anchor_path, r.body FROM record r \
-         WHERE r.invalid = 0 AND r.kind <> 'episode' AND NOT EXISTS (SELECT 1 FROM cue c WHERE c.record_id = r.id) \
+        "SELECT r.id, r.kind FROM record r \
+         WHERE r.invalid = 0 AND r.kind IN ('invariant', 'correction') \
+           AND NOT EXISTS (SELECT 1 FROM cue c WHERE c.record_id = r.id) \
          ORDER BY r.id",
     )?;
-    let rows: Vec<(i64, String, Option<String>, String)> = st
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+    let rows: Vec<(i64, String)> = st
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .filter_map(|r| r.ok())
         .collect();
     let mut n = 0;
-    for (id, kind, anchor, body) in rows {
-        let syms: Vec<String> = anchor
-            .as_deref()
-            .and_then(|a| {
-                let mut s = db
-                    .conn
-                    .prepare("SELECT short_name FROM symbol WHERE path = ?1 ORDER BY line LIMIT 12")
-                    .ok()?;
-                s.query_map([a], |r| r.get::<_, String>(0))
-                    .ok()
-                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
-            })
-            .unwrap_or_default();
-        n += derive(db, id, &kind, anchor.as_deref(), &body, &syms, &[])?;
+    for (id, kind) in rows {
+        n += derive(db, id, &kind)?;
     }
     Ok(n)
 }
 
-/// The turn context as the read path sees it: a bounded window of files touched and
-/// symbols referenced in this session (from PostToolUse), plus the event.
+/// What the read path evaluates the cues against: the event, and explicit trigger words.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TurnContext {
-    pub files: Vec<String>,
-    pub symbols: Vec<String>,
     pub event: String,
     /// Explicit trigger words (`keyword` cues), e.g. a benchmark step's cue list.
     #[serde(default)]
     pub keywords: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ContextLine {
-    pub at: i64,
-    pub session: String,
-    pub files: Vec<String>,
-    pub symbols: Vec<String>,
-}
-
-pub fn context_log(paths: &ProjectPaths) -> std::path::PathBuf {
-    paths.log_dir().join("turn_context.jsonl")
-}
-
-/// PostToolUse appends; nothing else writes here.
-pub fn append_context(paths: &ProjectPaths, line: &ContextLine) {
-    let _ = crate::logfold::append_line(&context_log(paths), line);
-}
-
-/// The last `CONTEXT_FILES` files and `CONTEXT_SYMBOLS` symbols of a session, newest
-/// last, from a bounded tail of the log.
-/// Keep the turn-context log from growing without end: past `TRIM_AT` it is cut to its last
-/// `KEEP` bytes. Nothing folds this log, and only its tail is ever read. Write path only; a
-/// line appended between the read and the rename is lost, which costs one file of one
-/// turn's context.
-pub fn trim_context_log(paths: &ProjectPaths) -> std::io::Result<bool> {
-    const TRIM_AT: u64 = 8 << 20;
-    const KEEP: u64 = 1 << 20;
-    let log = context_log(paths);
-    if std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0) <= TRIM_AT {
-        return Ok(false);
-    }
-    let tail = crate::sanitize::read_regular_tail(&log, KEEP)?;
-    let tmp = log.with_extension("jsonl.trim");
-    std::fs::write(&tmp, tail)?;
-    std::fs::rename(&tmp, &log)?;
-    Ok(true)
-}
-
-pub fn load_context(paths: &ProjectPaths, session: &str, event: &str) -> TurnContext {
-    let mut ctx = TurnContext {
-        event: event.to_string(),
-        ..Default::default()
-    };
-    // The log only grows, so what matters is its end: the head was read before, and past
-    // 1 MiB the session running now was never in it (one store: 5.5 MB, none of its eight
-    // latest sessions visible). Only this session's lines are parsed; parsing all of them
-    // was 4.5 ms of the prompt hook on that store.
-    let Ok(text) = crate::sanitize::read_regular_tail(&context_log(paths), 1 << 20) else {
-        return ctx;
-    };
-    let needle = serde_json::to_string(session).unwrap_or_default();
-    let mut files: Vec<String> = Vec::new();
-    let mut syms: Vec<String> = Vec::new();
-    for l in text.lines() {
-        if !l.contains(&needle) {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<ContextLine>(l) else {
-            continue;
-        };
-        if v.session != session {
-            continue;
-        }
-        for f in v.files {
-            files.retain(|x| x != &f);
-            files.push(f);
-        }
-        for s in v.symbols {
-            syms.retain(|x| x != &s);
-            syms.push(s);
-        }
-    }
-    if files.len() > CONTEXT_FILES {
-        files.drain(..files.len() - CONTEXT_FILES);
-    }
-    if syms.len() > CONTEXT_SYMBOLS {
-        syms.drain(..syms.len() - CONTEXT_SYMBOLS);
-    }
-    ctx.files = files;
-    ctx.symbols = syms;
-    ctx
-}
-
-/// Which symbols a tool call references: identifiers in a Grep pattern, the file of a
-/// Read/Edit/Write (its definitions are resolved by the caller when the graph has them).
-pub fn context_of_tool(
-    tool: &str,
-    input: &serde_json::Value,
-    root: &Path,
-) -> (Vec<String>, Vec<String>) {
-    let mut files = Vec::new();
-    let mut syms = Vec::new();
-    let rel = |p: &str| -> String {
-        let p = p.trim();
-        Path::new(p)
-            .strip_prefix(root)
-            .map(|r| r.to_string_lossy().to_string())
-            .unwrap_or_else(|_| p.trim_start_matches("./").to_string())
-    };
-    match tool {
-        "Read" | "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
-            // a Codex patch reshaped by the hook names several files
-            if let Some(list) = input.get("file_paths").and_then(|v| v.as_array()) {
-                files.extend(list.iter().filter_map(|v| v.as_str()).map(rel));
-            } else if let Some(p) = input
-                .get("file_path")
-                .or_else(|| input.get("notebook_path"))
-                .and_then(|v| v.as_str())
-            {
-                files.push(rel(p));
-            }
-        }
-        "Grep" => {
-            if let Some(p) = input.get("pattern").and_then(|v| v.as_str()) {
-                syms.extend(lexical_symbols(p, 4));
-            }
-            if let Some(p) = input.get("path").and_then(|v| v.as_str()) {
-                if Path::new(p).extension().is_some() {
-                    files.push(rel(p));
-                }
-            }
-        }
-        "Bash" => {
-            if let Some(c) = input.get("command").and_then(|v| v.as_str()) {
-                for tok in c.split(|ch: char| ch.is_whitespace() || ch == '\'' || ch == '"') {
-                    if tok.contains('/')
-                        && Path::new(tok).extension().is_some()
-                        && !tok.starts_with('-')
-                        && tok.len() < 200
-                    {
-                        files.push(rel(tok));
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-    files.truncate(8);
-    (files, syms)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -367,39 +125,6 @@ pub fn evaluate_capped(
 ) -> Result<(Vec<CueHit>, usize)> {
     // candidate (record, group) pairs from each matching cue, with the cue kind that hit
     let mut matched: HashMap<(i64, i64), Vec<String>> = HashMap::new();
-    let mut st_dir = db
-        .conn
-        .prepare_cached("SELECT record_id, grp FROM cue WHERE kind = 'dir' AND key = ?1")?;
-    let mut seen_dirs: HashSet<String> = HashSet::new();
-    for f in &ctx.files {
-        let mut p = Path::new(f).parent();
-        while let Some(d) = p {
-            let key = d.to_string_lossy().to_string();
-            if key.is_empty() || key == "." {
-                break;
-            }
-            if seen_dirs.insert(key.clone()) {
-                let rows = st_dir.query_map([key.as_str()], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-                })?;
-                for r in rows.flatten() {
-                    matched.entry(r).or_default().push(format!("dir:{key}"));
-                }
-            }
-            p = d.parent();
-        }
-    }
-    let mut st_sym = db
-        .conn
-        .prepare_cached("SELECT record_id, grp FROM cue WHERE kind = 'symbol' AND key = ?1")?;
-    for s in &ctx.symbols {
-        let rows = st_sym.query_map([s.as_str()], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-        })?;
-        for r in rows.flatten() {
-            matched.entry(r).or_default().push(format!("symbol:{s}"));
-        }
-    }
     if !ctx.keywords.is_empty() {
         let mut st_kw = db
             .conn
@@ -436,13 +161,21 @@ pub fn evaluate_capped(
     }
     let mut event_dropped = 0usize;
     if !ctx.event.is_empty() {
+        // Invariants and corrections take the first places in turn, each kind newest first
+        // (`slot`, the same order `merge` gives them): ordered by kind, a store with six
+        // invariants or more never showed a correction at a session start (R-04).
         let mut st_ev = db.conn.prepare_cached(
-            "SELECT c.record_id, c.grp FROM cue c JOIN served_record r ON r.id = c.record_id \
-             WHERE c.kind = 'event' AND c.key = ?1 \
-             ORDER BY CASE r.kind WHEN 'invariant' THEN 0 WHEN 'correction' THEN 1 \
-                                  WHEN 'deadend' THEN 2 WHEN 'decision' THEN 3 \
-                                  WHEN 'claim' THEN 4 ELSE 5 END, \
-                      r.created_at DESC, r.id DESC LIMIT ?2",
+            "SELECT record_id, grp FROM ( \
+               SELECT c.record_id, c.grp, r.kind, r.created_at, r.id, \
+                      ROW_NUMBER() OVER (PARTITION BY r.kind \
+                                         ORDER BY r.created_at DESC, r.id DESC) - 1 AS rn \
+               FROM cue c JOIN served_record r ON r.id = c.record_id \
+               WHERE c.kind = 'event' AND c.key = ?1) \
+             ORDER BY CASE kind WHEN 'invariant' THEN 0 WHEN 'correction' THEN 0 \
+                                WHEN 'deadend' THEN 2 WHEN 'decision' THEN 3 \
+                                WHEN 'claim' THEN 4 ELSE 5 END, \
+                      rn, \
+                      kind = 'correction', created_at DESC, id DESC LIMIT ?2",
         )?;
         let lim = cap.min(i64::MAX as usize) as i64;
         let rows = st_ev.query_map(rusqlite::params![ctx.event.as_str(), lim], |r| {
@@ -531,9 +264,7 @@ pub fn evaluate_capped(
         }
         let cues: Vec<(String, String)> = groups.get(&(rid, grp)).cloned().unwrap_or_default();
         let all = cues.iter().all(|(k, key)| match k.as_str() {
-            "dir" | "symbol" | "event" | "keyword" => {
-                reasons.iter().any(|r| r == &format!("{k}:{key}"))
-            }
+            "event" | "keyword" => reasons.iter().any(|r| r == &format!("{k}:{key}")),
             "after" => key.parse::<i64>().map(|t| now >= t).unwrap_or(true),
             // Fail closed: an unevaluable cue must not be treated as satisfied, or the
             // group fires on a condition nobody checked. `set_explicit` refuses to store
@@ -644,6 +375,9 @@ pub struct Merged {
     pub gated: Vec<i64>,
 }
 
+/// Characters of a rule shown at an event delivery (R-04).
+const EVENT_RULE_CHARS: usize = 160;
+
 pub fn merge(
     cue_hits: &[CueHit],
     cue_records: &[Hit],
@@ -675,14 +409,56 @@ pub fn merge(
             .and_modify(|r| r.push_str("+lexical"))
             .or_insert_with(|| "lexical".into());
     }
+    // A prompt (the only path with lexical hits) ranks rules and corrections first, then
+    // everything else by how well it matches: by kind first, a decision that shared one word
+    // with the question took the budget from the episode that answered it, and on one 1.2.0
+    // store the best match was cut for budget on 11 of 209 replayed prompts (R-06). Event and
+    // tool-time deliveries keep the order by kind.
+    let prompt = !lexical.is_empty();
+    // An event delivery (session start, compaction, subagent: the only callers that pass
+    // `ungated_ids`) gives invariants and corrections the first places in turn, each kind
+    // newest first — `slot`, the order `evaluate_capped` reads them in. By kind, a store with
+    // six invariants or more never showed one correction at a session start (R-04). In turn
+    // rather than two invariants to one correction: on usage-v4's labelled design session
+    // starts, the invariants a third slot added were mostly one-off requests.
+    let event = !prompt && !ungated_ids.is_empty();
+    let mut slot: HashMap<i64, usize> = HashMap::new();
+    if event {
+        let mut seen: HashMap<&str, usize> = HashMap::new();
+        let mut newest: Vec<&Hit> = cue_records.iter().collect();
+        newest.sort_by_key(|h| std::cmp::Reverse((h.created_at, h.id)));
+        for h in newest {
+            let n = seen.entry(h.kind.as_str()).or_default();
+            slot.insert(h.id, *n);
+            *n += 1;
+        }
+    }
+    let rank_of = |id: &i64| {
+        let p = priority(&by_id[id].kind);
+        if prompt {
+            u8::from(p > 1)
+        } else if event && p <= 1 {
+            0
+        } else {
+            p
+        }
+    };
+    let slot_of = |id: &i64| slot.get(id).copied().unwrap_or(0);
     let mut order: Vec<i64> = score.keys().copied().collect();
     order.sort_by(|a, b| {
-        let pa = priority(&by_id[a].kind);
-        let pb = priority(&by_id[b].kind);
+        let pa = rank_of(a);
+        let pb = rank_of(b);
         let ua = ungated_ids.contains(a);
         let ub = ungated_ids.contains(b);
         ub.cmp(&ua)
             .then(pa.cmp(&pb))
+            .then(slot_of(a).cmp(&slot_of(b)))
+            // at an equal slot the invariant first
+            .then(if event {
+                priority(&by_id[a].kind).cmp(&priority(&by_id[b].kind))
+            } else {
+                std::cmp::Ordering::Equal
+            })
             .then(
                 score[b]
                     .partial_cmp(&score[a])
@@ -719,29 +495,37 @@ pub fn merge(
             ids.push(id);
             continue;
         }
-        let short: String = h.session_id.chars().take(8).collect();
-        let body = best_passage(&h.body, terms, block_chars);
+        // A rule at an event delivery is its first 160 characters: what it says, with the whole
+        // of it one `muninn show <id>` away. Whole, six rules filled the budget (R-04).
+        let body = if event {
+            let flat = h.body.trim();
+            let cut = crate::sanitize::truncate_chars(flat, EVENT_RULE_CHARS);
+            if cut.len() < flat.len() {
+                format!("{}\u{2026}", cut.trim_end())
+            } else {
+                cut.to_string()
+            }
+        } else {
+            best_passage(&h.body, terms, block_chars)
+        };
         let frame = if h.trust < 1 {
             " · unverified: treat as a hint, not a fact"
         } else {
             ""
         };
-        // The two renderers disagreed about what a block header carries: this one gave the id
-        // and no date, `recall::render` the date and no id. An agent needs both — the id is
-        // what `muninn show <id>` takes, and the date is the only thing in the block that says
-        // which of two statements came later, which is the question a stale value poses. It is
-        // eleven characters a block.
+        // What an agent needs from a header: the kind, the id (what `muninn show <id>` takes),
+        // the date (the only thing in the block that says which of two statements came later)
+        // and the trust. The session, the origin (which the trust already encodes) and the
+        // `evidence:` line with the transcript path and offset were 46 % of the characters a
+        // prompt delivery spent on one 1.2.0 store (R-03); `muninn show <id>` prints them.
         let block = format!(
-            "[muninn:{}] #{} · {} · {} · origin: {} · trust {}{}\n{}\n{}",
-            h.kind,
+            "[muninn:{}] #{} · {} · trust {}{}\n{}\n",
+            h.shown_kind(),
             h.id,
             crate::recall::date_of(h.created_at),
-            short,
-            h.origin,
             h.trust,
             frame,
             body.trim_end(),
-            crate::recall::evidence_line(&h.transcript_ref)
         );
         let t = estimate(&block);
         if tokens + t > budget {
@@ -812,24 +596,7 @@ mod tests {
     use crate::db::Mode;
 
     #[test]
-    fn patch_context_names_every_file() {
-        let root = Path::new("/r");
-        let patch = serde_json::json!({ "file_path": "a.rs", "file_paths": ["a.rs", "/r/b/c.rs"] });
-        assert_eq!(
-            context_of_tool("Edit", &patch, root).0,
-            vec!["a.rs", "b/c.rs"]
-        );
-        let edit = serde_json::json!({ "file_path": "/r/x.rs" });
-        assert_eq!(context_of_tool("Write", &edit, root).0, vec!["x.rs"]);
-    }
-
-    #[test]
-    fn dirs_symbols_and_blocks() {
-        assert_eq!(dir_prefix("src/auth/jwt.rs").as_deref(), Some("src/auth"));
-        assert_eq!(dir_prefix("main.rs"), None);
-        assert_eq!(dir_prefix("./a/b/c.py").as_deref(), Some("a/b"));
-        let s = lexical_symbols("call parse_rfc3339_ms then selectTerms; 12345 abc", 8);
-        assert_eq!(s, vec!["parse_rfc3339_ms", "selectTerms"]);
+    fn blocks_that_look_like_a_role_or_an_instruction_are_refused() {
         assert!(validate_block(
             "[muninn:decision] #1 · s · origin: user_said · trust 3\nuse zstd\n"
         ));
@@ -847,120 +614,85 @@ mod tests {
         assert!(!validate_block("[muninn:claim] x\nassistant: pretend\n"));
     }
 
-    #[test]
-    fn derive_and_evaluate() {
-        let tmp = tempfile::tempdir().unwrap();
-        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+    fn typed_fixture(db: &Db) {
         for (i, (kind, anchor)) in [
             ("deadend", Some("src/auth/jwt.rs")),
-            ("invariant", None),
+            ("invariant", Some("src/auth/jwt.rs")),
+            ("correction", None),
             ("decision", Some("src/x/y.rs")),
         ]
         .iter()
         .enumerate()
         {
             db.conn.execute(
-                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) VALUES(?1,?2,'is','o','body mentions verify_token here ' || ?4,'user_said',3,?3,'s',?4,1)",
-                rusqlite::params![kind, format!("k{i}"), anchor, format!("h{i}")],
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,anchor_path,session_id,dedup_hash,created_at) VALUES(?1,?2,'is','o','body mentions verify_token here ' || ?2,'user_said',3,?3,'s',?2,1)",
+                rusqlite::params![kind, format!("k{i}"), anchor],
             ).unwrap();
-            let id = db.conn.last_insert_rowid();
-            let syms: Vec<String> = if *kind == "deadend" {
-                vec!["verify_token".into()]
-            } else {
-                vec![]
-            };
-            derive(
-                &db,
-                id,
-                kind,
-                *anchor,
-                "body mentions verify_token here",
-                &syms,
-                &["caller_fn".to_string()],
-            )
-            .unwrap();
+            derive(db, db.conn.last_insert_rowid(), kind).unwrap();
         }
-        // touching src/auth/x.rs alone does not fire the dead end (its group needs pre_edit)
-        let none = evaluate(
-            &db,
-            &TurnContext {
-                files: vec!["src/auth/x.rs".into()],
-                symbols: vec![],
-                event: "prompt".into(),
-                keywords: Vec::new(),
-            },
-            &HashSet::new(),
-        )
-        .unwrap();
-        assert!(none.iter().all(|h| h.record_id != 1), "{none:?}");
-        // pre_edit under src/auth fires it
-        let hits = evaluate(
-            &db,
-            &TurnContext {
-                files: vec!["src/auth/deep/x.rs".into()],
-                symbols: vec![],
-                event: "pre_edit".into(),
-                keywords: Vec::new(),
-            },
-            &HashSet::new(),
-        )
-        .unwrap();
-        assert!(
-            hits.iter()
-                .any(|h| h.record_id == 1 && h.reason.contains("dir:src/auth")),
-            "{hits:?}"
+    }
+
+    /// A record's cues are the events of its kind: an invariant comes back at a session start
+    /// and after a compaction, a correction at a session start. Nothing is derived from the
+    /// file a record is anchored to or from the identifiers in its text: no delivery in any
+    /// store's ledger was ever made by a directory or a symbol cue (usage-v4, section D).
+    #[test]
+    fn a_record_gets_the_event_cues_of_its_kind_and_no_other() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        typed_fixture(&db);
+        let rows: Vec<(i64, String, String)> = db
+            .conn
+            .prepare("SELECT record_id, kind, key FROM cue ORDER BY record_id, key")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .flatten()
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (2, "event".to_string(), "post_compact".to_string()),
+                (2, "event".to_string(), "session_start".to_string()),
+                (3, "event".to_string(), "session_start".to_string()),
+            ]
         );
-        // the symbol fires it on its own (own group)
-        let hits = evaluate(
-            &db,
-            &TurnContext {
-                files: vec![],
-                symbols: vec!["verify_token".into()],
-                event: String::new(),
-                keywords: Vec::new(),
-            },
-            &HashSet::new(),
-        )
-        .unwrap();
-        assert!(hits
+        // and a record that has cues already is left alone by the pass that fills them in
+        assert_eq!(derive_missing(&db).unwrap(), 0);
+        db.conn
+            .execute("DELETE FROM cue WHERE record_id = 3", [])
+            .unwrap();
+        assert_eq!(derive_missing(&db).unwrap(), 1);
+    }
+
+    #[test]
+    fn an_event_fires_the_records_cued_to_it_and_merge_orders_them() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        typed_fixture(&db);
+        let at = |event: &str, exclude: &[i64]| -> Vec<i64> {
+            evaluate(
+                &db,
+                &TurnContext {
+                    event: event.into(),
+                    ..Default::default()
+                },
+                &exclude.iter().copied().collect(),
+            )
+            .unwrap()
             .iter()
-            .any(|h| h.record_id == 1 && h.reason == "symbol:verify_token"));
-        // session_start fires the invariant, and the exclude set silences it
-        let hits = evaluate(
-            &db,
-            &TurnContext {
-                event: "session_start".into(),
-                ..Default::default()
-            },
-            &HashSet::new(),
-        )
-        .unwrap();
-        assert!(hits.iter().any(|h| h.record_id == 2));
-        let hits = evaluate(
-            &db,
-            &TurnContext {
-                event: "session_start".into(),
-                ..Default::default()
-            },
-            &HashSet::from([2]),
-        )
-        .unwrap();
-        assert!(hits.iter().all(|h| h.record_id != 2));
-        // the decision anchored under src/x fires on a Read there
-        let hits = evaluate(
-            &db,
-            &TurnContext {
-                files: vec!["src/x/y.rs".into()],
-                symbols: vec![],
-                event: "prompt".into(),
-                keywords: Vec::new(),
-            },
-            &HashSet::new(),
-        )
-        .unwrap();
-        assert!(hits.iter().any(|h| h.record_id == 3));
+            .map(|h| h.record_id)
+            .collect()
+        };
+        // session_start fires the invariant and the correction, and the exclude set silences one
+        assert_eq!(at("session_start", &[]), vec![2, 3]);
+        assert_eq!(at("session_start", &[2]), vec![3]);
+        // a compaction is the invariant's alone; no other event fires anything
+        assert_eq!(at("post_compact", &[]), vec![2]);
+        assert_eq!(at("pre_edit", &[]), Vec::<i64>::new());
+        assert_eq!(at("prompt", &[]), Vec::<i64>::new());
         // merge: invariant first, budget respected, reasons kept
-        let recs = hits_for(&db, &[1, 2, 3]).unwrap();
+        let recs = hits_for(&db, &[1, 2, 4]).unwrap();
         let m = merge(
             &[CueHit {
                 record_id: 2,
@@ -1003,36 +735,67 @@ mod tests {
         assert_eq!(m.ids.len(), 2, "the twin counts as delivered");
     }
 
-    /// The turn-context log is append-only and was read from its start, at most 1 MiB: past
-    /// that size the session running now was never in what was read. One store's log had
-    /// reached 5.5 MB and none of its eight latest sessions was visible.
-    #[test]
-    fn the_current_session_is_found_past_the_first_megabyte() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = ProjectPaths::resolve(tmp.path());
-        std::fs::create_dir_all(paths.log_dir()).unwrap();
-        let filler = ContextLine {
-            at: 1,
-            session: "old".into(),
-            files: vec!["src/a/very/long/path/to/some/file/that/fills/the/log.rs".into()],
-            symbols: vec![],
-        };
-        for _ in 0..16_000 {
-            append_context(&paths, &filler);
+    fn lexical_fixture(db: &Db, kinds: &[&str]) -> Vec<Hit> {
+        for (i, kind) in kinds.iter().enumerate() {
+            db.conn.execute(
+                "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) VALUES(?1,?2,'r','o',?3,'user_said',3,'s',?2,1)",
+                rusqlite::params![kind, format!("k{i}"), format!("record {i}: {}", "words that fill the block ".repeat(18))],
+            ).unwrap();
         }
-        assert!(std::fs::metadata(context_log(&paths)).unwrap().len() > 1 << 20);
-        append_context(
-            &paths,
-            &ContextLine {
-                at: 2,
-                session: "now".into(),
-                files: vec!["src/auth/jwt.rs".into()],
-                symbols: vec!["verify_token".into()],
-            },
+        let ids: Vec<i64> = (1..=kinds.len() as i64).collect();
+        hits_for(db, &ids).unwrap()
+    }
+
+    /// R-03: a delivered block says what it is, its id, its date and its trust, and then what
+    /// it holds. The transcript path and offset are one `muninn show <id>` away; carried on every
+    /// block, they and the session and origin fields were 46 % of what a prompt delivery spent.
+    #[test]
+    fn a_block_header_is_kind_id_date_and_trust() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        db.conn.execute(
+            "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at,transcript_ref) \
+             VALUES('decision','k','is','o','the pooler is pgbouncer','user_said',3,'0123456789abcdef','h',1,'/home/u/t.jsonl:42')",
+            [],
+        ).unwrap();
+        let recs = hits_for(&db, &[1]).unwrap();
+        let m = merge(&[], &[], &recs, &[], BUDGET_TURN_TOKENS, &[]);
+        assert_eq!(
+            m.text,
+            "[muninn:decision] #1 · 1970-01-01 · trust 3\nthe pooler is pgbouncer\n"
         );
-        let ctx = load_context(&paths, "now", "prompt");
-        assert_eq!(ctx.files, vec!["src/auth/jwt.rs"]);
-        assert_eq!(ctx.symbols, vec!["verify_token"]);
+        let shown = crate::recall::show(&db, &[1], BUDGET_TURN_TOKENS).unwrap();
+        assert!(
+            shown.text.contains("evidence: /home/u/t.jsonl:42"),
+            "{}",
+            shown.text
+        );
+    }
+
+    /// R-06: on a prompt the better match comes first, whatever its kind; a decision that
+    /// matches worse no longer takes the budget from it.
+    #[test]
+    fn on_a_prompt_the_better_match_comes_before_a_weaker_decision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        let lexical = lexical_fixture(&db, &["episode", "decision"]);
+        let one = estimate(&lexical[0].body) + 60;
+        let m = merge(&[], &[], &lexical, &[], one, &[]);
+        assert_eq!(m.ids, vec![1], "{}", m.text);
+    }
+
+    /// R-06: a conflict marker is shown and does not move a correction to the bottom; rules and
+    /// corrections still come first on a prompt.
+    #[test]
+    fn a_marked_correction_keeps_its_place() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        let mut lexical = lexical_fixture(&db, &["episode", "correction"]);
+        lexical[1].conflict = vec![9];
+        let one = estimate(&lexical[0].body) + 60;
+        let m = merge(&[], &[], &lexical, &[], one, &[]);
+        assert_eq!(m.ids, vec![2], "{}", m.text);
+        assert!(m.text.contains("conflict with #9"), "{}", m.text);
     }
 
     /// More invariants than the turn budget holds: the newest fill it. The field stores had
@@ -1049,7 +812,7 @@ mod tests {
                 rusqlite::params![format!("rule {i}"), format!("user: rule number {i} must always hold, {}", "padding words ".repeat(12)), 1_000 + i],
             ).unwrap();
             let id = db.conn.last_insert_rowid();
-            derive(&db, id, "invariant", None, "", &[], &[]).unwrap();
+            derive(&db, id, "invariant").unwrap();
             ids.push(id);
         }
         let ctx = TurnContext {
@@ -1077,9 +840,77 @@ mod tests {
         );
     }
 
+    fn rules_fixture(db: &Db, invariants: i64, corrections: i64) -> Vec<i64> {
+        let mut ids = Vec::new();
+        // the corrections are older than every invariant, as in the stores where none was shown
+        for (kind, n, at) in [
+            ("correction", corrections, 0),
+            ("invariant", invariants, 500),
+        ] {
+            for i in 0..n {
+                db.conn.execute(
+                    "INSERT INTO record(kind,subject,relation,object,body,origin,trust,session_id,dedup_hash,created_at) VALUES(?1,?2,'must','o',?3,'user_said',3,'s',?2,?4)",
+                    rusqlite::params![kind, format!("{kind} {i}"), format!("user: {kind} number {i} holds, {}", "padding words ".repeat(20)), 1_000 + at + i],
+                ).unwrap();
+                let id = db.conn.last_insert_rowid();
+                derive(db, id, kind).unwrap();
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
+    fn event_merge(db: &Db, event: &str) -> Merged {
+        let ctx = TurnContext {
+            event: event.into(),
+            ..Default::default()
+        };
+        let (hits, _) = evaluate_capped(db, &ctx, &HashSet::new(), 64).unwrap();
+        let hit_ids: Vec<i64> = hits.iter().map(|h| h.record_id).collect();
+        let recs = hits_for(db, &hit_ids).unwrap();
+        merge(&hits, &recs, &[], &[], BUDGET_TURN_TOKENS, &hit_ids)
+    }
+
+    /// R-04: with more invariants than a session start holds, the corrections, all older, still
+    /// get half of its blocks: ordered by kind, not one of them had ever reached one.
+    #[test]
+    fn corrections_get_half_of_a_session_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        // past the 64 candidates the event query reads, too
+        rules_fixture(&db, 80, 30);
+        let m = event_merge(&db, "session_start");
+        let kinds: Vec<String> = hits_for(&db, &m.ids)
+            .unwrap()
+            .iter()
+            .map(|h| h.kind.clone())
+            .collect();
+        let corrections = kinds.iter().filter(|k| *k == "correction").count();
+        assert!(
+            corrections * 2 >= kinds.len() - 1 && corrections > 0,
+            "{kinds:?}"
+        );
+    }
+
+    /// R-04: a session start renders each rule short, so more of them fit: the first 160
+    /// characters of what it says, under its header.
+    #[test]
+    fn a_session_start_block_is_a_rule_in_a_line_or_two() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("c.db"), Mode::ReadWrite).unwrap();
+        rules_fixture(&db, 30, 0);
+        let m = event_merge(&db, "session_start");
+        assert!(m.ids.len() >= 9, "{}", m.ids.len());
+        for block in m.text.split("[muninn:").skip(1) {
+            let body = block.split_once('\n').unwrap().1.trim_end();
+            assert!(body.chars().count() <= 161, "{body}");
+        }
+    }
+
     /// A cue kind with no evaluator must not be storable, and must not be treated as
     /// satisfied if an older store already holds one: either way it would let its group
-    /// fire on a condition nobody checked.
+    /// fire on a condition nobody checked. A directory or a symbol cue is such a kind now,
+    /// and an import that carries one (an export of an older store) loses that whole group.
     #[test]
     fn unevaluable_cue_kinds_are_refused_and_fail_closed() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1090,44 +921,51 @@ mod tests {
         ).unwrap();
         let id = db.conn.last_insert_rowid();
 
-        // set_explicit stores the dir cue and drops the glob in the same group
+        // of four groups, the one whose every cue can be checked is stored
         let stored = set_explicit(
             &db,
             id,
             &[
-                ("dir".into(), "src/a".into(), 0),
+                ("keyword".into(), "Pooling".into(), 0),
                 ("glob".into(), "src/a/**/*.rs".into(), 0),
-                ("cooldown".into(), "60000".into(), 0),
+                ("keyword".into(), "PgBouncer".into(), 1),
+                ("event".into(), "pre_edit".into(), 2),
+                ("dir".into(), "src/a".into(), 2),
+                ("symbol".into(), "verify_token".into(), 3),
+                ("cooldown".into(), "60000".into(), 3),
             ],
         )
         .unwrap();
-        assert_eq!(stored, 1, "only the dir cue is evaluable");
-
-        let ctx = TurnContext {
-            files: vec!["src/a/b.rs".into()],
-            event: "prompt".into(),
-            ..Default::default()
-        };
-        assert!(
-            evaluate(&db, &ctx, &HashSet::new())
+        assert_eq!(stored, 1, "only the second group is evaluable");
+        let fires = |ctx: &TurnContext| {
+            evaluate(&db, ctx, &HashSet::new())
                 .unwrap()
                 .iter()
-                .any(|h| h.record_id == id),
-            "the dir cue alone still fires"
+                .any(|h| h.record_id == id)
+        };
+        let word = |w: &str| TurnContext {
+            keywords: vec![w.into()],
+            ..Default::default()
+        };
+        assert!(fires(&word("pgbouncer")), "the whole group fires");
+        assert!(
+            !fires(&word("pooling")),
+            "a group that lost a cue is not stored with the rest of it"
         );
+        assert!(!fires(&TurnContext {
+            event: "pre_edit".into(),
+            ..Default::default()
+        }));
 
         // a row written by an older binary, straight into the table, fails its group closed
         db.conn
             .execute(
-                "INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, 'glob', 'src/a/**', 0)",
+                "INSERT INTO cue(record_id, kind, key, grp) VALUES(?1, 'glob', 'src/a/**', 1)",
                 [id],
             )
             .unwrap();
         assert!(
-            evaluate(&db, &ctx, &HashSet::new())
-                .unwrap()
-                .iter()
-                .all(|h| h.record_id != id),
+            !fires(&word("pgbouncer")),
             "a cue nobody can check must not count as satisfied"
         );
     }

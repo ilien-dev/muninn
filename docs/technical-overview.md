@@ -62,9 +62,8 @@ score is in "Does it work?" below. What happens after the mark is the part that 
 card is not deleted, it keeps a label saying what replaced it, and it stops being something the
 assistant can be shown.
 
-On each turn, Muninn looks at what you are writing and which files you are touching, finds the
-cards that relate to it, and passes them to the assistant as evidence rather than as instructions,
-capped at 700 tokens. That takes a few thousandths of a second and calls no model, so the same
+On each turn, Muninn looks at what you are writing, finds the cards that relate to it, and
+passes them to the assistant as evidence rather than as instructions, capped at 700 tokens. That takes a few thousandths of a second and calls no model, so the same
 store and the same question give you the same answer every time.
 
 The second step is where Muninn differs from a memory that searches by resemblance. There a
@@ -91,16 +90,16 @@ A memory that searches by resemblance finds both notes, scores them about the sa
 assistant to guess which one is current. Muninn passes it one card:
 
 ```
-[muninn:decision] #2 · a1b2c3d4 · origin: user_said · trust 3
+[muninn:decision] #2 · 2026-09-03 · trust 3
 user: change of plan — the transport compression codec is now zstd.
-  evidence: ~/.claude/projects/your-project/a1b2c3d4-….jsonl:48213
 ```
 
-The block tells the assistant what kind of card this is, its number, that you said it yourself
-(`origin: user_said` with `trust 3`, the top of four levels), and where to go and check
-(`evidence:` gives the transcript file and the position in it). Cards Muninn is less sure about
-arrive labelled as hints rather than facts. The full vocabulary is in
-[`docs/format.md`](format.md).
+The block tells the assistant what kind of card this is, its number, its date, and that you
+said it yourself (`trust 3`, the top of four levels). Since 2.0.0 the block no longer carries
+the origin or the place in the transcript. `muninn show 2` prints both, with an `evidence:`
+line naming the transcript file and the position in it, and says so when that file is gone.
+Cards Muninn is less sure about arrive labelled as hints rather than facts. The full
+vocabulary is in [`docs/format.md`](format.md).
 
 The gzip decision still exists. Ask for it and it comes back with its label:
 
@@ -111,6 +110,7 @@ muninn why --all "compression codec"
 ```
 [muninn:decision] #1 · policy.compression is · origin: user_said · trust 3 · 2026-08-31T09:41:00Z · RETIRED (superseded)
 user: for the transport compression codec we go with gzip.
+  [muninn:lineage] #1(superseded) ← #2
 ```
 
 Without `--all` you get only the decision that still stands.
@@ -331,6 +331,63 @@ size from nothing you would need about 204 cells per tool instead of 27, which i
 times the work. So it is a tie. The test was never big enough to find a difference this small in
 either direction.
 
+## What a review of real use changed
+
+2.0.0 came out of a second review of the stores one person had used Muninn in, eleven of them.
+Most changes had a rule written before they were built (usage-v4), and one that failed its rule
+was taken out. The exceptions: the speed rule failed on two hooks and nothing was removed for
+it, nine rows of the table of changes shipped on their tests alone and a tenth on tests and
+probes, and several of the registration's later texts were written after a figure had been
+seen. The full table is
+`experiment/results/usage-v4/RESULTS.md` in
+[ilien-dev/muninn-experiments](https://github.com/ilien-dev/muninn-experiments).
+
+The labels behind the first five rows were made in two passes with a third reading where they
+disagreed. The second labeller had not seen the first labels but had read the analysis
+reports, which name about ten items with their labels, so the passes were not independent.
+The two agreed poorly on which blocks are useful (kappa 0.136, against 0.846 on unrelated or
+not), and the blocks only the new build returns were labelled by one more labeller alone. The
+second column of the table says which part of the labelled set each row comes from.
+
+| what was measured | split | 1.2.0 | 2.0.0 |
+|---|---|---|---|
+| Typed records and candidates that are not durable statements | held-out | 55 | 42 (38 with the filters alone) |
+| Typed records and candidates that are durable statements | held-out | 13 | 19 (13 with the filters alone) |
+| Durable statements that get recorded | held-out | 4 of 25 | 10 of 25 |
+| Blocks unrelated to the prompt, over 68 prompts | held-out | 143 | 72 |
+| Blocks useful to the prompt, same prompts | held-out | 10 | 9 |
+| Labelled retirements that lost something the user said, replaying every session | all 108, a set the fixes were designed on | 9 | 5 |
+| Tokens a prompt is given, mean | all 150 prompts | 563.7 | 252.5 |
+| A record cut for room is offered again when asked for | one store, no split | 0 of 12 | 11 of 11 |
+| `Stop` with a turn to ingest, median of the middle run of three | one copy of the largest store | 216.7 ms | 59.7 ms |
+
+Two things did not come out as hoped. The rule for speed allowed no read hook to get more than
+10 % slower, and `SessionStart` and `SubagentStart` read 1.191 and 1.526 times 1.2.0 on the
+bench store, where 1.2.0 delivers nothing at those hooks and 2.0.0 does. Those runs were taken
+on a desktop in use, which the procedure did not allow. And a new extractor that nearly tripled
+precision on those messages (0.2174 to 0.6111) left a valid retirement undone, so it did not
+ship. 2.0.0 still extracts records with keyword rules and still misses 15 of the 25 durable
+statements.
+
+The measurement also missed things. After it was done, a review of the whole branch put
+invented sessions through the hooks and found three defects that no cell reads: a sentence
+typed in the turn that hands a copy of it to a worker was lost when the worker's session was
+read first, the excerpt of a turn whose command failed was hidden once the command passed, and
+an older statement read after a newer one retired it. A second review of the fixes found three
+more: a revoked rule brought back by an older session read later, an older statement left
+current beside its replacement, and a change typed in one of two coordinating sessions that
+could end with nothing current. All six are dealt with in 2.0.0 and the cells were read again.
+An older statement read last retires nothing said after it and is not retired by it. Where
+the newer one would have replaced it, by a shared key, a correction said again, a quantity or
+its words, both stay and are marked as in conflict. Retiring the older one there was tried
+and taken back: by words it retired a statement the user still held in the replay, and by the
+other rules it lost statements when the newer record was a worker's prompt. Two rules leave
+no mark:
+they read something the store does not keep (the reply that names both values, and a change
+with no subject). A probe written for these cases still reads 64 bad orders of 384 for a
+replaced statement said again in a coordinating session's prompt; 1.2.0 is wrong in all 384.
+`RESULTS.md` lists what is still open.
+
 ## Where it is weak
 
 Turning a written rule into an enforced one covers a minority of what you write. Over 330
@@ -362,11 +419,12 @@ follows a rule written before the run, and it is still a measurement of our own 
 code. The Gate 3 grid was re-run on three outside projects. Gate 2 could not be, because its facts
 live in this project's transcripts and do not move.
 
-One of the ideas did not pay off. Muninn can anchor a record to a directory or to a code symbol,
-so that touching the file brings the record back even when your words do not match it. Measured
-against plain keyword search, that made no difference we can distinguish from zero
-(+0.08, and the range around it runs from −0.08 to +0.25). It ships turned off, and what you get
-is keyword search.
+One of the ideas did not pay off. Muninn could anchor a record to a directory or to a code
+symbol, so that touching the file brought the record back even when your words did not match it.
+Measured against plain keyword search, that made no difference we can distinguish from zero
+(+0.08, and the range around it runs from −0.08 to +0.25). It shipped turned off. In the eleven
+stores of the second usage review none of 79,534 delivery rows had come from such a cue, and
+2.0.0 removed it together with the symbol graph it read. What you get is keyword search.
 
 Muninn is a personal memory, and nothing about teams has been measured. Each person's store is
 built from their own session transcripts, which live on their own machine, and `muninn init`
@@ -460,16 +518,20 @@ On Windows the same hook works in two ways. Claude Code runs SessionStart, the o
 hook, through Git Bash, so the script above runs as it does elsewhere. Git Bash's `ln -s`
 copies instead of linking, so the script keeps a copy at `~/.local/bin/muninn.exe` with a
 `muninn.plugin` marker beside it, and refreshes the copy when the plugin's binary is newer.
-Codex on Windows runs each hook's `commandWindows` through `cmd.exe`: SessionStart there runs
-[`plugin/scripts/session-start.ps1`](../plugin/scripts/session-start.ps1) in PowerShell, which
-downloads and checks the binary and keeps the same marked copy, and then `cmd.exe` runs the
-binary. CI runs both paths on a Windows runner (`scripts/ci-install-smoke.sh`,
+Codex on Windows hands each hook's `commandWindows` to the session's shell, which is PowerShell
+by default and `cmd.exe` when there is none, so every line of the plugin is written as
+`cmd --% /c "…"` and runs the same way in both. SessionStart there starts
+[`plugin/scripts/session-start.ps1`](../plugin/scripts/session-start.ps1) only when the binary
+is missing; the script downloads and checks it and keeps the same marked copy. CI runs these
+paths on a Windows runner through both shells (`scripts/ci-install-smoke.sh`,
 `scripts/ci-windows-hooks.py`).
 
 Each assistant reads its own manifest: Claude Code reads `plugin/.claude-plugin/plugin.json` and
 `plugin/hooks/hooks.json`, and Codex reads `plugin/.codex-plugin/plugin.json`, which points at
 `plugin/hooks/codex.json`. Codex hooks are shell commands and name Codex's tools (`apply_patch`),
-so the file is separate. A test keeps it equal to what `muninn init --codex` generates.
+so the file is separate. A test keeps its events, matchers, timeouts and Unix commands equal to
+what `muninn init` generates; the Windows command differs, because `init` writes the path of
+one binary and the plugin a line that works from any install directory.
 
 Then, inside your own project, once per project and per machine:
 
@@ -485,7 +547,11 @@ muninn status        # check that everything is working
 Hooks do nothing in a project until `.muninn/muninn.db` exists, so `init` is the opt-in. It
 creates `.muninn/`, adds `.muninn/` to `.gitignore`, sets `autoMemoryEnabled: false` in the
 project's `.claude/settings.json` (`--keep-native` skips that), and allows `muninn why`,
-`muninn status` and `muninn show` there. Everything it touches outside `.muninn/` is recorded in
+`muninn status` and `muninn show` there. Where Codex is on the machine and its Muninn plugin is
+not installed, it also writes `.codex/hooks.json`, merged with any hooks already there; Codex
+asks you to review them with `/hooks`. That file holds the absolute path of this machine's
+binary and nothing ignores it: do not commit it, and run `init` on each machine. `muninn status`
+says which route the Codex hooks take. Everything it touches outside `.muninn/` is recorded in
 `.muninn/init.json`, which is how `clean` knows what to undo. Running it again changes only
 what is missing.
 
@@ -511,11 +577,12 @@ definition; in our test it survived a version bump that left the hooks unchanged
 curl -fsSLO https://github.com/ilien-dev/muninn/releases/latest/download/install.sh
 less install.sh          # read it before running it
 sh install.sh            # puts muninn in ~/.local/bin
-muninn init --codex      # writes .codex/hooks.json pointing at that binary
+muninn init              # with Codex on the machine, also writes .codex/hooks.json for that binary
 ```
 
-`init --codex` refuses to run from a plugin's binary: that path changes with every update, and
-the Codex plugin already installs the same hooks.
+`--codex` forces the hooks file where `init` would not write it. From a plugin's binary `init`
+writes no Codex hooks: that path changes with every update, and the Codex plugin already
+installs the same hooks.
 
 ### Publishing a release
 
@@ -560,6 +627,7 @@ the assistant. A few commands are useful when you want to look inside:
 muninn why "why did we choose exponential backoff"   # what stands now, and the id of what it replaced
 muninn why --all "exponential backoff"               # the same, retired records included
 muninn revoke 142 --reason "no longer true"          # retire a record by hand (it stays in the history)
+muninn remember "never commit under out/" --kind invariant   # keep a statement; yours only if you typed it in this session
 muninn export --all                                  # every record, as a file you can read
 muninn compile && muninn apply                       # turn written rules into enforced ones
 ```
@@ -573,10 +641,8 @@ crates/muninn-core      storage, search, filtering
 crates/muninn-cli       the Muninn program and its hooks
 crates/muninn-capture   reads conversations and git history
 crates/muninn-compile   turns written rules into permission settings
-crates/muninn-embed     optional local embedding model: used when writing and by `muninn why`, never in a hook
-crates/muninn-symbols   map of the code's functions and types
 crates/muninn-why       answers `muninn why`
-crates/muninn-bench     speed tests and the experiments behind every number
+crates/muninn-bench     speed tests, a replay of labelled fixtures, and the experiments behind every number
 plugin/                 Claude Code plugin
 codex/                  Codex setup
 ```

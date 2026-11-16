@@ -48,20 +48,6 @@ if command -v cosign >/dev/null 2>&1; then
 else
   echo "cosign not found: checksum verified, signature not checked" >&2
 fi
-# the embedding model is optional; fetch it only when asked, and verify every file
-if [ "${MUNINN_WITH_MODEL:-0}" = "1" ]; then
-  mdir="${MUNINN_MODEL_DIR:-$(dirname "$DEST")/models/potion-base-8M}"; mkdir -p "$mdir"
-  for f in config.json tokenizer.json model.safetensors; do
-    curl -fsSL "https://huggingface.co/minishlab/potion-base-8M/resolve/main/$f" -o "$mdir/$f"
-  done
-  curl -fsSL "$REPO/models.txt" -o "$tmp/models.txt"
-  for f in config.json tokenizer.json model.safetensors; do
-    want=$(grep " $f " "$tmp/models.txt" | awk '{print $3}')
-    got=$(sha256 "$mdir/$f")
-    [ "$want" = "$got" ] || { echo "model file $f checksum mismatch" >&2; rm -f "$mdir/$f"; exit 1; }
-  done
-  echo "model installed in $mdir"
-fi
 # Copy next to the target, then rename over it: a hook that starts while this runs sees
 # either the old binary or the new one, never a half-written file.
 mkdir -p "$DEST"; install -m 0755 "$tmp/muninn$ext" "$DEST/.muninn$ext.$$"

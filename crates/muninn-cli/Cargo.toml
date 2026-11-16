@@ -13,8 +13,6 @@ path = "src/main.rs"
 muninn-core = { path = "../muninn-core" }
 muninn-capture = { path = "../muninn-capture" }
 muninn-compile = { path = "../muninn-compile" }
-muninn-embed = { path = "../muninn-embed" }
-muninn-symbols = { path = "../muninn-symbols" }
 muninn-why = { path = "../muninn-why" }
 clap.workspace = true
 serde.workspace = true

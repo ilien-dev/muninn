@@ -38,6 +38,23 @@ fn emit(project: &str, sid: &str, s: &Session) {
 }
 
 fn main() {
+    // usage-v4's arms (ninth amendment): MUNINN_DUMP_FILTERS_ONLY turns the rules that add
+    // records off, MUNINN_DUMP_OFF the rules it names (comma-separated, `measure.rs`)
+    let mut off: Vec<String> = std::env::var("MUNINN_DUMP_OFF")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if std::env::var_os("MUNINN_DUMP_FILTERS_ONLY").is_some() {
+        off.extend(
+            muninn_capture::measure::RECALL_RULES
+                .iter()
+                .map(|s| s.to_string()),
+        );
+    }
+    let off: Vec<&str> = off.iter().map(String::as_str).collect();
+    muninn_capture::measure::disable(&off);
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (mode, rest) = args
         .split_first()
@@ -52,11 +69,29 @@ fn main() {
                     .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
                     .collect();
                 files.sort();
-                for f in files {
-                    let Ok(s) = muninn_capture::parse_any(&f, 0) else {
-                        continue;
-                    };
-                    let sid = f.file_stem().unwrap().to_string_lossy().to_string();
+                // A store sees every transcript of its project, so a prompt another session
+                // handed over to an agent is known at ingest (`agent.rs`). The pre-pass gives
+                // the dump the same view, through the same function.
+                let sessions: Vec<(String, Session)> = files
+                    .iter()
+                    .filter_map(|f| {
+                        let s = muninn_capture::parse_any_with_tasks(f, 0).ok()?;
+                        Some((f.file_stem()?.to_string_lossy().to_string(), s))
+                    })
+                    .collect();
+                let tasks: Vec<std::collections::HashSet<String>> = sessions
+                    .iter()
+                    .map(|(_, s)| muninn_capture::agent::session_task_hashes(s))
+                    .collect();
+                for (i, (sid, mut s)) in sessions.into_iter().enumerate() {
+                    let agent_prompt = muninn_capture::measure::on("agent_prompt");
+                    muninn_capture::agent::mark_agent_written(&mut s, |h| {
+                        agent_prompt
+                            && tasks
+                                .iter()
+                                .enumerate()
+                                .any(|(j, set)| j != i && set.contains(h))
+                    });
                     emit(project, &sid, &s);
                 }
             }

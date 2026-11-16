@@ -1,0 +1,19 @@
+{
+  "section": "delivery",
+  "about": "The same invented project. Its store is built by ingesting the two sessions in order, so record ids are the same on every run; each prompt carries a label for the records it may be given (u useful, r related, x unrelated, h harmful). The last prompt is asked of the store as it stood between the two sessions.",
+  "stores": {
+    "tides": { "ingest": ["sessions/tides/tide-1.jsonl", "sessions/tides/tide-2.jsonl"] }
+  },
+  "prompts": [
+    { "id": "Q1", "store": "tides", "split": "design",
+      "prompt": "Which database does the tide cache use, and why did we choose it?",
+      "labels": { "10": "u", "7": "r", "6": "x" } },
+    { "id": "Q2", "store": "tides", "split": "heldout",
+      "prompt": "What unit are the heights in the tables?",
+      "labels": { "6": "u", "3": "r", "5": "x" } },
+    { "id": "Q3", "store": "tides", "split": "design", "prompt": "ok thanks" },
+    { "id": "Q4", "store": "tides", "split": "heldout", "at": 1790931600000,
+      "prompt": "Which database does the tide cache use, and why did we choose it?",
+      "labels": { "4": "u", "1": "r", "6": "x" } }
+  ]
+}

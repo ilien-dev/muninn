@@ -22,7 +22,7 @@ as v17 or v43 are test runs, numbered in the order they were registered, not ver
   code, the scores were **54 of 54** for Muninn, 25 of 54 for claude-mem and 1 of 54 for
   agentmemory.
 - **A decision you replaced never comes back.** Every path that feeds the assistant reads a view with no retired rows in it, and CI tests that on every commit.
-- **It is fast and it stays on your machine.** A hook costs about 3 ms at 20 000 records. There
+- **It is fast and it stays on your machine.** A hook costs 5 to 6 ms at 20 000 records. There
   is no server, no account and no cloud service, and no AI model runs in the path that answers
   the assistant.
 - **The same conversation gives the same memory.** Three runs of the same twenty sessions stored
@@ -99,14 +99,15 @@ held-out sets retired 29 of 30 decisions this way, with 0 false retirements in e
 (loops 8 and 9).
 
 No model runs on the read path, so the same store and the same question give the same answer
-every time. The hooks are held to hard latency limits in CI: SessionStart at 2.8 ms and a full
-prompt at 4.0 ms (p95), at the schema's cap of 20 000 records.
+every time. The hooks are held to hard latency limits in CI. On 2.0.0, under Linux, SessionStart
+reads 4.6 to 5.0 ms and a prompt that is given a block 3.9 to 4.2 ms (p95), at the schema's
+cap of 20 000 records.
 
 A write-path model went through end-to-end tests before this page existed. A 9B model on the CPU
 found the replaced record, but it also marked related ones, and it added nothing on the grid: 46
 of 54 with it against 48 of 54 without, in Spanish with every change separated from its decision
-`[Z11]`. What already works there is the delivery: what was said, listed newest first, as the
-latest word on a subject. On that same Spanish fixture, where the rules retired only four to
+`[Z11]`. What already works there is the delivery: what was said, the newest first within each
+kind, as the latest word on a subject. On that same Spanish fixture, where the rules retired only four to
 seven records per store, Muninn still read 48 of 54 without any model (v42). There is no
 competitor figure on that fixture.
 
