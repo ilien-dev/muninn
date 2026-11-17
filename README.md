@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
-    <img src="assets/hero-light.svg" alt="Notes you gave your assistant travel from you to it through a ring, the memory. Monday's note, prices in dollars, was replaced on Thursday by a change of plan to euros: it turns down inside the ring, is crossed out and put away, and only the notes that still hold reach the assistant on a new day. In tests a replaced decision slipped back into the assistant's work 0 times out of 54." width="100%">
+    <img src="assets/hero-light.svg" alt="Muninn over three sessions. Monday: let's use gzip becomes a decision. Thursday: a change of plan to zstd becomes the new decision and the gzip one is retired. Two weeks later a new session asks how files are compressed and gets only the zstd decision. In tests, 93% of tasks used the latest decision and 0 of 54 old decisions were written back." width="100%">
   </picture>
 </p>
 
