@@ -1,8 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/motion/hero-dark.gif">
-    <img src="assets/motion/hero-light.gif" width="820"
-         alt="The Muninn raven and its ring. One sentence at a time appears under the tagline, turns into a spark and enters the ring. When the plan changes to zstd, the old gzip decision comes back out, struck through, as the old plan.">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
+    <img src="assets/hero-light.svg" alt="Notes you gave your assistant travel from you to it through a ring, the memory. Monday's note, prices in dollars, was replaced on Thursday by a change of plan to euros: it turns down inside the ring, is crossed out and put away, and only the notes that still hold reach the assistant on a new day. In tests a replaced decision slipped back into the assistant's work 0 times out of 54." width="100%">
   </picture>
 </p>
 
@@ -14,9 +13,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-30363d" alt="License: AGPL-3.0-only"></a>
 </p>
 
-# Muninn: persistent memory for Claude Code and Codex
+<h1 align="center">Muninn: persistent memory for Claude Code and Codex</h1>
 
-**A memory for Claude Code and Codex that keeps up when you change your mind.**
+<p align="center">
+  <b>A memory for Claude Code and Codex that keeps up when you change your mind.<br>
+  It remembers what you decided and puts the old decision away when you replace it,<br>
+  so the assistant only sees what is true now. It runs on your computer, with no cloud service.</b>
+</p>
 
 Every time you open a new session, Claude Code or Codex starts from zero, with no idea that last
 week you picked a database, agreed on a folder structure, or told it never to touch a certain

@@ -4,6 +4,17 @@ Names like v17 or v38 in these entries are test runs, numbered in the order they
 they are not releases. Releases are the numbered headings, such as 0.2.0. See
 [how to read the test names](docs/technical-overview.md#how-to-read-the-test-names).
 
+## 2.0.2 — 2026-11-16
+
+Documentation only. The binary is 2.0.0's.
+
+- **The README opens with a new hero**, an animated SVG in place of the GIF, in
+  `assets/hero-dark.svg` and `assets/hero-light.svg`, with its source in `assets/hero.src.svg`.
+  It shows a Monday note replaced on Thursday and put away, and the 0 of 54 figure from the
+  comparison further down the README. The old GIFs stay in `assets/motion`.
+- **The heading under it is centered**, and the tagline became a three-line description that
+  says the same as the paragraphs below it.
+
 ## 2.0.1 — 2026-11-15
 
 Documentation only. The binary is 2.0.0's.
