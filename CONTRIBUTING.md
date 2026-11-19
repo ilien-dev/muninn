@@ -17,8 +17,9 @@ contribution public under the AGPL.
 ## Branches and pull requests
 
 `master` takes changes only through a pull request, from the maintainer too. Name your branch
-`feature/<name>`, where the name is at least three lowercase words joined by hyphens (letters
-and digits only, no underscores or dots), for example `feature/fix-windows-install`, and open
+`<type>/<name>`: `<type>` is the Conventional Commit type of the change (`feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `style` or `revert`), and the
+name is at least three lowercase words joined by hyphens (letters and digits only, no
+underscores or dots), for example `fix/windows-install-paths`. `feature/` is not a type. Open
 the pull request against `master`. A check fails any other branch name, and a pull
 request merges after the maintainer approves it.
 
